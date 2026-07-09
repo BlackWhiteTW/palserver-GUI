@@ -13,6 +13,7 @@ import type { DriverContext, ServerDriver } from "./driver.js";
 import * as dockerOps from "./docker.js";
 import { nativeDriver } from "./native.js";
 import { getModsStatus, installComponent, setLuaModEnabled } from "./mods.js";
+import { getLiveStatus, rest } from "./restapi.js";
 import * as files from "./files.js";
 import fs from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -178,6 +179,48 @@ export function registerRoutes(app: FastifyInstance, store: InstanceStore): void
     const body = z.object({ name: z.string(), enabled: z.boolean() }).parse(req.body);
     setLuaModEnabled(rec, ctxOf(rec), body.name, body.enabled);
     return getModsStatus(rec, ctxOf(rec));
+  });
+
+  // ── live server control via the game's own REST API ──
+  app.get("/api/instances/:id/live", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    return getLiveStatus(rec);
+  });
+
+  app.post("/api/instances/:id/announce", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { message } = z.object({ message: z.string().min(1).max(500) }).parse(req.body);
+    await rest.announce(rec, message);
+    return { announced: message };
+  });
+
+  app.post("/api/instances/:id/players/:userId/kick", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { userId } = req.params as { userId: string };
+    const { message } = z.object({ message: z.string().max(500).optional() }).parse(req.body ?? {});
+    await rest.kick(rec, userId, message);
+    return { kicked: userId };
+  });
+
+  app.post("/api/instances/:id/players/:userId/ban", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { userId } = req.params as { userId: string };
+    const { message } = z.object({ message: z.string().max(500).optional() }).parse(req.body ?? {});
+    await rest.ban(rec, userId, message);
+    return { banned: userId };
+  });
+
+  app.post("/api/instances/:id/players/:userId/unban", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { userId } = req.params as { userId: string };
+    await rest.unban(rec, userId);
+    return { unbanned: userId };
+  });
+
+  app.post("/api/instances/:id/save", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    await rest.save(rec);
+    return { saved: true };
   });
 
   // ── file browser (native instances; confined to the server directory) ──

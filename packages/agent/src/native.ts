@@ -7,6 +7,7 @@ import type { InstanceStats, InstanceStatus } from "@palserver/shared";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
 import { renderPalWorldSettingsIni } from "./settings-ini.js";
+import { rest } from "./restapi.js";
 import { DATA_DIR } from "./env.js";
 
 const execFileP = promisify(execFile);
@@ -106,23 +107,11 @@ async function listDescendants(rootPid: number): Promise<number[]> {
 /** Best-effort graceful shutdown through the server's own REST API
  * (saves the world before exiting). Returns true if the request landed. */
 async function requestGracefulShutdown(rec: InstanceRecord): Promise<boolean> {
-  if (!rec.settings.RESTAPIEnabled || !rec.settings.AdminPassword) return false;
   try {
-    const res = await fetch(
-      `http://127.0.0.1:${rec.settings.RESTAPIPort}/v1/api/shutdown`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`admin:${rec.settings.AdminPassword}`).toString("base64"),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ waittime: 1, message: "Server is shutting down." }),
-        signal: AbortSignal.timeout(4000),
-      },
-    );
-    return res.ok;
+    await rest.shutdown(rec, 1, "Server is shutting down.");
+    return true;
   } catch {
-    return false;
+    return false; // REST disabled, no admin password, or server not responding
   }
 }
 

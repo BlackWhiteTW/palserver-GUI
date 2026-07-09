@@ -6,6 +6,7 @@ import type {
   InstanceDetail,
   InstanceStats,
   InstanceSummary,
+  LiveStatus,
   ModComponent,
   ModsStatus,
   WorldSettings,
@@ -97,6 +98,33 @@ export class AgentClient {
       method: "POST",
       body: JSON.stringify({ name, enabled }),
     });
+  }
+
+  live(id: string): Promise<LiveStatus> {
+    return this.request(`/api/instances/${id}/live`);
+  }
+
+  announce(id: string, message: string): Promise<{ announced: string }> {
+    return this.request(`/api/instances/${id}/announce`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  playerAction(
+    id: string,
+    userId: string,
+    action: "kick" | "ban" | "unban",
+    message?: string,
+  ): Promise<unknown> {
+    return this.request(`/api/instances/${id}/players/${encodeURIComponent(userId)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  saveWorld(id: string): Promise<{ saved: boolean }> {
+    return this.request(`/api/instances/${id}/save`, { method: "POST", body: "{}" });
   }
 
   listFiles(id: string, path: string): Promise<{ path: string; entries: DirEntry[] }> {

@@ -4,12 +4,16 @@ import type { InstanceDetail as Detail, InstanceStats, WorldSettings } from "@pa
 import type { AgentClient } from "./api";
 import { SettingsEditor } from "./SettingsEditor";
 import { ModsTab } from "./ModsTab";
+import { PlayersTab } from "./PlayersTab";
+import { MapTab } from "./MapTab";
 import { STATUS_LABELS } from "./labels";
 import { StatusBadge, btn, btnDanger, btnGhost, card, errorCls } from "./ui";
 
-type Tab = "overview" | "settings" | "mods" | "logs";
+type Tab = "overview" | "players" | "map" | "settings" | "mods" | "logs";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "總覽" },
+  { id: "players", label: "玩家" },
+  { id: "map", label: "線上地圖" },
   { id: "settings", label: "世界設定" },
   { id: "mods", label: "模組" },
   { id: "logs", label: "日誌" },
@@ -139,6 +143,8 @@ export function InstanceDetailPage({
       </div>
 
       {tab === "overview" && <OverviewTab client={client} detail={detail} />}
+      {tab === "players" && <PlayersTab client={client} instanceId={detail.id} />}
+      {tab === "map" && <MapTab client={client} instanceId={detail.id} />}
       {tab === "settings" && (
         <SettingsEditor
           settings={detail.settings}

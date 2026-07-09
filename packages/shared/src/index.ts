@@ -122,6 +122,67 @@ export interface FileContent {
   content: string;
 }
 
+/* ── Palworld server REST API (docs.palworldgame.com/api/rest-api) ──
+ * The agent proxies these; the game's own API is never exposed to the UI. */
+
+export interface RestPlayer {
+  name: string;
+  accountName: string;
+  playerId: string;
+  userId: string;
+  ip: string;
+  ping: number;
+  location_x: number;
+  location_y: number;
+  level: number;
+  building_count: number;
+}
+
+export interface RestServerInfo {
+  version: string;
+  servername: string;
+  description: string;
+  worldguid: string;
+}
+
+export interface RestMetrics {
+  serverfps: number;
+  currentplayernum: number;
+  serverframetime: number;
+  maxplayernum: number;
+  uptime: number;
+  basecampnum: number;
+  days: number;
+}
+
+/* World-coordinate conversion. The REST API reports Unreal/save-file
+ * coordinates; the in-game map uses a [-1000, 1000] square. Constants come
+ * from the game's DT_WorldMapUIData (offset = midpoint of the sav bounds,
+ * scale = sav units per map unit), cross-checked against the world bounds:
+ *   sav (-582888, -301000) → map (-1000, -1000)
+ *   sav ( 335112,  617000) → map ( 1000,  1000)
+ */
+export const WORLD_OFFSET = { x: 123888, y: -158000 } as const;
+export const WORLD_SCALE = 459;
+export const MAP_BOUND = 1000;
+
+export function savToMap(savX: number, savY: number): { x: number; y: number } {
+  return {
+    x: (savX + WORLD_OFFSET.x) / WORLD_SCALE,
+    y: (savY + WORLD_OFFSET.y) / WORLD_SCALE,
+  };
+}
+
+/** Aggregated live view; `available` is false when the server is down or
+ * the REST API / admin password isn't configured. */
+export interface LiveStatus {
+  available: boolean;
+  reason?: string;
+  info: RestServerInfo | null;
+  metrics: RestMetrics | null;
+  players: RestPlayer[];
+}
+
 export interface AgentInfo {
   name: string;
   version: string;

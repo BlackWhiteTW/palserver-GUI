@@ -87,7 +87,14 @@ Real-server verification needs an x86_64 Linux host.
 - [x] File manager (native backend): browse / edit text files / upload
       (streamed, large paks ok) / delete / mkdir, confined to the instance's
       server directory; "編輯原始檔" opens PalWorldSettings.ini directly
-- [ ] Player management via Palworld REST API / RCON passthrough
+- [x] Players tab: live metrics, player list (level/ping/coords), kick, ban,
+      broadcast, save-now — proxied through the game's REST API (basic auth,
+      never exposed to the browser)
+- [x] Live map: players plotted on the game's [-1000, 1000] map square
+      (constants from DT_WorldMapUIData). The world-map image is Pocketpair's
+      asset, so none is bundled — supply your own via URL or upload
+      (kept in localStorage).
+- [ ] RCON passthrough (fallback when the REST API is disabled)
 - [ ] Save migration: import an existing world into an instance (v1 parity)
 - [ ] Failure detection surfaced in UI (process exits / container crash loops)
 - [ ] Backups & schedules, multi-host aggregation in the UI, TLS guidance, i18n (reuse v1 locales)

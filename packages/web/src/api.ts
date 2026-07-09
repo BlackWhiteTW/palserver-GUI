@@ -4,6 +4,8 @@ import type {
   InstanceDetail,
   InstanceStats,
   InstanceSummary,
+  ModComponent,
+  ModsStatus,
   WorldSettings,
 } from "@palserver/shared";
 
@@ -78,6 +80,21 @@ export class AgentClient {
 
   stats(id: string): Promise<InstanceStats> {
     return this.request(`/api/instances/${id}/stats`);
+  }
+
+  mods(id: string): Promise<ModsStatus> {
+    return this.request(`/api/instances/${id}/mods`);
+  }
+
+  installMod(id: string, component: ModComponent): Promise<{ version: string }> {
+    return this.request(`/api/instances/${id}/mods/${component}/install`, { method: "POST" });
+  }
+
+  toggleLuaMod(id: string, name: string, enabled: boolean): Promise<ModsStatus> {
+    return this.request(`/api/instances/${id}/mods/lua-toggle`, {
+      method: "POST",
+      body: JSON.stringify({ name, enabled }),
+    });
   }
 
   logsSocket(id: string): WebSocket {

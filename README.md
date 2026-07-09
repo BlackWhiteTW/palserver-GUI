@@ -81,7 +81,9 @@ Real-server verification needs an x86_64 Linux host.
 - [x] Native backend (default): spawn/adopt host PalServer, DepotDownloader auto-install,
       pid reattach across agent restarts, REST-API graceful shutdown
 - [x] Docker backend (optional): vanilla image via DepotDownloader; dev-stub image for macOS
-- [ ] UE4SS + Palguard management on the native backend (v1 parity — core theme)
+- [x] Mods tab (native backend): one-click install/update of PalDefender
+      (anti-cheat, ex-Palguard) and UE4SS from GitHub releases, Lua-mod
+      enable/disable (both UE4SS layouts), pak-mod listing
 - [ ] Player management via Palworld REST API / RCON passthrough
 - [ ] Save migration: import an existing world into an instance (v1 parity)
 - [ ] Failure detection surfaced in UI (process exits / container crash loops)

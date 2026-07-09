@@ -3,13 +3,15 @@ import { FiArrowLeft, FiPlay, FiSquare, FiRefreshCw, FiTrash2 } from "react-icon
 import type { InstanceDetail as Detail, InstanceStats, WorldSettings } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { SettingsEditor } from "./SettingsEditor";
+import { ModsTab } from "./ModsTab";
 import { STATUS_LABELS } from "./labels";
 import { StatusBadge, btn, btnDanger, btnGhost, card, errorCls } from "./ui";
 
-type Tab = "overview" | "settings" | "logs";
+type Tab = "overview" | "settings" | "mods" | "logs";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "總覽" },
   { id: "settings", label: "世界設定" },
+  { id: "mods", label: "模組" },
   { id: "logs", label: "日誌" },
 ];
 
@@ -140,6 +142,7 @@ export function InstanceDetailPage({
       {tab === "settings" && (
         <SettingsEditor settings={detail.settings} saving={saving} onSave={saveSettings} />
       )}
+      {tab === "mods" && <ModsTab client={client} instanceId={detail.id} />}
       {tab === "logs" && <LogsTab client={client} instanceId={detail.id} />}
     </div>
   );

@@ -12,6 +12,8 @@ import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import * as dockerOps from "./docker.js";
 import { nativeDriver } from "./native.js";
+import { getModsStatus, installComponent, setLuaModEnabled } from "./mods.js";
+import { z } from "zod";
 
 const drivers: Record<InstanceRecord["backend"], ServerDriver> = {
   native: nativeDriver,
@@ -152,6 +154,27 @@ export function registerRoutes(app: FastifyInstance, store: InstanceStore): void
     const stats = await driverOf(rec).stats(rec, ctxOf(rec));
     if (!stats) return reply.code(409).send({ error: "server not running" });
     return stats;
+  });
+
+  app.get("/api/instances/:id/mods", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    return getModsStatus(rec, ctxOf(rec));
+  });
+
+  app.post("/api/instances/:id/mods/:component/install", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const component = z
+      .enum(["ue4ss", "paldefender"])
+      .parse((req.params as { component: string }).component);
+    const { version } = await installComponent(rec, ctxOf(rec), component);
+    return { installed: component, version, applied: "on-next-restart" };
+  });
+
+  app.post("/api/instances/:id/mods/lua-toggle", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const body = z.object({ name: z.string(), enabled: z.boolean() }).parse(req.body);
+    setLuaModEnabled(rec, ctxOf(rec), body.name, body.enabled);
+    return getModsStatus(rec, ctxOf(rec));
   });
 
   app.get("/api/instances/:id/logs", { websocket: true }, (socket, req) => {

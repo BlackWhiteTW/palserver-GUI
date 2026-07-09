@@ -89,6 +89,21 @@ export interface InstanceStats {
   memoryLimitBytes: number;
 }
 
+/** Mod-management state for one instance (native backend only). */
+export interface ModsStatus {
+  /** false when the backend/platform can't manage mods (docker, non-adopted…). */
+  supported: boolean;
+  reason?: string;
+  ue4ss: { installed: boolean; version: string | null };
+  paldefender: { installed: boolean; version: string | null };
+  /** UE4SS Lua mods found under ue4ss/Mods. */
+  luaMods: { name: string; enabled: boolean }[];
+  /** .pak files under Pal/Content/Paks (excluding the game's own pak). */
+  pakMods: string[];
+}
+
+export type ModComponent = "ue4ss" | "paldefender";
+
 export interface AgentInfo {
   name: string;
   version: string;

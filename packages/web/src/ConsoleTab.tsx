@@ -11,6 +11,8 @@ import {
 } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { maskSteamIdsInText } from "./SteamId";
+import { EntityPicker } from "./EntityPicker";
+import { useGameData, itemIconUrl, palIconUrl, type GameData } from "./gameData";
 import { btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
 interface LogEntry {
@@ -27,11 +29,13 @@ interface LogEntry {
 function ArgField({
   arg,
   roster,
+  gameData,
   value,
   onChange,
 }: {
   arg: CommandArg;
   roster: KnownPlayer[];
+  gameData: GameData | null;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -39,6 +43,38 @@ function ArgField({
   const online = roster.filter((p) => p.online);
   const offline = roster.filter((p) => !p.online);
   const inRoster = roster.some((p) => p.userId === value);
+
+  // Item/Pal id args get an icon search picker backed by the catalogs.
+  if ((arg.name === "itemid" || arg.name === "eggid") && gameData) {
+    return (
+      <label className={labelCls}>
+        {arg.label}
+        {!arg.required && <span className="font-normal">(選填)</span>}
+        <EntityPicker
+          catalog={gameData.items}
+          iconUrl={itemIconUrl}
+          value={value}
+          onChange={onChange}
+          placeholder="搜尋道具名稱或輸入 ID…"
+        />
+      </label>
+    );
+  }
+  if (arg.name === "palid" && gameData) {
+    return (
+      <label className={labelCls}>
+        {arg.label}
+        {!arg.required && <span className="font-normal">(選填)</span>}
+        <EntityPicker
+          catalog={gameData.pals}
+          iconUrl={palIconUrl}
+          value={value}
+          onChange={onChange}
+          placeholder="搜尋帕魯名稱或輸入 ID…"
+        />
+      </label>
+    );
+  }
 
   return (
     <label className={labelCls}>
@@ -95,6 +131,7 @@ export function ConsoleTab({ client, instanceId }: { client: AgentClient; instan
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const [roster, setRoster] = useState<KnownPlayer[]>([]);
+  const gameData = useGameData();
 
   const load = useCallback(async () => {
     try {
@@ -248,6 +285,7 @@ export function ConsoleTab({ client, instanceId }: { client: AgentClient; instan
                   key={arg.name}
                   arg={arg}
                   roster={roster}
+                  gameData={gameData}
                   value={values[arg.name] ?? ""}
                   onChange={(value) => setValues((v) => ({ ...v, [arg.name]: value }))}
                 />

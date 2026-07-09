@@ -12,6 +12,7 @@ import { loadOrCreateToken, makeAuthHook } from "./auth.js";
 import { InstanceStore } from "./store.js";
 import { PresenceTracker } from "./presence.js";
 import { BackupScheduler } from "./backup-scheduler.js";
+import { RestartSupervisor } from "./supervisor.js";
 import { nativeDriver } from "./native.js";
 import { dockerDriver } from "./docker.js";
 import { registerRoutes } from "./routes.js";
@@ -60,7 +61,12 @@ const scheduler = new BackupScheduler(store, (rec) =>
 );
 scheduler.start();
 
-registerRoutes(app, store, presence, scheduler);
+const supervisor = new RestartSupervisor(store, (rec) =>
+  rec.backend === "native" ? nativeDriver : dockerDriver,
+);
+supervisor.start();
+
+registerRoutes(app, store, presence, scheduler, supervisor);
 
 await app.listen({ host: HOST, port: PORT });
 

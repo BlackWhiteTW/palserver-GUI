@@ -12,6 +12,7 @@ import {
 import { fetchServerCommands, rconExec, requireRcon } from "./rcon.js";
 import type { PresenceTracker } from "./presence.js";
 import type { BackupScheduler } from "./backup-scheduler.js";
+import type { RestartSupervisor } from "./supervisor.js";
 import { AGENT_VERSION } from "./env.js";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { DriverContext, ServerDriver } from "./driver.js";
@@ -36,6 +37,7 @@ export function registerRoutes(
   store: InstanceStore,
   presence: PresenceTracker,
   scheduler: BackupScheduler,
+  supervisor: RestartSupervisor,
 ): void {
   const ctxOf = (rec: InstanceRecord): DriverContext => ({
     instanceDir: store.instanceDir(rec.id),
@@ -140,6 +142,7 @@ export function registerRoutes(
   app.post("/api/instances/:id/start", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
     await driverOf(rec).start(rec, ctxOf(rec));
+    supervisor.noteManualState(rec.id, true);
     return toSummary(rec);
   });
 
@@ -147,6 +150,8 @@ export function registerRoutes(
     const rec = getOr404((req.params as { id: string }).id);
     await driverOf(rec).stop(rec, ctxOf(rec));
     presence.markAllOffline(rec.id);
+    // A deliberate stop must not look like a crash to the supervisor.
+    supervisor.noteManualState(rec.id, false);
     return toSummary(rec);
   });
 
@@ -155,6 +160,7 @@ export function registerRoutes(
     await driverOf(rec).stop(rec, ctxOf(rec));
     presence.markAllOffline(rec.id);
     await driverOf(rec).start(rec, ctxOf(rec));
+    supervisor.noteManualState(rec.id, true);
     return toSummary(rec);
   });
 
@@ -281,6 +287,47 @@ export function registerRoutes(
     const { command } = z.object({ command: z.string().min(1).max(500) }).parse(req.body);
     const output = await rconExec(rec, command);
     return { command, output };
+  });
+
+  // ── automatic restarts ──
+  app.get("/api/instances/:id/restart-policy", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const ctx = ctxOf(rec);
+    const stats = rec.backend === "native" ? await driverOf(rec).stats(rec, ctx) : null;
+    return {
+      supported: rec.backend === "native",
+      reason: rec.backend === "native" ? undefined : "自動重啟目前僅支援原生模式的實例",
+      policy: supervisor.readPolicy(rec.id),
+      events: supervisor.events(rec.id),
+      restartsLastHour: supervisor.restartsLastHour(rec.id),
+      memoryMB: stats ? Math.round(stats.memoryBytes / (1 << 20)) : null,
+    };
+  });
+
+  app.put("/api/instances/:id/restart-policy", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "時間格式須為 HH:MM");
+    const policy = z
+      .object({
+        scheduled: z.object({
+          enabled: z.boolean(),
+          mode: z.enum(["interval", "daily"]),
+          intervalMinutes: z.number().int().min(15).max(10080),
+          dailyTimes: z.array(HHMM).max(12),
+        }),
+        memory: z.object({
+          enabled: z.boolean(),
+          thresholdMB: z.number().int().min(512).max(262144),
+          sustainedChecks: z.number().int().min(1).max(20),
+        }),
+        crash: z.object({
+          enabled: z.boolean(),
+          maxPerHour: z.number().int().min(1).max(20),
+        }),
+        announceSeconds: z.number().int().min(0).max(300),
+      })
+      .parse(req.body);
+    return supervisor.writePolicy(rec.id, policy);
   });
 
   // ── world saves & backups ──

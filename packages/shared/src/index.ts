@@ -278,6 +278,60 @@ export interface SavesStatus {
   schedule: BackupSchedule;
 }
 
+/* ── automatic restarts ── */
+
+export type RestartReason = "scheduled" | "memory" | "crash" | "manual";
+
+export interface RestartPolicy {
+  /** Restart on a timer: every N minutes, or at fixed times of day. */
+  scheduled: {
+    enabled: boolean;
+    mode: "interval" | "daily";
+    intervalMinutes: number;
+    /** "HH:MM" in the agent host's local time */
+    dailyTimes: string[];
+  };
+  /** Restart when the server's memory stays above a threshold. */
+  memory: {
+    enabled: boolean;
+    thresholdMB: number;
+    /** consecutive 30s checks above the threshold before acting (ignores spikes) */
+    sustainedChecks: number;
+  };
+  /** Bring the server back after it exits on its own. */
+  crash: {
+    enabled: boolean;
+    /** give up (and stop retrying) beyond this many restarts in one hour */
+    maxPerHour: number;
+  };
+  /** Warn players over the REST API before a planned restart. 0 = no warning. */
+  announceSeconds: number;
+}
+
+export const DEFAULT_RESTART_POLICY: RestartPolicy = {
+  scheduled: { enabled: false, mode: "interval", intervalMinutes: 360, dailyTimes: ["05:00"] },
+  memory: { enabled: false, thresholdMB: 12288, sustainedChecks: 3 },
+  crash: { enabled: true, maxPerHour: 5 },
+  announceSeconds: 30,
+};
+
+export interface RestartEvent {
+  at: string;
+  reason: RestartReason;
+  ok: boolean;
+  detail: string;
+}
+
+export interface RestartStatus {
+  supported: boolean;
+  reason?: string;
+  policy: RestartPolicy;
+  events: RestartEvent[];
+  restartsLastHour: number;
+  /** current memory of the server process tree, when running */
+  memoryMB: number | null;
+}
+
 export interface AgentInfo {
   name: string;
   version: string;

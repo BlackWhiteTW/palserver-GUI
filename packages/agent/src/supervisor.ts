@@ -1,0 +1,306 @@
+import fs from "node:fs";
+import path from "node:path";
+import {
+  DEFAULT_RESTART_POLICY,
+  type RestartEvent,
+  type RestartPolicy,
+  type RestartReason,
+} from "@palserver/shared";
+import type { DriverContext, ServerDriver } from "./driver.js";
+import type { InstanceStore, InstanceRecord } from "./store.js";
+import { rest } from "./restapi.js";
+
+/**
+ * Automatic restarts, three triggers:
+ *  - scheduled: every N minutes, or at fixed times of day
+ *  - memory:    sustained above a threshold (a single spike won't trip it)
+ *  - crash:     the process exited on its own while we expected it up
+ *
+ * Planned restarts (scheduled/memory) warn players over the REST API and ask
+ * the server to save first. Crash restarts skip that — the server is already
+ * gone — and are rate-limited so a server that dies on boot doesn't get
+ * restarted forever.
+ */
+
+/** How often policies are evaluated. Overridable to speed up tests. */
+const TICK_MS = Number(process.env.PALSERVER_SUPERVISOR_TICK_MS ?? 30_000);
+const MAX_EVENTS = 50;
+const MAX_ANNOUNCE_SECONDS = 300;
+
+interface SupervisorState {
+  /** we last observed it running, so an "exited" now means it crashed */
+  wasRunning: boolean;
+  /** consecutive checks over the memory threshold */
+  memoryStreak: number;
+  /** ISO timestamps of recent restarts, for rate limiting */
+  recentRestarts: string[];
+  /** anchors the "interval" schedule */
+  lastScheduledAt?: string;
+  /** guards against firing a daily time twice within its minute */
+  lastDailyFire?: string;
+  events: RestartEvent[];
+}
+
+const emptyState = (): SupervisorState => ({
+  wasRunning: false,
+  memoryStreak: 0,
+  recentRestarts: [],
+  events: [],
+});
+
+export class RestartSupervisor {
+  private timer: NodeJS.Timeout | null = null;
+  /** instances currently mid-restart — skip them until they settle */
+  private busy = new Set<string>();
+
+  constructor(
+    private store: InstanceStore,
+    private driverFor: (rec: InstanceRecord) => ServerDriver,
+  ) {}
+
+  start(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => void this.tick(), TICK_MS);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  private policyFile = (id: string) => path.join(this.store.instanceDir(id), "restart-policy.json");
+  private stateFile = (id: string) => path.join(this.store.instanceDir(id), "restart-state.json");
+
+  readPolicy(id: string): RestartPolicy {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.policyFile(id), "utf8"));
+      return {
+        ...DEFAULT_RESTART_POLICY,
+        ...raw,
+        scheduled: { ...DEFAULT_RESTART_POLICY.scheduled, ...raw.scheduled },
+        memory: { ...DEFAULT_RESTART_POLICY.memory, ...raw.memory },
+        crash: { ...DEFAULT_RESTART_POLICY.crash, ...raw.crash },
+      };
+    } catch {
+      return structuredClone(DEFAULT_RESTART_POLICY);
+    }
+  }
+
+  writePolicy(id: string, policy: RestartPolicy): RestartPolicy {
+    fs.mkdirSync(this.store.instanceDir(id), { recursive: true });
+    fs.writeFileSync(this.policyFile(id), JSON.stringify(policy, null, 2));
+    return policy;
+  }
+
+  private readState(id: string): SupervisorState {
+    try {
+      return { ...emptyState(), ...JSON.parse(fs.readFileSync(this.stateFile(id), "utf8")) };
+    } catch {
+      return emptyState();
+    }
+  }
+
+  private writeState(id: string, state: SupervisorState): void {
+    fs.mkdirSync(this.store.instanceDir(id), { recursive: true });
+    fs.writeFileSync(this.stateFile(id), JSON.stringify(state, null, 2));
+  }
+
+  events(id: string): RestartEvent[] {
+    return [...this.readState(id).events].reverse();
+  }
+
+  restartsLastHour(id: string): number {
+    return this.recentWithinHour(this.readState(id).recentRestarts).length;
+  }
+
+  private recentWithinHour(stamps: string[]): string[] {
+    const cutoff = Date.now() - 3_600_000;
+    return stamps.filter((s) => Date.parse(s) >= cutoff);
+  }
+
+  private record(id: string, state: SupervisorState, event: RestartEvent): void {
+    state.events.push(event);
+    if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
+    this.writeState(id, state);
+  }
+
+  /** Fixed times of day: fire once when the clock reaches HH:MM. */
+  private dailyDue(policy: RestartPolicy, state: SupervisorState, now: Date): boolean {
+    const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    if (!policy.scheduled.dailyTimes.includes(hhmm)) return false;
+    const key = `${now.toDateString()} ${hhmm}`;
+    return state.lastDailyFire !== key;
+  }
+
+  private scheduledDue(policy: RestartPolicy, state: SupervisorState, now: Date): boolean {
+    if (!policy.scheduled.enabled) return false;
+    if (policy.scheduled.mode === "daily") return this.dailyDue(policy, state, now);
+    const anchor = state.lastScheduledAt ?? state.recentRestarts.at(-1);
+    if (!anchor) return false; // start counting from the first observed tick
+    return (now.getTime() - Date.parse(anchor)) / 60_000 >= policy.scheduled.intervalMinutes;
+  }
+
+  private async tick(): Promise<void> {
+    for (const rec of this.store.list()) {
+      if (rec.backend !== "native" || this.busy.has(rec.id)) continue;
+      try {
+        await this.check(rec);
+      } catch {
+        // transient (server going down mid-check) — next tick re-evaluates
+      }
+    }
+  }
+
+  private async check(rec: InstanceRecord): Promise<void> {
+    const ctx: DriverContext = { instanceDir: this.store.instanceDir(rec.id) };
+    const driver = this.driverFor(rec);
+    const policy = this.readPolicy(rec.id);
+    const state = this.readState(rec.id);
+    const now = new Date();
+    const { status } = await driver.status(rec, ctx);
+
+    if (status !== "running") {
+      // Crashed if we saw it running before and nobody asked us to stop it.
+      if (state.wasRunning && status === "exited" && policy.crash.enabled) {
+        await this.handleCrash(rec, ctx, driver, policy, state);
+        return;
+      }
+      if (state.wasRunning && status !== "exited") {
+        state.wasRunning = false;
+        this.writeState(rec.id, state);
+      }
+      return;
+    }
+
+    if (!state.wasRunning) {
+      state.wasRunning = true;
+      state.lastScheduledAt ??= now.toISOString();
+      this.writeState(rec.id, state);
+    }
+
+    if (this.scheduledDue(policy, state, now)) {
+      if (policy.scheduled.mode === "daily") {
+        const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        state.lastDailyFire = `${now.toDateString()} ${hhmm}`;
+      }
+      await this.restart(rec, ctx, driver, policy, state, "scheduled", "已達排定的重啟時間");
+      return;
+    }
+
+    if (policy.memory.enabled) {
+      const stats = await driver.stats(rec, ctx);
+      const memoryMB = stats ? stats.memoryBytes / (1 << 20) : 0;
+      state.memoryStreak = memoryMB > policy.memory.thresholdMB ? state.memoryStreak + 1 : 0;
+      this.writeState(rec.id, state);
+
+      if (state.memoryStreak >= policy.memory.sustainedChecks) {
+        state.memoryStreak = 0;
+        await this.restart(
+          rec,
+          ctx,
+          driver,
+          policy,
+          state,
+          "memory",
+          `記憶體 ${memoryMB.toFixed(0)} MB 持續超過 ${policy.memory.thresholdMB} MB`,
+        );
+      }
+    }
+  }
+
+  private async handleCrash(
+    rec: InstanceRecord,
+    ctx: DriverContext,
+    driver: ServerDriver,
+    policy: RestartPolicy,
+    state: SupervisorState,
+  ): Promise<void> {
+    const recent = this.recentWithinHour(state.recentRestarts);
+    if (recent.length >= policy.crash.maxPerHour) {
+      state.wasRunning = false; // stop retrying until someone starts it manually
+      state.recentRestarts = recent;
+      this.record(rec.id, state, {
+        at: new Date().toISOString(),
+        reason: "crash",
+        ok: false,
+        detail: `一小時內已重啟 ${recent.length} 次,達到上限後停止自動重啟`,
+      });
+      return;
+    }
+
+    this.busy.add(rec.id);
+    try {
+      await driver.start(rec, ctx);
+      state.recentRestarts = [...recent, new Date().toISOString()];
+      state.wasRunning = true;
+      this.record(rec.id, state, {
+        at: new Date().toISOString(),
+        reason: "crash",
+        ok: true,
+        detail: `伺服器異常結束,已自動重啟(本小時第 ${recent.length + 1} 次)`,
+      });
+    } catch (err) {
+      state.recentRestarts = [...recent, new Date().toISOString()];
+      this.record(rec.id, state, {
+        at: new Date().toISOString(),
+        reason: "crash",
+        ok: false,
+        detail: `自動重啟失敗:${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      this.busy.delete(rec.id);
+    }
+  }
+
+  /** Planned restart: warn players, flush the world, then stop and start. */
+  async restart(
+    rec: InstanceRecord,
+    ctx: DriverContext,
+    driver: ServerDriver,
+    policy: RestartPolicy,
+    state: SupervisorState,
+    reason: RestartReason,
+    detail: string,
+  ): Promise<void> {
+    this.busy.add(rec.id);
+    try {
+      const wait = Math.min(Math.max(policy.announceSeconds, 0), MAX_ANNOUNCE_SECONDS);
+      if (wait > 0) {
+        await rest
+          .announce(rec, `伺服器將在 ${wait} 秒後重新啟動(${detail})`)
+          .catch(() => {}); // REST off — restart anyway, just without warning
+        await new Promise((r) => setTimeout(r, wait * 1000));
+      }
+      await rest.save(rec).catch(() => {});
+
+      await driver.stop(rec, ctx);
+      await driver.start(rec, ctx);
+
+      const now = new Date().toISOString();
+      state.recentRestarts = [...this.recentWithinHour(state.recentRestarts), now];
+      state.lastScheduledAt = now;
+      state.wasRunning = true;
+      this.record(rec.id, state, { at: now, reason, ok: true, detail });
+    } catch (err) {
+      this.record(rec.id, state, {
+        at: new Date().toISOString(),
+        reason,
+        ok: false,
+        detail: `重啟失敗:${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      this.busy.delete(rec.id);
+    }
+  }
+
+  /** Called when a human starts/stops an instance, so crash detection and the
+   * interval schedule anchor to the new reality. */
+  noteManualState(id: string, running: boolean): void {
+    const state = this.readState(id);
+    state.wasRunning = running;
+    state.memoryStreak = 0;
+    if (running) state.lastScheduledAt = new Date().toISOString();
+    this.writeState(id, state);
+  }
+}

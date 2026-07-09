@@ -16,6 +16,8 @@ import type {
   ModsStatus,
   PresenceEvent,
   RconCommandsResponse,
+  RestartPolicy,
+  RestartStatus,
   SavesStatus,
   WorldSettings,
 } from "@palserver/shared";
@@ -152,6 +154,17 @@ export class AgentClient {
 
   saveWorld(id: string): Promise<{ saved: boolean }> {
     return this.request(`/api/instances/${id}/save`, { method: "POST", body: "{}" });
+  }
+
+  restartPolicy(id: string): Promise<RestartStatus> {
+    return this.request(`/api/instances/${id}/restart-policy`);
+  }
+
+  updateRestartPolicy(id: string, policy: RestartPolicy): Promise<RestartPolicy> {
+    return this.request(`/api/instances/${id}/restart-policy`, {
+      method: "PUT",
+      body: JSON.stringify(policy),
+    });
   }
 
   saves(id: string): Promise<SavesStatus> {

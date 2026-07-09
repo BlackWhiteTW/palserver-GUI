@@ -14,6 +14,7 @@ import { PlayersTab } from "./PlayersTab";
 import { MapTab } from "./MapTab";
 import { ConsoleTab } from "./ConsoleTab";
 import { SavesTab } from "./SavesTab";
+import { RestartCard } from "./RestartCard";
 import { STATUS_LABELS } from "./labels";
 import { StatusBadge, btn, btnDanger, btnGhost, card, errorCls } from "./ui";
 
@@ -219,8 +220,8 @@ function OverviewTab({ client, detail }: { client: AgentClient; detail: Detail }
         <dl className="flex flex-col gap-2">
           {rows.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-4 text-sm">
-              <dt className="text-ink-muted">{k}</dt>
-              <dd className="font-bold">{v}</dd>
+              <dt className="shrink-0 text-ink-muted">{k}</dt>
+              <dd className="text-right font-bold break-all">{v}</dd>
             </div>
           ))}
         </dl>
@@ -240,6 +241,7 @@ function OverviewTab({ client, detail }: { client: AgentClient; detail: Detail }
           <p className="text-sm text-ink-muted">伺服器未在運作中。</p>
         )}
       </div>
+      <RestartCard client={client} instanceId={detail.id} />
     </div>
   );
 }

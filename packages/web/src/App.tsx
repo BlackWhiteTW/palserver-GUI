@@ -10,6 +10,7 @@ import { InstanceDetailPage } from "./InstanceDetail";
 import { Mascot } from "./Mascot";
 import { AnnouncementPopup } from "./AnnouncementModal";
 import { SiteFooter } from "./SiteFooter";
+import { ThemeToggle } from "./theme";
 import { Overlay, StatusBadge, btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
 export default function App() {
@@ -51,7 +52,8 @@ function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => v
   const [showCredits, setShowCredits] = useState(false);
 
   return (
-    <div className="mx-auto max-w-[1200px] p-6">
+    // data-content-root:左下角的 SiteFooter 靠它判斷自己有沒有蓋到內容。
+    <div data-content-root className="mx-auto max-w-[1200px] p-6">
       <header className="mb-6 flex items-center justify-between">
         <button className="flex items-center gap-2.5" onClick={() => setSelectedId(null)}>
           <img src="/logo.png" alt="" className="size-10 rounded-xl" />
@@ -59,6 +61,7 @@ function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => v
         </button>
         <div className="flex items-center gap-2.5">
           <span className="hidden text-[13px] text-ink-muted sm:inline">{conn.url}</span>
+          <ThemeToggle />
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowCredits(true)}

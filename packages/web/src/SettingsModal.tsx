@@ -103,19 +103,17 @@ export function SettingsModal({
           </div>
 
           {addrs && addrs.length > 0 ? (
+            // agent 已把最適合遠端連線的位址(Tailscale/VPN 優先)排在最前面,
+            // 只給那一條 —— 列出一堆區網位址反而讓人不知道該複製哪個。
             <div>
               <p className="mb-1 text-xs font-bold text-ink-muted">一鍵登入連結(複製給其他裝置打開)</p>
-              <div className="flex flex-col gap-2">
-                {addrs.map((a) => (
-                  <div key={a.ip} className="flex items-center gap-2">
-                    <Copyable text={linkFor(a.ip)} mono />
-                    {a.tailscale && (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border-[1.5px] border-pal/40 bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
-                        <FiWifi className="size-3" /> Tailscale
-                      </span>
-                    )}
-                  </div>
-                ))}
+              <div className="flex items-center gap-2">
+                <Copyable text={linkFor(addrs[0].ip)} mono />
+                {addrs[0].tailscale && (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border-[1.5px] border-pal/40 bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
+                    <FiWifi className="size-3" /> Tailscale
+                  </span>
+                )}
               </div>
             </div>
           ) : (

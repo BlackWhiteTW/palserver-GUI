@@ -208,9 +208,9 @@ function PairStep({
   return (
     <Screen subtitle={sameOrigin ? "快完成了!輸入配對碼" : `連線到 ${agentUrl}`}>
       <form className="flex flex-col gap-4 text-left" onSubmit={submit}>
-        <p className="inline-flex items-start gap-2 rounded-xl bg-card-soft px-3 py-2 text-xs text-ink-muted">
+        <p className="flex items-start gap-2 rounded-xl bg-card-soft px-3 py-2 text-xs text-ink-muted">
           <FiLock className="mt-0.5 size-4 shrink-0 text-pal" />
-          在 agent 的視窗上找到配對碼(像 <b>8F3K-2QP7</b>),或直接貼上朋友給你的設定連結。
+          <span>在 agent 的視窗上找到配對碼(像 <b>8F3K-2QP7</b>),或直接貼上朋友給你的設定連結。</span>
         </p>
         <label className={labelCls}>
           配對碼

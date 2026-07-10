@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FiArrowLeft, FiPlay, FiSquare, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import type {
   InstanceDetail as Detail,
-  InstanceStats,
   LogSource,
   LogSourceId,
   WorldSettings,
@@ -18,6 +17,8 @@ import { SavesTab } from "./SavesTab";
 import { RestartCard } from "./RestartCard";
 import { VersionCard } from "./VersionCard";
 import { ConnectionCard } from "./ConnectionCard";
+import { MigrationCard } from "./MigrationCard";
+import { PerformanceTab } from "./PerformanceTab";
 import { EngineTab } from "./EngineTab";
 import { maskSteamIdsInText } from "./SteamId";
 import { STATUS_LABELS } from "./labels";
@@ -25,6 +26,7 @@ import { StatusBadge, btn, btnDanger, btnGhost, card, errorCls } from "./ui";
 
 type Tab =
   | "overview"
+  | "performance"
   | "players"
   | "map"
   | "console"
@@ -37,11 +39,12 @@ type Tab =
   | "logs";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "總覽" },
+  { id: "performance", label: "效能分析" },
   { id: "players", label: "玩家" },
   { id: "map", label: "線上地圖" },
   { id: "console", label: "指令" },
   { id: "settings", label: "世界設定" },
-  { id: "engine", label: "效能" },
+  { id: "engine", label: "引擎微調" },
   { id: "mods", label: "模組" },
   { id: "paldefender", label: "PalDefender" },
   { id: "saves", label: "存檔備份" },
@@ -182,6 +185,9 @@ export function InstanceDetailPage({
       </div>
 
       {tab === "overview" && <OverviewTab client={client} detail={detail} onRefresh={refresh} />}
+      {tab === "performance" && (
+        <PerformanceTab client={client} instanceId={detail.id} running={detail.status === "running"} />
+      )}
       {tab === "players" && <PlayersTab client={client} instanceId={detail.id} />}
       {tab === "map" && <MapTab client={client} instanceId={detail.id} />}
       {tab === "console" && <ConsoleTab client={client} instanceId={detail.id} />}
@@ -223,7 +229,6 @@ function OverviewTab({
   detail: Detail;
   onRefresh: () => void;
 }) {
-  const [stats, setStats] = useState<InstanceStats | null>(null);
   const [enhancements, setEnhancements] = useState<string[] | null>(null);
 
   useEffect(() => {
@@ -237,28 +242,6 @@ function OverviewTab({
       })
       .catch(() => setEnhancements(null));
   }, [client, detail.id]);
-
-  useEffect(() => {
-    if (detail.status !== "running") {
-      setStats(null);
-      return;
-    }
-    let alive = true;
-    const poll = () =>
-      client
-        .stats(detail.id)
-        .then((s) => alive && setStats(s))
-        .catch(() => alive && setStats(null));
-    void poll();
-    const timer = setInterval(poll, 5000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [client, detail.id, detail.status]);
-
-  const fmtBytes = (n: number) =>
-    n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GB` : `${Math.round(n / (1 << 20))} MB`;
 
   const rows: [string, string][] = [
     ["狀態", STATUS_LABELS[detail.status]],
@@ -288,21 +271,7 @@ function OverviewTab({
           ))}
         </dl>
       </div>
-      <div className={card}>
-        <h3 className="mb-3 text-sm font-extrabold text-ink-muted">資源用量</h3>
-        {stats ? (
-          <div className="flex flex-col gap-4">
-            <Meter label="CPU" text={`${stats.cpuPercent.toFixed(1)}%`} ratio={Math.min(stats.cpuPercent / 100, 1)} />
-            <Meter
-              label="記憶體"
-              text={`${fmtBytes(stats.memoryBytes)} / ${fmtBytes(stats.memoryLimitBytes)}`}
-              ratio={stats.memoryLimitBytes ? stats.memoryBytes / stats.memoryLimitBytes : 0}
-            />
-          </div>
-        ) : (
-          <p className="text-sm text-ink-muted">伺服器未在運作中。</p>
-        )}
-      </div>
+      <MigrationCard />
       <VersionCard
         client={client}
         instanceId={detail.id}
@@ -310,20 +279,6 @@ function OverviewTab({
         onUpdateStarted={onRefresh}
       />
       <ConnectionCard client={client} instanceId={detail.id} />
-    </div>
-  );
-}
-
-function Meter({ label, text, ratio }: { label: string; text: string; ratio: number }) {
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-sm">
-        <span className="text-ink-muted">{label}</span>
-        <span className="font-bold">{text}</span>
-      </div>
-      <div className="h-3 overflow-hidden rounded-full bg-card-soft">
-        <div className="h-full rounded-full bg-pal transition-all" style={{ width: `${ratio * 100}%` }} />
-      </div>
     </div>
   );
 }

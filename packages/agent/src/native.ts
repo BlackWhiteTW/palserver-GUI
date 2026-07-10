@@ -319,10 +319,15 @@ export const nativeDriver: ServerDriver = {
     );
     const alive = usages.filter((u) => u !== null);
     if (alive.length === 0) return null;
+    // 主行程(pids[0])的 elapsed 就是伺服器運行時間;pidusage 以毫秒回報。
+    const mainElapsed = usages[0]?.elapsed;
     return {
       cpuPercent: alive.reduce((sum, u) => sum + u.cpu, 0),
+      cpuCores: os.cpus().length,
       memoryBytes: alive.reduce((sum, u) => sum + u.memory, 0),
       memoryLimitBytes: os.totalmem(),
+      processCount: alive.length,
+      uptimeSeconds: mainElapsed ? Math.round(mainElapsed / 1000) : undefined,
     } satisfies InstanceStats;
   },
 

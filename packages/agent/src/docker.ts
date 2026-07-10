@@ -136,6 +136,7 @@ export async function getStats(rec: InstanceRecord): Promise<InstanceStats | nul
   const cpuCount = stats.cpu_stats.online_cpus || 1;
   return {
     cpuPercent: sysDelta > 0 ? (cpuDelta / sysDelta) * cpuCount * 100 : 0,
+    cpuCores: cpuCount,
     memoryBytes: stats.memory_stats.usage ?? 0,
     memoryLimitBytes: stats.memory_stats.limit ?? 0,
   };

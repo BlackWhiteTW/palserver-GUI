@@ -93,8 +93,14 @@ export interface InstanceDetail extends InstanceSummary {
 
 export interface InstanceStats {
   cpuPercent: number;
+  /** 主機/容器可用的邏輯核心數,讓前端判讀 cpuPercent 的滿載基準。 */
+  cpuCores: number;
   memoryBytes: number;
   memoryLimitBytes: number;
+  /** 伺服器行程樹的行程數(native);docker 省略。 */
+  processCount?: number;
+  /** 行程已運行秒數(取主行程);取不到時省略。 */
+  uptimeSeconds?: number;
 }
 
 /** Mod-management state for one instance (native backend only). */

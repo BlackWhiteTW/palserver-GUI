@@ -6,28 +6,31 @@ import { AgentClient, loadConnection, saveConnection, type Connection } from "./
 import { InstanceDetailPage } from "./InstanceDetail";
 import { Mascot } from "./Mascot";
 import { AnnouncementPopup } from "./AnnouncementModal";
+import { SiteFooter } from "./SiteFooter";
 import { Overlay, StatusBadge, btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
 export default function App() {
   const [conn, setConn] = useState<Connection | null>(loadConnection);
-  if (!conn) {
-    return (
-      <ConnectScreen
-        onConnect={(c) => {
-          saveConnection(c);
-          setConn(c);
-        }}
-      />
-    );
-  }
   return (
-    <Shell
-      conn={conn}
-      onDisconnect={() => {
-        saveConnection(null);
-        setConn(null);
-      }}
-    />
+    <>
+      {!conn ? (
+        <ConnectScreen
+          onConnect={(c) => {
+            saveConnection(c);
+            setConn(c);
+          }}
+        />
+      ) : (
+        <Shell
+          conn={conn}
+          onDisconnect={() => {
+            saveConnection(null);
+            setConn(null);
+          }}
+        />
+      )}
+      <SiteFooter />
+    </>
   );
 }
 

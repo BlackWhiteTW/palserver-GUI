@@ -3,7 +3,7 @@ import path from "node:path";
 import { DEFAULT_BACKUP_SCHEDULE, type BackupSchedule } from "@palserver/shared";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { ServerDriver } from "./driver.js";
-import { activeWorldGuid, createBackup, pruneBackups, serverRootOf } from "./saves.js";
+import { activeWorldGuidAsync, createBackup, pruneBackups } from "./saves.js";
 import { rest } from "./restapi.js";
 
 /**
@@ -69,7 +69,7 @@ export class BackupScheduler {
   private async tick(): Promise<void> {
     for (const rec of this.store.list()) {
       const schedule = this.read(rec.id);
-      if (!this.due(schedule) || rec.backend !== "native") continue;
+      if (!this.due(schedule) || rec.backend === "docker") continue;
       try {
         await this.runFor(rec, schedule);
       } catch (err) {
@@ -103,7 +103,7 @@ export class BackupScheduler {
       }
     }
 
-    const guid = activeWorldGuid(serverRootOf(rec, ctx));
+    const guid = await activeWorldGuidAsync(rec, ctx);
     if (!guid) {
       return this.update(rec.id, {
         lastRunAt: new Date().toISOString(),

@@ -22,6 +22,7 @@ const STATUS_CLS: Record<InstanceStatus, string> = {
   running: "border-grass/40 bg-grass/15 text-grass",
   installing: "border-sun/40 bg-sun/15 text-sun",
   restarting: "border-sun/40 bg-sun/15 text-sun",
+  starting: "border-pal/40 bg-pal/15 text-pal",
   exited: "border-berry/35 bg-berry/10 text-berry",
   missing: "border-berry/35 bg-berry/10 text-berry",
   created: "border-line bg-card-soft text-ink-muted",

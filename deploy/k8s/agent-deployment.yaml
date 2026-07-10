@@ -1,0 +1,127 @@
+# palserver-gui agent（管理面板後端 + 前端）
+# 在 k8s 叢集內運行，用 service account 存取 game-server StatefulSet
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: palserver
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: palserver-agent-sa
+  namespace: palserver
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: palserver-agent-role
+  namespace: palserver
+rules:
+  # StatefulSet 讀取 + scale patch
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # StatefulSet scale 子資源
+  - apiGroups: ["apps"]
+    resources: ["statefulsets/scale"]
+    verbs: ["get", "patch", "update"]
+  # Pod 列表 + 刪除（restart 用）+ 日誌
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Pod exec（存檔/引擎微調等檔案操作；k3s 需要 create + get）
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: palserver-agent-rb
+  namespace: palserver
+subjects:
+  - kind: ServiceAccount
+    name: palserver-agent-sa
+    namespace: palserver
+roleRef:
+  kind: Role
+  name: palserver-agent-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: palworld-secrets
+  namespace: palserver
+type: Opaque
+stringData:
+  server-password: "test123"
+  admin-password: "test123"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: palserver-agent
+  namespace: palserver
+  labels:
+    app: palserver-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: palserver-agent
+  template:
+    metadata:
+      labels:
+        app: palserver-agent
+    spec:
+      serviceAccountName: palserver-agent-sa
+      containers:
+        - name: agent
+          image: palserver-agent:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8250
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PALSERVER_AGENT_HOST
+              value: "0.0.0.0"
+            - name: PALSERVER_AGENT_PORT
+              value: "8250"
+            - name: PALSERVER_NO_OPEN
+              value: "1"
+            - name: PALSERVER_REQUIRE_TOKEN
+              value: "0"
+            - name: PALSERVER_TELEMETRY
+              value: "0"
+            - name: PALSERVER_AUTO_UPDATE
+              value: "0"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: palserver-agent
+  namespace: palserver
+spec:
+  type: NodePort
+  selector:
+    app: palserver-agent
+  ports:
+    - port: 8250
+      targetPort: 8250
+      nodePort: 30000
+      protocol: TCP
+      name: http

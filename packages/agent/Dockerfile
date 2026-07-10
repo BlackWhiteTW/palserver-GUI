@@ -2,6 +2,7 @@
 FROM node:22-alpine AS build
 RUN corepack enable
 WORKDIR /app
+ENV CI=true
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm -r build
 

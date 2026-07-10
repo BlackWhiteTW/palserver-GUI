@@ -36,6 +36,19 @@ const GH_REPOS: Record<ModComponent, { repo: string; asset: RegExp; envUrl: stri
 };
 
 const win64Dir = (root: string) => path.join(root, "Pal", "Binaries", "Win64");
+
+/** Cheap fs check of which enhancements are installed, for instance summaries. */
+export function installedEnhancements(root: string): string[] {
+  const out: string[] = [];
+  if (fs.existsSync(path.join(win64Dir(root), "PalDefender.dll"))) out.push("PalDefender");
+  if (
+    fs.existsSync(path.join(win64Dir(root), "ue4ss", "UE4SS.dll")) ||
+    fs.existsSync(path.join(win64Dir(root), "UE4SS.dll"))
+  ) {
+    out.push("UE4SS");
+  }
+  return out;
+}
 /** UE4SS mods dir — new layout (ue4ss/Mods) or the flat pre-3.1 layout (Mods). */
 const ue4ssModsDir = (root: string) => {
   const nested = path.join(win64Dir(root), "ue4ss", "Mods");

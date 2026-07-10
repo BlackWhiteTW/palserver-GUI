@@ -80,6 +80,8 @@ export interface InstanceSummary {
   /** cached, so listing instances never hits the network */
   gameVersion: string | null;
   updateAvailable: boolean | null;
+  /** installed enhancements (PalDefender / UE4SS), for the 原味/強化 label */
+  enhancements: string[];
 }
 
 export interface InstanceDetail extends InstanceSummary {

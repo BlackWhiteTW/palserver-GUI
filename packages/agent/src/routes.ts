@@ -24,7 +24,7 @@ import * as dockerOps from "./docker.js";
 import { isInstalling, nativeDriver, updateServer } from "./native.js";
 import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
-import { getModsStatus, installComponent, setLuaModEnabled } from "./mods.js";
+import { getModsStatus, installComponent, installedEnhancements, setLuaModEnabled } from "./mods.js";
 import { getModerationLists, moderation } from "./moderation.js";
 import { getLiveStatus, rest } from "./restapi.js";
 import * as files from "./files.js";
@@ -59,6 +59,8 @@ export function registerRoutes(
     const { status } = await driverOf(rec).status(rec, ctxOf(rec));
     // Cached only — listing instances must never wait on Steam or the server.
     const { gameVersion, updateAvailable } = cachedVersionSummary(rec, ctxOf(rec));
+    const enhancements =
+      rec.backend === "native" ? installedEnhancements(saves.serverRootOf(rec, ctxOf(rec))) : [];
     return {
       id: rec.id,
       name: rec.name,
@@ -69,6 +71,7 @@ export function registerRoutes(
       createdAt: rec.createdAt,
       gameVersion,
       updateAvailable,
+      enhancements,
     };
   };
 

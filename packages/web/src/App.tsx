@@ -170,7 +170,7 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
                 <StatusBadge status={inst.status} />
               </div>
               <p className="mt-1 text-[13px] text-ink-muted">
-                {inst.flavor === "vanilla" ? "原味" : "模組版"} · UDP {inst.gamePort}
+                {inst.enhancements.length > 0 ? "強化" : "原味"} · UDP {inst.gamePort}
                 {inst.gameVersion && ` · ${inst.gameVersion}`}
               </p>
               {inst.updateAvailable && (

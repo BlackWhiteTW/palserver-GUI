@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { FiCopy, FiCheck, FiHome, FiGlobe, FiExternalLink, FiShield } from "react-icons/fi";
+import { FiCopy, FiCheck, FiGlobe, FiExternalLink, FiShield, FiMessageCircle } from "react-icons/fi";
 import type { ConnectionInfo } from "@palserver/shared";
 import type { AgentClient } from "./api";
-import { card, btnGhost } from "./ui";
+import { card, btn as btnPrimary, btnGhost } from "./ui";
+
+/** Our company's IP-direct-connect setup service, promoted for public access. */
+const SERVICE = {
+  name: "IP 直連設定服務",
+  website: "https://iosoftware.ai/ip-connect-service",
+  discord: "https://discord.gg/sgMMdUZd3V",
+};
 
 /** "How do my friends join?" — the question every host actually asks, laid
  * out for non-technical users: same-network, VPN (Radmin / Tailscale), and
@@ -25,20 +32,7 @@ export function ConnectionCard({ client, instanceId }: { client: AgentClient; in
         <FiGlobe className="size-4 text-pal" /> 邀請朋友加入
       </h3>
 
-      {/* 1) 同一個網路 */}
-      <Section
-        icon={<FiHome className="size-4 text-grass" />}
-        title="同一個網路的朋友(同住/同一個 WiFi)"
-        hint="最簡單,不用任何設定。把下面的位址給對方,在遊戲的「加入多人遊戲(專用伺服器)」貼上即可。"
-      >
-        {info.lan.length > 0 ? (
-          info.lan.map((ip) => <AddressChip key={ip} address={`${ip}:${port}`} />)
-        ) : (
-          <p className="text-[13px] text-ink-muted">找不到區網位址。</p>
-        )}
-      </Section>
-
-      {/* 2) VPN(推薦給遠端朋友) */}
+      {/* 1) VPN(推薦給遠端朋友) */}
       <Section
         icon={<FiShield className="size-4 text-pal" />}
         title="遠端的朋友 — 用 VPN 連線(推薦)"
@@ -66,35 +60,43 @@ export function ConnectionCard({ client, instanceId }: { client: AgentClient; in
         </div>
       </Section>
 
-      {/* 3) 公開連線(進階) */}
-      <Section
-        icon={<FiGlobe className="size-4 text-sun" />}
-        title="開放公開連線(進階,不建議新手)"
-        hint="讓任何人不裝 VPN 也能連,但需要在路由器設定「連接埠轉發」,且伺服器會曝露在網路上有安全風險。"
-      >
-        {info.publicIp ? (
-          <>
-            <p className="mb-1 text-xs font-bold text-ink-muted">你的公開位址:</p>
-            <AddressChip address={`${info.publicIp}:${port}`} />
-            {info.behindNat && (
-              <p className="mt-2 text-xs text-sun">
-                你的電腦在路由器後面 — 朋友要能連進來,需在路由器把 <b>UDP {port}</b> 轉發到這台電腦。
-                若你用的是行動網路 / 部分光世代(CGNAT),可能沒有真正的公開 IP,這時只能用上面的 VPN 方式。
-              </p>
-            )}
-            <a
-              className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-bold text-pal hover:underline"
-              href="https://www.youtube.com/results?search_query=%E8%B7%AF%E7%94%B1%E5%99%A8+%E9%80%A3%E6%8E%A5%E5%9F%A0+%E8%BD%89%E7%99%BC+port+forwarding+%E6%95%99%E5%AD%B8"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FiExternalLink className="size-3.5" /> 連接埠轉發教學影片
-            </a>
-          </>
-        ) : (
-          <p className="text-[13px] text-ink-muted">無法取得公開 IP(可能離線)。</p>
-        )}
-      </Section>
+      {/* 2) 公開 IP 直連(主打協助設定服務) */}
+      <div className="rounded-xl border-2 border-pal/40 bg-pal/5 p-3">
+        <p className="inline-flex items-center gap-2 text-[13px] font-extrabold">
+          <FiGlobe className="size-4 text-pal" />
+          想讓朋友不裝 VPN 直接連?交給我們設定
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">
+          公開 IP 直連需要處理路由器連接埠轉發、防火牆、浮動 IP / CGNAT 等問題,對新手很麻煩。
+          我們提供「IP 直連設定服務」,協助你把公開連線一次設定到位。
+          {info.publicIp && (
+            <>
+              <br />
+              目前偵測到你的公開位址:
+              <span className="ml-1 font-mono font-bold">{info.publicIp}:{port}</span>
+              {info.behindNat && "(在路由器後面,需要設定連接埠轉發才能直連)"}
+            </>
+          )}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <a
+            className={`${btnPrimary} inline-flex items-center gap-1.5`}
+            href={SERVICE.website}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <FiExternalLink className="size-4" /> {SERVICE.name}
+          </a>
+          <a
+            className={`${btnGhost} inline-flex items-center gap-1.5`}
+            href={SERVICE.discord}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <FiMessageCircle className="size-4" /> Discord 詢問
+          </a>
+        </div>
+      </div>
 
       <p className="text-xs text-ink-muted">
         提示:朋友連線用的是「遊戲埠 UDP {port}」。若朋友連不進來,先確認伺服器正在運作中、且防火牆有放行。

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FiChevronDown } from "react-icons/fi";
 
 /**
  * i18n:中(zh-TW,原文)/ 英 / 日。
@@ -145,21 +146,25 @@ export function initI18n(): void {
   void loadDict(lang);
 }
 
-/** header 上的語言下拉選單(原生 select,樣式比照 ghost 按鈕)。 */
+/** header 上的語言下拉選單(樣式比照 ghost 按鈕)。原生箭頭位置各瀏覽器
+ * 不一,改用 appearance-none + 自繪箭頭,右側留出舒服的間距。 */
 export function LangSelect() {
   const { lang: current, setLang: set } = useI18n();
   return (
-    <select
-      className="rounded-full border-2 border-line bg-card-soft px-3 py-2 text-sm font-extrabold text-ink outline-none transition hover:border-pal"
-      value={current}
-      onChange={(e) => set(e.target.value as Lang)}
-      aria-label="Language"
-    >
-      {(Object.keys(LANG_LABELS) as Lang[]).map((l) => (
-        <option key={l} value={l}>
-          {LANG_LABELS[l]}
-        </option>
-      ))}
-    </select>
+    <span className="relative inline-flex">
+      <select
+        className="appearance-none rounded-full border-2 border-line bg-card-soft py-2 pr-10 pl-4 text-sm font-extrabold text-ink outline-none transition hover:border-pal"
+        value={current}
+        onChange={(e) => set(e.target.value as Lang)}
+        aria-label="Language"
+      >
+        {(Object.keys(LANG_LABELS) as Lang[]).map((l) => (
+          <option key={l} value={l}>
+            {LANG_LABELS[l]}
+          </option>
+        ))}
+      </select>
+      <FiChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-ink-muted" />
+    </span>
   );
 }

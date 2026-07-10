@@ -168,14 +168,14 @@ export function InstanceDetailPage({
 
       {error && <p className={errorCls}>{error}</p>}
 
-      <div className="flex flex-wrap gap-2 border-b-2 border-line">
+      <div className="flex gap-2 overflow-x-auto border-b-2 border-line">
         {TABS.filter((t) => t.id !== "paldefender" || palDefender).map((t) => (
           <button
             key={t.id}
             className={
               t.id === tab
-                ? "-mb-0.5 border-b-[3px] border-pal px-4 py-2 text-sm font-extrabold text-pal"
-                : "px-4 py-2 text-sm font-extrabold text-ink-muted transition hover:text-ink"
+                ? "-mb-0.5 shrink-0 border-b-[3px] border-pal px-4 py-2 text-sm font-extrabold whitespace-nowrap text-pal"
+                : "shrink-0 px-4 py-2 text-sm font-extrabold whitespace-nowrap text-ink-muted transition hover:text-ink"
             }
             onClick={() => setTab(t.id)}
           >

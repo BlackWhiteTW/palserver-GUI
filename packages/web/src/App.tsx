@@ -47,7 +47,7 @@ function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => v
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
-    <div className="mx-auto max-w-[1000px] p-6">
+    <div className="mx-auto max-w-[1600px] p-6">
       <header className="mb-6 flex items-center justify-between">
         <button className="flex items-center gap-2.5" onClick={() => setSelectedId(null)}>
           <img src="/logo.png" alt="" className="size-10 rounded-xl" />

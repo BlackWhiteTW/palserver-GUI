@@ -49,8 +49,44 @@ export function saveConnection(conn: Connection | null): void {
   else localStorage.removeItem(STORAGE_KEY);
 }
 
+/**
+ * 偵測某位址是不是 palserver agent,並回報此請求是否已授權(本機 loopback 會
+ * 直接 authenticated=true)。連不到 / 非 agent 回 null。連線畫面用它判斷:
+ * same-origin 有 agent = 合一版;否則是純 web 站,請玩家輸入自己的 agent 位址。
+ */
+export async function probeAgent(url: string, token?: string): Promise<AgentInfo | null> {
+  try {
+    const res = await fetch(`${url}/api/info`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const info = (await res.json()) as AgentInfo;
+    return info?.name === "palserver-agent" ? info : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 用配對碼向 agent 換發長 token。 */
+export async function pairAgent(url: string, code: string): Promise<string> {
+  const res = await fetch(`${url}/api/pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code.trim() }),
+    signal: AbortSignal.timeout(6000),
+  });
+  const body = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+  if (!res.ok || !body.token) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return body.token;
+}
+
 export class AgentClient {
-  constructor(private conn: Connection) {}
+  /** onUnauthorized:任何請求收到 401 時呼叫,讓 App 清掉失效連線、退回連線畫面。 */
+  constructor(
+    private conn: Connection,
+    private onUnauthorized?: () => void,
+  ) {}
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const res = await fetch(`${this.conn.url}${path}`, {
@@ -61,6 +97,10 @@ export class AgentClient {
         ...init.headers,
       },
     });
+    if (res.status === 401) {
+      this.onUnauthorized?.();
+      throw new Error("unauthorized");
+    }
     if (res.status === 204) return undefined as T;
     const body = await res.json().catch(() => ({ error: res.statusText }));
     if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);

@@ -3,6 +3,7 @@ import { GiSheep, GiEggClutch } from "react-icons/gi";
 import { FiDownload, FiPlus } from "react-icons/fi";
 import type { InstanceSummary } from "@palserver/shared";
 import { AgentClient, loadConnection, saveConnection, type Connection } from "./api";
+import { ConnectFlow } from "./ConnectFlow";
 import { InstanceDetailPage } from "./InstanceDetail";
 import { Mascot } from "./Mascot";
 import { AnnouncementPopup } from "./AnnouncementModal";
@@ -10,11 +11,16 @@ import { SiteFooter } from "./SiteFooter";
 import { Overlay, StatusBadge, btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
 export default function App() {
-  const [conn, setConn] = useState<Connection | null>(loadConnection);
+  const [conn, setConn] = useState<Connection | null>(() => {
+    // 網址帶 ?setup= 時強制重新配對:忽略可能已過期的舊連線,交給 ConnectFlow
+    // 用連結裡的配對碼換一把新 token。否則沿用上次存的連線。
+    if (new URLSearchParams(window.location.search).has("setup")) return null;
+    return loadConnection();
+  });
   return (
     <>
       {!conn ? (
-        <ConnectScreen
+        <ConnectFlow
           onConnect={(c) => {
             saveConnection(c);
             setConn(c);
@@ -34,65 +40,10 @@ export default function App() {
   );
 }
 
-function ConnectScreen({ onConnect }: { onConnect: (c: Connection) => void }) {
-  const [url, setUrl] = useState("http://localhost:8250");
-  const [token, setToken] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const conn = { url: url.replace(/\/$/, ""), token: token.trim() };
-    try {
-      await new AgentClient(conn).info();
-      onConnect(conn);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form className={`${card} flex w-[380px] flex-col gap-4 text-center`} onSubmit={submit}>
-        <img src="/logo.png" alt="palserver GUI" className="mx-auto size-18 rounded-[22px]" />
-        <div>
-          <h1 className="text-[22px] font-extrabold tracking-wide">palserver GUI</h1>
-          <p className="mt-1 text-[13px] text-ink-muted">連線到你的 palserver agent</p>
-        </div>
-        <label className={labelCls}>
-          Agent 位址
-          <input
-            className={inputCls}
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://host:8250"
-          />
-        </label>
-        <label className={labelCls}>
-          API Token
-          <input
-            className={inputCls}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            type="password"
-            placeholder="agent 首次啟動時印在終端機"
-          />
-        </label>
-        {error && <p className={errorCls}>{error}</p>}
-        <button className={btn} disabled={busy || !token.trim()}>
-          {busy ? "連線中…" : "連線"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
 function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => void }) {
-  const client = useRef(new AgentClient(conn)).current;
+  // 把 onDisconnect 當作 401 處理:token 失效(換過/重置)時自動清掉連線、退回
+  // 連線畫面重新配對,而不是一直用壞掉的 token 重試。
+  const client = useRef(new AgentClient(conn, onDisconnect)).current;
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
@@ -220,12 +171,13 @@ function CreateDialog({
   const [serverPassword, setServerPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [isMac, setIsMac] = useState(false);
+  const [platform, setPlatform] = useState<string | null>(null);
+  const isMac = platform === "darwin";
 
   // agent 在 macOS 時,主機無法實際執行 Palworld 伺服器(SteamCMD 32-bit 在
   // Rosetta 下不可用、PalServer 存檔即崩潰),不論 native 或 Docker 都一樣。
   useEffect(() => {
-    client.info().then((i) => setIsMac(i.platform === "darwin")).catch(() => {});
+    client.info().then((i) => setPlatform(i.platform)).catch(() => {});
   }, [client]);
 
   const submit = async (e: React.FormEvent) => {
@@ -289,13 +241,16 @@ function CreateDialog({
         </label>
         {backend === "native" && (
           <label className={labelCls}>
-            既有伺服器路徑(選填)
+            伺服器路徑(選填)
             <input
               className={inputCls}
               value={serverDir}
               onChange={(e) => setServerDir(e.target.value)}
-              placeholder="留空 = 自動下載;或填入現有 PalServer 安裝目錄"
+              placeholder={platform === "win32" ? "例:D:\\palworld\\my-server" : "例:/opt/palworld/my-server"}
             />
+            <span className="text-xs font-normal opacity-70">
+              留空 = 安裝到 agent 資料夾。填既有 PalServer 安裝目錄會直接採用;填空資料夾或新路徑則會下載安裝到那裡。
+            </span>
           </label>
         )}
         <label className={labelCls}>

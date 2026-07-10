@@ -23,11 +23,21 @@
   --shadow-cute-hover: 0 10px 24px rgb(63 167 224 / 0.2);
 }
 
+:root {
+  color-scheme: light; /* 原生控件(select、捲軸)跟著主題走 */
+}
+
 /* Dark plum palette (v1 heritage) — overrides the same tokens at runtime.
    Utilities reference var(--color-*), so a :root override is enough;
-   @theme can't be nested inside @media. */
+   @theme can't be nested inside @media.
+
+   主題模式(theme.tsx 控制 html 的 data-theme):
+   - 沒有 data-theme = 跟隨系統(media query 生效,但手動選淺色時排除);
+   - data-theme="dark" = 手動深色,無條件套用。
+   兩個選擇器共用同一組變數,改色票時記得兩處一起改。 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --color-sky-soft: #232030;
     --color-card: #2d2a3b;
     --color-card-soft: #363347;
@@ -39,6 +49,19 @@
     --shadow-cute: 0 6px 18px rgb(0 0 0 / 0.35);
     --shadow-cute-hover: 0 10px 24px rgb(0 0 0 / 0.45);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-sky-soft: #232030;
+  --color-card: #2d2a3b;
+  --color-card-soft: #363347;
+  --color-ink: #eceaf2;
+  --color-ink-muted: #a9a5bb;
+  --color-pal: #5bb8ec;
+  --color-pal-strong: #7ec8f0;
+  --color-line: #403c52;
+  --shadow-cute: 0 6px 18px rgb(0 0 0 / 0.35);
+  --shadow-cute-hover: 0 10px 24px rgb(0 0 0 / 0.45);
 }
 
 body {

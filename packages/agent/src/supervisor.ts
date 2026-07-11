@@ -143,7 +143,10 @@ export class RestartSupervisor {
 
   private async tick(): Promise<void> {
     for (const rec of this.store.list()) {
-      if (rec.backend !== "native" || this.busy.has(rec.id)) continue;
+      // docker has no supervisor path wired. native does full crash/memory/
+      // scheduled. k8s: scheduled restarts only — STS handles Pod self-heal
+      // and "exited" (replicas=0) is a deliberate stop, never a crash.
+      if (rec.backend === "docker" || this.busy.has(rec.id)) continue;
       try {
         await this.check(rec);
       } catch {
@@ -162,7 +165,11 @@ export class RestartSupervisor {
 
     if (status !== "running") {
       // Crashed if we saw it running before and nobody asked us to stop it.
-      if (state.wasRunning && status === "exited" && policy.crash.enabled) {
+      // k8s is excluded: its STS auto-restarts crashed Pods, and replicas=0
+      // ("exited") is a user-initiated stop, not a crash we should fight.
+      const crashCandidate = state.wasRunning && status === "exited" && policy.crash.enabled
+        && rec.backend === "native";
+      if (crashCandidate) {
         await this.handleCrash(rec, ctx, driver, policy, state);
         return;
       }

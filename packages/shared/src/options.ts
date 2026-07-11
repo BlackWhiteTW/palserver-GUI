@@ -57,6 +57,36 @@ export const WORLD_OPTIONS = {
   LogFormatType: { type: "enum", default: "Text", choices: ["Text", "Json"], category: "server" },
   bIsUseBackupSaveData: { type: "bool", default: true, category: "server" },
   AutoSaveSpan: { type: "float", default: 30, min: 10, max: 600, step: 5, category: "server" },
+  Region: { type: "string", default: "", maxLength: 64, category: "server" },
+  CrossplayPlatforms: {
+    type: "string", default: "(Steam,Xbox,PS5,Mac)", maxLength: 256, category: "server",
+  },
+  BanListURL: {
+    type: "string",
+    default: "https://b.palworldgame.com/api/banlist.txt",
+    maxLength: 512,
+    category: "server",
+  },
+  bUseAuth: { type: "bool", default: true, category: "server" },
+  bAllowClientMod: { type: "bool", default: true, category: "server" },
+  bEnableVoiceChat: { type: "bool", default: false, category: "server" },
+  VoiceChatMaxVolumeDistance: {
+    type: "float", default: 3000, min: 0, max: 50000, step: 100, category: "server",
+  },
+  VoiceChatZeroVolumeDistance: {
+    type: "float", default: 15000, min: 0, max: 50000, step: 100, category: "server",
+  },
+  AutoTransferMasterCheckIntervalSeconds: {
+    type: "float", default: 3600, min: 60, max: 86400, step: 1, category: "server",
+  },
+  AutoTransferMasterThresholdDays: { type: "int", default: 14, min: 0, max: 365, category: "server" },
+  ItemContainerForceMarkDirtyInterval: {
+    type: "float", default: 1, min: 0, max: 60, step: 0.1, category: "server",
+  },
+  MaxGuildsPerFrame: { type: "int", default: 10, min: 1, max: 100, category: "server" },
+  PlayerDataPalStorageUpdateCheckTickInterval: {
+    type: "float", default: 1, min: 0, max: 60, step: 0.1, category: "server",
+  },
 
   // ── pal ───────────────────────────────────────────────────────────────
   PalCaptureRate: rate("pal", 1, 0.5, 2),
@@ -72,6 +102,8 @@ export const WORLD_OPTIONS = {
   bPalLost: { type: "bool", default: false, category: "pal" },
   bAllowGlobalPalboxExport: { type: "bool", default: true, category: "pal" },
   bAllowGlobalPalboxImport: { type: "bool", default: false, category: "pal" },
+  EnablePredatorBossPal: { type: "bool", default: true, category: "pal" },
+  MonsterFarmActionSpeedRate: rate("pal", 1, 0.1, 10),
 
   // ── player ────────────────────────────────────────────────────────────
   ExpRate: rate("player", 1, 0.1, 20),
@@ -96,6 +128,29 @@ export const WORLD_OPTIONS = {
   bIsStartLocationSelectByMap: { type: "bool", default: false, category: "player" },
   bExistPlayerAfterLogout: { type: "bool", default: false, category: "player" },
   bEnableNonLoginPenalty: { type: "bool", default: true, category: "player" },
+  bAllowEnhanceStat_Health: { type: "bool", default: true, category: "player" },
+  bAllowEnhanceStat_Attack: { type: "bool", default: true, category: "player" },
+  bAllowEnhanceStat_Stamina: { type: "bool", default: true, category: "player" },
+  bAllowEnhanceStat_Weight: { type: "bool", default: true, category: "player" },
+  bAllowEnhanceStat_WorkSpeed: { type: "bool", default: true, category: "player" },
+  AdditionalDropItemWhenPlayerKillingInPvPMode: {
+    type: "enum",
+    default: "PlayerDropItem",
+    choices: ["None", "PlayerDropItem", "AllItems"],
+    category: "player",
+  },
+  AdditionalDropItemNumWhenPlayerKillingInPvPMode: {
+    type: "int", default: 1, min: 0, max: 9999, category: "player",
+  },
+  bAdditionalDropItemWhenPlayerKillingInPvPMode: {
+    type: "bool", default: false, category: "player",
+  },
+  bDisplayPvPItemNumOnWorldMap_Player: { type: "bool", default: false, category: "player" },
+  BlockRespawnTime: { type: "float", default: 5, min: 0, max: 3600, step: 0.5, category: "player" },
+  RespawnPenaltyDurationThreshold: {
+    type: "float", default: 0, min: 0, max: 3600, step: 0.5, category: "player",
+  },
+  RespawnPenaltyTimeScale: { type: "float", default: 2, min: 0, max: 10, step: 0.1, category: "player" },
 
   // ── guild ─────────────────────────────────────────────────────────────
   GuildPlayerMaxNum: { type: "int", default: 20, min: 1, max: 100, category: "guild" },
@@ -109,6 +164,8 @@ export const WORLD_OPTIONS = {
   bEnableDefenseOtherGuildPlayer: { type: "bool", default: false, category: "guild" },
   bCanPickupOtherGuildDeathPenaltyDrop: { type: "bool", default: false, category: "guild" },
   bInvisibleOtherGuildBaseCampAreaFX: { type: "bool", default: false, category: "guild" },
+  GuildRejoinCooldownMinutes: { type: "int", default: 0, min: 0, max: 10080, category: "guild" },
+  bDisplayPvPItemNumOnWorldMap_BaseCamp: { type: "bool", default: false, category: "guild" },
 
   // ── build ─────────────────────────────────────────────────────────────
   BuildObjectDamageRate: rate("build"),
@@ -118,6 +175,11 @@ export const WORLD_OPTIONS = {
   ServerReplicatePawnCullDistance: {
     type: "int", default: 15000, min: 5000, max: 15000, category: "build",
   },
+  BuildObjectHpRate: rate("build", 1, 0.1, 10),
+  bEnableBuildingPlayerUIdDisplay: { type: "bool", default: false, category: "build" },
+  BuildingNameDisplayCacheTTLSeconds: {
+    type: "int", default: 60, min: 0, max: 600, category: "build",
+  },
 
   // ── drop ──────────────────────────────────────────────────────────────
   DropItemMaxNum: { type: "int", default: 3000, min: 0, max: 5000, category: "drop" },
@@ -126,6 +188,10 @@ export const WORLD_OPTIONS = {
   EnemyDropItemRate: rate("drop", 1, 0.5, 3),
   ItemCorruptionMultiplier: rate("drop"),
   SupplyDropSpan: { type: "int", default: 180, min: 30, max: 1440, category: "drop" },
+  DropItemMaxNum_UNKO: { type: "int", default: 100, min: 0, max: 5000, category: "drop" },
+  bActiveUNKO: { type: "bool", default: false, category: "drop" },
+  PhysicsActiveDropItemMaxNum: { type: "int", default: -1, min: -1, max: 10000, category: "drop" },
+  DenyTechnologyList: { type: "string", default: "", maxLength: 512, category: "drop" },
 
   // ── world ─────────────────────────────────────────────────────────────
   Difficulty: {

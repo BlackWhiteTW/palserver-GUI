@@ -43,6 +43,7 @@ export const InstanceStatusSchema = z.enum([
   "installing", // native: server files downloading; watch the logs for progress
   "running",
   "restarting",
+  "starting", // k8s: StatefulSet scaling up (Pod not ready yet)
   "exited",
   "missing",
 ]);
@@ -50,7 +51,7 @@ export type InstanceStatus = z.infer<typeof InstanceStatusSchema>;
 
 /** How the agent runs the server: native = spawn PalServer directly on the
  * host (default, no Docker needed); docker = run it in a container. */
-export const BackendSchema = z.enum(["native", "docker"]);
+export const BackendSchema = z.enum(["native", "docker", "k8s"]);
 export type Backend = z.infer<typeof BackendSchema>;
 
 export const CreateInstanceSchema = z.object({
@@ -66,6 +67,9 @@ export const CreateInstanceSchema = z.object({
    * is adopted as-is; an empty or new directory becomes the install target.
    * Omit to install under the agent data folder. */
   serverDir: z.string().max(500).optional(),
+  k8sNamespace: z.string().optional(),
+  k8sStatefulSet: z.string().optional(),
+  k8sServiceName: z.string().optional(),
   settings: z.record(z.union([z.string(), z.number(), z.boolean()])).default({}),
 });
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;

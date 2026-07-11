@@ -1,0 +1,128 @@
+# Palworld 遊戲伺服器（thijsvanloef/palworld-server-docker）
+# 受 palserver-gui agent 的 k8s driver 管理（StatefulSet 擴縮容 + env patch）
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: palworld-game-server
+  namespace: palserver
+  labels:
+    app: palworld-game-server
+spec:
+  serviceName: palworld-game-server
+  replicas: 0  # 預設停止；agent start 會 scale 到 1
+  selector:
+    matchLabels:
+      app: palworld-game-server
+  template:
+    metadata:
+      labels:
+        app: palworld-game-server
+    spec:
+      containers:
+        - name: palworld-server
+          image: thijsvanloef/palworld-server-docker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8211
+              protocol: UDP
+              name: game
+            - containerPort: 27015
+              protocol: UDP
+              name: steam
+            - containerPort: 8212
+              protocol: TCP
+              name: rest-api
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: PORT
+              value: "8211"
+            - name: PLAYERS
+              value: "32"
+            - name: MULTITHREADING
+              value: "true"
+            - name: TZ
+              value: Asia/Taipei
+            - name: SERVER_NAME
+              value: palserver-gui
+            - name: SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: server-password
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: palworld-secrets
+                  key: admin-password
+            - name: COMMUNITY
+              value: "false"
+            - name: REST_API_ENABLED
+              value: "true"
+            - name: REST_API_PORT
+              value: "8212"
+          volumeMounts:
+            - name: palworld-data
+              mountPath: /palworld/
+          # Pod Ready 必須代表 Palworld REST API 已可連線。
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'curl -fsS --max-time 3 -u "admin:${ADMIN_PASSWORD}" http://127.0.0.1:8212/v1/api/info >/dev/null'
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'curl -fsS --max-time 3 -u "admin:${ADMIN_PASSWORD}" http://127.0.0.1:8212/v1/api/info >/dev/null'
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "2000m"
+            limits:
+              memory: "16Gi"
+              cpu: "4000m"
+  volumeClaimTemplates:
+    - metadata:
+        name: palworld-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: palworld-game-server
+  namespace: palserver
+spec:
+  type: ClusterIP
+  selector:
+    app: palworld-game-server
+  ports:
+    - port: 8211
+      targetPort: 8211
+      protocol: UDP
+      name: game
+    - port: 27015
+      targetPort: 27015
+      protocol: UDP
+      name: steam
+    # REST API 僅叢集內部（agent 存取用）
+    - port: 8212
+      targetPort: 8212
+      protocol: TCP
+      name: rest-api

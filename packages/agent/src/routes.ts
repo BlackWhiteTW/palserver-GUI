@@ -31,6 +31,8 @@ import {
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import * as dockerOps from "./docker.js";
+
+import { k8sDriver } from "./k8s.js";
 import { SERVER_LAUNCHER, classifyServerDir, isInstalling, lastInstallError, moveServerFiles, nativeDriver, serverRoot, updateServer } from "./native.js";
 import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
@@ -56,6 +58,7 @@ import { z } from "zod";
 const drivers: Record<InstanceRecord["backend"], ServerDriver> = {
   native: nativeDriver,
   docker: dockerOps.dockerDriver,
+  k8s: k8sDriver,
 };
 
 export function registerRoutes(
@@ -255,6 +258,9 @@ export function registerRoutes(
       serverDir,
       serverDirManaged,
       settings,
+      k8sNamespace: input.k8sNamespace,
+      k8sStatefulSet: input.k8sStatefulSet,
+      k8sServiceName: input.k8sServiceName,
     });
     if (rec.backend === "docker") {
       dockerOps.writeConfig(store.instanceDir(rec.id), settings);
@@ -287,6 +293,20 @@ export function registerRoutes(
     // the bind-mounted config is already in place.
     if (rec.backend === "docker") {
       dockerOps.writeConfig(store.instanceDir(rec.id), updated.settings);
+      return { applied: "on-next-restart", settings: updated.settings };
+    }
+    // k8s: the game-server image reads settings from env, not ini. PATCH the
+    // StatefulSet env in place; the Pod rolls and picks up the new values.
+    // `restartTriggered` signals the UI that the change is already live.
+    if (rec.backend === "k8s") {
+      const { applyEnvPatchK8s } = await import("./k8s-env-patch.js");
+      const result = await applyEnvPatchK8s(rec, updated.settings);
+      return {
+        applied: "env-patched",
+        settings: updated.settings,
+        restartTriggered: true,
+        unsupportedKeys: result.unsupported.length > 0 ? result.unsupported : undefined,
+      };
     }
     return { applied: "on-next-restart", settings: updated.settings };
   });
@@ -709,7 +729,7 @@ export function registerRoutes(
       }),
     );
     const patch = z.object(shape).strict().parse(req.body);
-    const status = writeEngineSettings(rec, ctxOf(rec), patch as EngineSettings);
+    const status = await writeEngineSettings(rec, ctxOf(rec), patch as EngineSettings);
     return { ...status, applied: "on-next-restart" };
   });
 
@@ -744,10 +764,13 @@ export function registerRoutes(
   app.get("/api/instances/:id/restart-policy", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
     const ctx = ctxOf(rec);
-    const stats = rec.backend === "native" ? await driverOf(rec).stats(rec, ctx) : null;
+    // native: full crash/memory/scheduled. k8s: scheduled only (STS handles
+    // crash self-heal; no per-process memory stats). docker: unsupported.
+    const supported = rec.backend !== "docker";
+    const stats = supported ? await driverOf(rec).stats(rec, ctx) : null;
     return {
-      supported: rec.backend === "native",
-      reason: rec.backend === "native" ? undefined : "自動重啟目前僅支援原生模式的實例",
+      supported,
+      reason: supported ? undefined : "自動重啟目前不支援 Docker 模式的實例",
       policy: supervisor.readPolicy(rec.id),
       events: supervisor.events(rec.id),
       restartsLastHour: supervisor.restartsLastHour(rec.id),
@@ -787,7 +810,7 @@ export function registerRoutes(
 
   app.get("/api/instances/:id/saves", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return { ...saves.getSavesStatus(rec, ctxOf(rec)), schedule: scheduler.read(rec.id) };
+    return { ...(await saves.getSavesStatus(rec, ctxOf(rec))), schedule: scheduler.read(rec.id) };
   });
 
   app.put("/api/instances/:id/saves/schedule", async (req) => {
@@ -841,10 +864,16 @@ export function registerRoutes(
   app.post("/api/instances/:id/saves/active", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
     const { worldGuid } = z.object({ worldGuid: z.string().min(1).max(64) }).parse(req.body);
-    if (await isRunning(rec)) {
+    const running = await isRunning(rec);
+    // native edits the ini on the host (server must be stopped); k8s writes it
+    // inside the running Pod via exec (server must be up so a Pod exists).
+    if (rec.backend === "native" && running) {
       throw Object.assign(new Error("請先停止伺服器再切換世界"), { statusCode: 409 });
     }
-    saves.setActiveWorldGuid(saves.serverRootOf(rec, ctxOf(rec)), worldGuid);
+    if (rec.backend === "k8s" && !running) {
+      throw Object.assign(new Error("k8s 切換世界需伺服器運行中(以存取 Pod)"), { statusCode: 409 });
+    }
+    await saves.setActiveWorldGuidBackend(rec, ctxOf(rec), worldGuid);
     return { active: worldGuid, applied: "on-next-start" };
   });
 
@@ -853,7 +882,7 @@ export function registerRoutes(
     const { worldGuid, file } = z
       .object({ worldGuid: z.string().min(1).max(64), file: z.string().min(1).max(100) })
       .parse(req.query);
-    saves.deletePlayerSave(rec, ctxOf(rec), worldGuid, file, await isRunning(rec));
+    await saves.deletePlayerSave(rec, ctxOf(rec), worldGuid, file, await isRunning(rec));
     reply.code(204);
   });
 

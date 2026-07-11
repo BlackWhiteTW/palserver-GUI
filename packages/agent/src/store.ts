@@ -7,7 +7,7 @@ import { DATA_DIR } from "./env.js";
 export interface InstanceRecord {
   id: string;
   name: string;
-  backend: "native" | "docker";
+  backend: "native" | "docker" | "k8s";
   flavor: "vanilla" | "modded";
   gamePort: number;
   /** native only: custom server root; undefined = agent-managed install
@@ -19,6 +19,12 @@ export interface InstanceRecord {
   serverDirManaged?: boolean;
   settings: WorldSettings;
   createdAt: string;
+  /** k8s backend: namespace of the game server StatefulSet. */
+  k8sNamespace?: string;
+  /** k8s backend: name of the game server StatefulSet. */
+  k8sStatefulSet?: string;
+  /** k8s backend: ClusterIP Service name for REST API access. */
+  k8sServiceName?: string;
 }
 
 const STORE_FILE = path.join(DATA_DIR, "instances.json");

@@ -72,3 +72,7 @@ export const LICENSE_URL = process.env.PALSERVER_LICENSE_URL ?? STATS_URL;
 
 export const CONTAINER_PREFIX = "palserver-";
 export const INSTANCE_LABEL = "app.palserver.instance";
+
+/** k8s backend: 自訂 kubeconfig 檔案路徑（SSH tunnel 場景）。
+ * 未設定時，依序嘗試 in-cluster 憑證 → ~/.kube/config。 */
+export const KUBECONFIG_PATH = process.env.PALSERVER_KUBECONFIG ?? "";

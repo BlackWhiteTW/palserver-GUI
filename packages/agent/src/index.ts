@@ -26,6 +26,7 @@ import { RestartSupervisor } from "./supervisor.js";
 import { fetchLatest } from "./version.js";
 import { isInstalling, nativeDriver } from "./native.js";
 import { dockerDriver } from "./docker.js";
+import { k8sDriver } from "./k8s.js";
 import { registerRoutes } from "./routes.js";
 import { announceBoot, trackPlayers } from "./telemetry.js";
 import { cleanupOldBinaries, startUpdateChecker, type UpdateOps } from "./self-update.js";
@@ -147,12 +148,12 @@ announceBoot();
 trackPlayers(store.list().flatMap((rec) => presence.knownPlayers(rec.id).map((p) => p.userId)));
 
 const scheduler = new BackupScheduler(store, (rec) =>
-  rec.backend === "native" ? nativeDriver : dockerDriver,
+  rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver,
 );
 scheduler.start();
 
 const supervisor = new RestartSupervisor(store, (rec) =>
-  rec.backend === "native" ? nativeDriver : dockerDriver,
+  rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver,
 );
 supervisor.start();
 

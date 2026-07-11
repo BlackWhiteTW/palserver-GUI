@@ -22,8 +22,12 @@ class RestError extends Error {
 }
 
 /** Docker publishes the REST port on an ephemeral host port; native runs it
- * on the configured port on localhost. */
+ * on the configured port on localhost; k8s exposes it through a ClusterIP
+ * Service (<service>.<namespace>) reachable from the agent. */
 function baseUrl(rec: InstanceRecord): string {
+  if (rec.backend === "k8s" && rec.k8sServiceName && rec.k8sNamespace) {
+    return `http://${rec.k8sServiceName}.${rec.k8sNamespace}:${rec.settings.RESTAPIPort}/v1/api`;
+  }
   return `http://127.0.0.1:${rec.settings.RESTAPIPort}/v1/api`;
 }
 
@@ -33,9 +37,6 @@ function requireRest(rec: InstanceRecord): void {
   }
   if (!rec.settings.AdminPassword) {
     throw new RestError("尚未設定管理員密碼 — 請到世界設定填入 AdminPassword 並重啟", 409);
-  }
-  if (rec.backend !== "native") {
-    throw new RestError("玩家管理目前僅支援原生模式的實例", 409);
   }
 }
 

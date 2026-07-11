@@ -31,7 +31,7 @@ import {
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import * as dockerOps from "./docker.js";
-import { SERVER_LAUNCHER, classifyServerDir, isInstalling, lastInstallError, nativeDriver, serverRoot, updateServer } from "./native.js";
+import { SERVER_LAUNCHER, classifyServerDir, isInstalling, lastInstallError, moveServerFiles, nativeDriver, serverRoot, updateServer } from "./native.js";
 import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
 import { getModsStatus, installComponent, installedEnhancements, removeComponent, setLuaModEnabled } from "./mods.js";
@@ -305,31 +305,59 @@ export function registerRoutes(
     }
     const input = z.object({ serverDir: z.string().max(500) }).parse(req.body);
     const trimmed = input.serverDir.trim();
+    const ctx = ctxOf(rec);
+    const currentRoot = serverRoot(rec, ctx);
+
+    // 目標路徑:留空 = 搬回 agent 管理的資料夾。
+    let newServerDir: string | undefined;
+    let newRoot: string;
     if (!trimmed) {
-      // 清空 = 回到 agent 管理的資料夾
-      const updated = store.update(rec.id, { serverDir: undefined, serverDirManaged: undefined });
+      newServerDir = undefined;
+      newRoot = path.join(ctx.instanceDir, "server");
+    } else {
+      if (!path.isAbsolute(trimmed)) {
+        return reply.code(400).send({ error: `server dir must be an absolute path: ${trimmed}` });
+      }
+      newServerDir = path.resolve(trimmed);
+      newRoot = newServerDir;
+      if (store.list().some((r) => r.id !== rec.id && r.serverDir && path.resolve(r.serverDir) === newServerDir)) {
+        return reply.code(409).send({ error: `server dir already used by another instance: ${newServerDir}` });
+      }
+    }
+    if (path.resolve(newRoot) === path.resolve(currentRoot)) {
+      return { serverDir: rec.serverDir ?? null }; // 沒變
+    }
+
+    const hasFiles = fs.existsSync(currentRoot) && fs.readdirSync(currentRoot).length > 0;
+    if (!hasFiles) {
+      // 目前沒有檔案可搬:單純改指向(採用既有安裝 / 當成安裝目標)。
+      const kind = classifyServerDir(newRoot);
+      if (kind === "not-a-server") {
+        return reply.code(409).send({
+          error:
+            `"${SERVER_LAUNCHER}" not found in ${newRoot} and the directory is not empty — ` +
+            `point at an existing PalServer install, or at an empty/new folder to install into`,
+        });
+      }
+      const updated = store.update(rec.id, {
+        serverDir: newServerDir,
+        serverDirManaged: kind === "install" ? true : undefined,
+      });
       return { serverDir: updated.serverDir ?? null };
     }
-    if (!path.isAbsolute(trimmed)) {
-      return reply.code(400).send({ error: `server dir must be an absolute path: ${trimmed}` });
-    }
-    const serverDir = path.resolve(trimmed);
-    if (store.list().some((r) => r.id !== rec.id && r.serverDir && path.resolve(r.serverDir) === serverDir)) {
-      return reply.code(409).send({ error: `server dir already used by another instance: ${serverDir}` });
-    }
-    const kind = classifyServerDir(serverDir);
-    if (kind === "not-a-server") {
+
+    // 有檔案:真的把伺服器檔案搬到新位置。目標必須是空的或不存在,免得蓋掉別的東西。
+    if (fs.existsSync(newRoot) && fs.readdirSync(newRoot).length > 0) {
       return reply.code(409).send({
-        error:
-          `"${SERVER_LAUNCHER}" not found in ${serverDir} and the directory is not empty — ` +
-          `point at an existing PalServer install, or at an empty/new folder to install into`,
+        error: `target directory must be empty or non-existent (moving relocates the current files): ${newRoot}`,
       });
     }
-    const updated = store.update(rec.id, {
-      serverDir,
-      serverDirManaged: kind === "install" ? true : undefined,
+    // 搬移在背景進行(跨磁碟複製可能較久):實例先顯示「安裝中」,搬完更新記錄。
+    moveServerFiles(rec, ctx, newServerDir, () => {
+      store.update(rec.id, { serverDir: newServerDir, serverDirManaged: undefined });
     });
-    return { serverDir: updated.serverDir ?? null };
+    reply.code(202);
+    return { moving: true };
   });
 
   app.post("/api/instances/:id/start", async (req) => {

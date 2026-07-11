@@ -80,9 +80,14 @@ function ServerPathCard({
     setError(null);
     setNotice(null);
     try {
-      await client.updateServerDir(instanceId, value.trim());
-      setNotice(t("已儲存伺服器路徑。"));
-      setTimeout(() => setNotice(null), 3000);
+      const res = await client.updateServerDir(instanceId, value.trim());
+      // moving=true 代表跨磁碟搬移在背景進行,狀態會短暫顯示「安裝中」。
+      setNotice(
+        res.moving
+          ? t("正在背景搬移伺服器檔案,完成前狀態會顯示為「安裝中」…")
+          : t("已搬移伺服器檔案到新位置。"),
+      );
+      setTimeout(() => setNotice(null), res.moving ? 6000 : 3000);
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -110,7 +115,7 @@ function ServerPathCard({
       </div>
 
       <label className={labelCls}>
-        {t("修改為(絕對路徑;留空 = 交給 agent 管理)")}
+        {t("搬移到(絕對路徑;留空 = 搬回 agent 管理的資料夾)")}
         <input
           className={`${inputCls} font-mono`}
           value={value}
@@ -124,12 +129,12 @@ function ServerPathCard({
         {managed
           ? t("這個路徑由 agent 自動管理。")
           : t("你指定的伺服器安裝目錄。")}{" "}
-        {t("改路徑不會搬移檔案。填既有的 PalServer 安裝目錄會直接採用;填空資料夾或新路徑則會在下次啟動時安裝到那裡;留空則回到 agent 管理的資料夾。")}
+        {t("儲存後會把現有的伺服器檔案實際搬到新位置。目標需為空資料夾或不存在的路徑;同磁碟搬移很快,跨磁碟(例如 C 槽搬到 D 槽)需要複製、檔案多時較久。")}
       </p>
 
       {!stopped && (
         <p className="rounded-xl bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
-          {t("請先停止伺服器再修改路徑。")}
+          {t("請先停止伺服器再搬移路徑。")}
         </p>
       )}
       {error && <p className={errorCls}>{error}</p>}
@@ -139,7 +144,7 @@ function ServerPathCard({
 
       <div>
         <button className={`${btn} inline-flex items-center gap-1.5`} disabled={!stopped || !dirty || busy}>
-          <FiSave className="size-4" /> {busy ? t("儲存中…") : t("儲存路徑")}
+          <FiSave className="size-4" /> {busy ? t("搬移中…") : t("搬移到這個路徑")}
         </button>
       </div>
     </form>

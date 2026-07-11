@@ -804,5 +804,12 @@
  "請先停止伺服器再複製,才能得到乾淨的存檔複本。": "Stop the server before duplicating to get a clean copy of the saves.",
  "安裝失敗": "Install failed",
  "磁碟空間不足,請清出更多空間後再試(Palworld 伺服器約需數十 GB)。": "Not enough disk space. Free up more space and try again (a Palworld server needs tens of GB).",
- "查看日誌": "View logs"
+ "查看日誌": "View logs",
+ "搬移到(絕對路徑;留空 = 搬回 agent 管理的資料夾)": "Move to (absolute path; blank = back to agent-managed)",
+ "儲存後會把現有的伺服器檔案實際搬到新位置。目標需為空資料夾或不存在的路徑;同磁碟搬移很快,跨磁碟(例如 C 槽搬到 D 槽)需要複製、檔案多時較久。": "Saving relocates the existing server files to the new location. The target must be an empty folder or a non-existent path. Same-disk moves are instant; cross-disk moves (e.g. C: to D:) copy the files and can take a while when there are many.",
+ "請先停止伺服器再搬移路徑。": "Stop the server before moving the path.",
+ "搬移中…": "Moving…",
+ "搬移到這個路徑": "Move to this path",
+ "正在背景搬移伺服器檔案,完成前狀態會顯示為「安裝中」…": "Moving server files in the background; the status will show \"installing\" until it finishes…",
+ "已搬移伺服器檔案到新位置。": "Moved the server files to the new location."
 }

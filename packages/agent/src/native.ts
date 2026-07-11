@@ -281,6 +281,56 @@ export function updateServer(rec: InstanceRecord, ctx: DriverContext): void {
   })();
 }
 
+/**
+ * 把伺服器檔案從目前的 serverRoot 實際搬到 newServerDir(改路徑時用)。
+ * 同磁碟用 rename 瞬間完成;跨磁碟(常見:C槽搬到D槽)改用非同步複製再刪除,
+ * 不阻塞事件迴圈。搬移期間沿用「安裝中」狀態擋住啟動/重複操作;搬完才呼叫
+ * onMoved 更新記錄(把 serverDir 指到新位置)。失敗則記到 installErrors、
+ * 不更新記錄 —— 舊檔案原封不動,半成品會清掉。newServerDir 傳 undefined = 搬回
+ * agent 管理的資料夾。呼叫端須先確認伺服器已停止、且目標為空/不存在。
+ */
+export function moveServerFiles(
+  rec: InstanceRecord,
+  ctx: DriverContext,
+  newServerDir: string | undefined,
+  onMoved: () => void,
+): void {
+  if (installing.has(rec.id)) return;
+  const fromRoot = serverRoot(rec, ctx);
+  const toRoot = newServerDir ?? path.join(ctx.instanceDir, "server");
+  installing.add(rec.id);
+  installErrors.delete(rec.id);
+  const appendLog = (line: string) => fs.appendFileSync(logFile(ctx), line + "\n");
+  void (async () => {
+    try {
+      appendLog(`[palserver] 搬移伺服器檔案:${fromRoot} → ${toRoot}`);
+      fs.mkdirSync(path.dirname(toRoot), { recursive: true });
+      try {
+        fs.renameSync(fromRoot, toRoot); // 同磁碟:瞬間完成
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw e;
+        // 跨磁碟:複製到新位置再刪掉舊的(非同步,不卡住 agent)。
+        appendLog("[palserver] 跨磁碟搬移,改用複製 —— 檔案多時需要一些時間,請耐心等候…");
+        try {
+          await fs.promises.cp(fromRoot, toRoot, { recursive: true });
+        } catch (copyErr) {
+          // 複製失敗:清掉半成品,舊檔案仍在原位,記錄不變。
+          await fs.promises.rm(toRoot, { recursive: true, force: true }).catch(() => {});
+          throw copyErr;
+        }
+        await fs.promises.rm(fromRoot, { recursive: true, force: true });
+      }
+      onMoved();
+      appendLog("[palserver] 搬移完成");
+    } catch (err) {
+      installErrors.set(rec.id, classifyInstallError(err));
+      appendLog(`[palserver] 搬移失敗:${err instanceof Error ? err.message : err}`);
+    } finally {
+      installing.delete(rec.id);
+    }
+  })();
+}
+
 async function getNativeStatus(
   rec: InstanceRecord,
   ctx: DriverContext,

@@ -204,8 +204,9 @@ export class AgentClient {
     });
   }
 
-  /** 修改伺服器路徑(僅 native)。空字串 = 回到 agent 管理的資料夾。 */
-  updateServerDir(id: string, serverDir: string): Promise<{ serverDir: string | null }> {
+  /** 修改伺服器路徑(僅 native):把現有伺服器檔案搬到新位置。空字串 = 搬回 agent
+   *  管理的資料夾。跨磁碟搬移在背景進行,回傳 { moving: true },實例會短暫顯示「安裝中」。 */
+  updateServerDir(id: string, serverDir: string): Promise<{ serverDir?: string | null; moving?: boolean }> {
     return this.request(`/api/instances/${id}/server-dir`, {
       method: "PUT",
       body: JSON.stringify({ serverDir }),

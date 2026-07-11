@@ -81,11 +81,11 @@ export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
  */
 export const CustomPalSchema = z
   .object({
-    /** 給予方式:pal=直接給帕魯(givepal_j,需玩家);egg=給帕魯蛋(giveegg_j,需蛋 ID)。 */
+    /** 給予方式:pal=直接給帕魯(givepal_j,RCON);egg=給帕魯蛋(PalDefender REST,可指定玩家)。 */
     mode: z.enum(["pal", "egg"]).default("pal"),
-    /** 目標玩家的 UserId(givepal_j 的第一個參數;egg 模式不需要)。 */
+    /** 目標玩家的 UserId。兩種模式都需要(egg 走 REST 的 /give/paleggs/{userId})。 */
     userId: z.string().trim().max(128).optional(),
-    /** 蛋 ID,例:PalEgg_Ice_01(giveegg_j 的第一個參數;pal 模式不需要)。 */
+    /** 蛋 ID,例:PalEgg_Ice_01(egg 模式必填)。 */
     eggId: z.string().trim().max(64).optional(),
     /** 帕魯種類 ID,例:Anubis(paldb.cc 可查)。 */
     palId: z.string().trim().min(1).max(64),
@@ -118,8 +118,8 @@ export const CustomPalSchema = z
     .optional(),
     partnerSkillLevel: z.number().int().min(1).max(5).optional(),
   })
-  .refine((d) => (d.mode === "egg" ? !!d.eggId : !!d.userId), {
-    message: "pal 模式需要 userId,egg 模式需要 eggId",
+  .refine((d) => !!d.userId && (d.mode !== "egg" || !!d.eggId), {
+    message: "需要目標玩家 userId;egg 模式另需 eggId",
   });
 export type CustomPalInput = z.infer<typeof CustomPalSchema>;
 

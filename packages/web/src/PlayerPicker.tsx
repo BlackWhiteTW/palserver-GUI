@@ -52,7 +52,11 @@ export function PlayerPicker({
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {roster.length > 0 && (
-        <select className={inputCls} value="" onChange={(e) => onChange(e.target.value)}>
+        <select
+          className={`${inputCls} appearance-none`}
+          value=""
+          onChange={(e) => onChange(e.target.value)}
+        >
           <option value="">{t("— 選擇玩家 —")}</option>
           {online.length > 0 && (
             <optgroup label={t("在線")}>

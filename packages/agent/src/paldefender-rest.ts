@@ -141,13 +141,23 @@ const PD_ERROR_MESSAGES: Record<string, string> = {
 
 class PdRestError extends Error {}
 
-async function pdFetch<T>(rec: InstanceRecord, dir: string, endpoint: string): Promise<T> {
+async function pdFetch<T>(
+  rec: InstanceRecord,
+  dir: string,
+  endpoint: string,
+  body?: unknown,
+): Promise<T> {
   const { port } = restConfig(dir);
   const token = await ensureToken(rec, dir);
   let res: Response;
   try {
     res = await fetch(`http://127.0.0.1:${port}/v1/pdapi${endpoint}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(8000),
     });
   } catch {
@@ -291,6 +301,37 @@ async function fetchProgression(
   } catch {
     return null;
   }
+}
+
+/**
+ * 給玩家一顆(客製)帕魯蛋 —— 走 PalDefender REST /give/paleggs/{player},
+ * 因為 RCON 的 giveegg_j 沒有目標玩家參數。PalTemplate 用呼叫端已寫好的範本檔名
+ * (含 .json),完整詞條 / 體質 / 靈魂都保留。回傳實際給了幾顆。
+ */
+export async function givePalEgg(
+  rec: InstanceRecord,
+  ctx: DriverContext,
+  userId: string,
+  eggId: string,
+  templateFile: string,
+  level?: number,
+): Promise<number> {
+  const status = getPdRestStatus(rec, ctx);
+  if (!status.enabled) {
+    throw Object.assign(new Error(`帕魯蛋需要 PalDefender REST API:${status.reason}`), {
+      statusCode: 409,
+    });
+  }
+  const dir = pdDir(rec, ctx)!;
+  const egg: Record<string, unknown> = { EggID: eggId, PalTemplate: templateFile };
+  if (level != null) egg.Level = level;
+  const res = await pdFetch<{ Granted?: { PalEggs?: number } }>(
+    rec,
+    dir,
+    `/give/paleggs/${encodeURIComponent(userId)}`,
+    { PalEggs: [egg] },
+  );
+  return Number(res.Granted?.PalEggs ?? 0);
 }
 
 export async function getPlayerDetail(

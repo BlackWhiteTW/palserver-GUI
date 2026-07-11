@@ -100,7 +100,8 @@ export function CustomPalModal({
     () =>
       !locked &&
       palId.trim() !== "" &&
-      (mode === "egg" ? eggId.trim() !== "" : userId.trim() !== "") &&
+      userId.trim() !== "" &&
+      (mode !== "egg" || eggId.trim() !== "") &&
       !busy,
     [locked, mode, eggId, userId, palId, busy],
   );
@@ -112,7 +113,8 @@ export function CustomPalModal({
     const input: CustomPalInput = {
       mode,
       palId: palId.trim(),
-      ...(mode === "egg" ? { eggId: eggId.trim() } : { userId: userId.trim() }),
+      userId: userId.trim(),
+      ...(mode === "egg" ? { eggId: eggId.trim() } : {}),
       ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
       ...(gender ? { gender } : {}),
       ...(numOrUndef(level) != null ? { level: numOrUndef(level) } : {}),
@@ -194,7 +196,12 @@ export function CustomPalModal({
         {/* 表單:未解鎖時整組變灰、不可操作 */}
         <div className={locked ? "pointer-events-none flex flex-col gap-3 opacity-55" : "flex flex-col gap-3"}>
           <div className="grid gap-2 sm:grid-cols-2">
-            {mode === "egg" ? (
+            {/* 兩種模式都要指定玩家(egg 走 REST /give/paleggs/{userId})。 */}
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
+              {t("目標玩家")}
+              <PlayerPicker roster={players} value={userId} onChange={setUserId} />
+            </label>
+            {mode === "egg" && (
               <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
                 {t("蛋 ID")}
                 {gameData ? (
@@ -213,11 +220,6 @@ export function CustomPalModal({
                     onChange={(e) => setEggId(e.target.value)}
                   />
                 )}
-              </label>
-            ) : (
-              <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
-                {t("目標玩家")}
-                <PlayerPicker roster={players} value={userId} onChange={setUserId} />
               </label>
             )}
             <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">

@@ -6,11 +6,13 @@ import type { InstanceRecord } from "./store.js";
 import type { DriverContext } from "./driver.js";
 import { serverRoot } from "./native.js";
 import { rconExec } from "./rcon.js";
+import { givePalEgg } from "./paldefender-rest.js";
 
 /**
- * 自訂帕魯:把表單轉成 PalDefender 的 PalTemplate.json,寫進它讀取的資料夾,再用 RCON
- * `givepal_j <UserId> <範本名>` 發給玩家。範本用完即刪(givepal_j 是同步讀檔)。
- * PalDefender 只支援原生實例,且路徑固定在 Pal/Binaries/Win64/PalDefender/Pals/Templates。
+ * 自訂帕魯:把表單轉成 PalDefender 的 PalTemplate.json,寫進它讀取的資料夾,再發給玩家。
+ * 範本用完即刪。PalDefender 只支援原生實例,路徑固定在 Pal/Binaries/Win64/PalDefender/Pals/Templates。
+ *  - pal 模式:RCON `givepal_j <UserId> <範本名>`。
+ *  - egg 模式:PalDefender REST `/give/paleggs/{UserId}`,因為 RCON 的 giveegg_j 沒有玩家參數。
  */
 
 const templatesDir = (root: string) =>
@@ -44,7 +46,7 @@ function buildTemplate(input: CustomPalInput): Record<string, unknown> {
   return t;
 }
 
-/** 寫暫存範本 → RCON givepal_j → 刪暫存檔。回傳 RCON 輸出。 */
+/** 寫暫存範本 → 依模式用 RCON givepal_j 或 REST 給蛋 → 刪暫存檔。回傳給予結果訊息。 */
 export async function giveCustomPal(
   rec: InstanceRecord,
   ctx: DriverContext,
@@ -56,19 +58,16 @@ export async function giveCustomPal(
   const file = path.join(dir, `${name}.json`);
   fs.writeFileSync(file, JSON.stringify(buildTemplate(input), null, 2));
 
-  let command: string;
-  if (input.mode === "egg") {
-    // /giveegg_j <EggId> <PalTemplate> [Level] —— 沒有目標玩家(給呼叫者/管理員)。
-    if (!input.eggId) throw Object.assign(new Error("缺少蛋 ID"), { statusCode: 400 });
-    command = `giveegg_j ${input.eggId} ${name}${input.level != null ? ` ${input.level}` : ""}`;
-  } else {
-    // /givepal_j <UserID> <PalTemplate>
-    if (!input.userId) throw Object.assign(new Error("缺少目標玩家"), { statusCode: 400 });
-    command = `givepal_j ${input.userId} ${name}`;
-  }
-
   try {
-    return await rconExec(rec, command);
+    if (!input.userId) throw Object.assign(new Error("缺少目標玩家"), { statusCode: 400 });
+    if (input.mode === "egg") {
+      // REST /give/paleggs/{UserId},PalTemplate 帶完整範本檔名(含 .json)。
+      if (!input.eggId) throw Object.assign(new Error("缺少蛋 ID"), { statusCode: 400 });
+      const n = await givePalEgg(rec, ctx, input.userId, input.eggId, `${name}.json`, input.level);
+      return `已給予帕魯蛋 ×${n}`;
+    }
+    // /givepal_j <UserID> <PalTemplate>
+    return await rconExec(rec, `givepal_j ${input.userId} ${name}`);
   } finally {
     fs.rmSync(file, { force: true });
   }

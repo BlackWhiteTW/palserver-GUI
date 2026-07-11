@@ -37,9 +37,47 @@ GitHub API 對匿名請求限流,Cloudflare Workers 的共用出口 IP 很容易
 npx wrangler secret put GITHUB_TOKEN   # 貼上 fine-grained PAT(只需 public repo 唯讀)
 ```
 
+## 贊助者識別碼(先行版授權)
+
+同一個 worker 也負責發/驗贊助者識別碼(一機一碼)。端點:
+
+- `POST /api/license/activate {code, machineId}` — agent 用,驗證 + 首次綁機器(公開)
+- `POST /api/license/issue {tier?, features?, sponsor?, expiresAt?}` — 手動發碼(需 `X-Admin-Token`)
+- `POST /api/license/reset {code}` — 解除綁定讓贊助者換機(需 `X-Admin-Token`)
+- `POST /api/license/bmc-webhook` — Buy Me a Coffee 月費會員 webhook(自動發碼/續期)
+
+```bash
+# 管理密鑰(發碼/解綁用)
+npx wrangler secret put ADMIN_TOKEN
+
+# 手動發一張碼(帶 expiresAt 即為月費;到期後 agent 重驗會鎖上)
+curl -X POST https://palserver-stats.iosoftware.workers.dev/api/license/issue \
+  -H "X-Admin-Token: <ADMIN_TOKEN>" -H "Content-Type: application/json" \
+  -d '{"sponsor":"某人","expiresAt":"2026-09-01"}'
+```
+
+### 接 Buy Me a Coffee 月費
+
+1. BMC 開一個月費 **Membership** 方案。
+2. BMC 後台 → Webhooks 新增,URL 填 `https://<worker>/api/license/bmc-webhook`,複製**簽章密鑰**。
+3. 設密鑰;Resend 用來把碼 email 給贊助者(需先在 Resend 驗證寄件網域):
+
+   ```bash
+   npx wrangler secret put BMC_WEBHOOK_SECRET   # BMC 給的 webhook secret
+   npx wrangler secret put RESEND_API_KEY       # Resend API key
+   # 寄件者放 vars 或 secret 皆可,例:
+   #   [vars] RESEND_FROM = "palserver GUI <noreply@你的網域>"
+   ```
+
+流程:會員 `membership.started` → 建碼並 email 給贊助者;`membership.updated`(續訂)→ 延長效期;
+`cancelled` / `paused` → 不再續期,當期到期後停用。webhook 會先用 `x-signature-sha256`
+(HMAC-SHA256)驗簽,沒設 `BMC_WEBHOOK_SECRET` 一律拒絕。
+
 ## 之後改 schema / 重新部署
 
 ```bash
 pnpm db:schema   # schema.sql 全部是 IF NOT EXISTS,可重複執行
 pnpm deploy
 ```
+
+> 若 `licenses` 表已建過,加 email/source 兩欄要手動 ALTER(見 schema.sql 內註解)。

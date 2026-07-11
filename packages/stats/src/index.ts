@@ -17,6 +17,12 @@ export interface Env {
   /** 發/管理贊助者識別碼的管理密鑰(wrangler secret put ADMIN_TOKEN)。
    * 沒設時 /api/license/issue 與 /reset 一律拒絕。 */
   ADMIN_TOKEN?: string;
+  /** Buy Me a Coffee webhook 簽章密鑰(wrangler secret put BMC_WEBHOOK_SECRET)。 */
+  BMC_WEBHOOK_SECRET?: string;
+  /** Resend 寄信 API key(wrangler secret put RESEND_API_KEY);沒設就不寄碼(仍會建碼)。 */
+  RESEND_API_KEY?: string;
+  /** 寄件者,例:palserver GUI <noreply@iosoftware.ai>(需在 Resend 驗證網域)。 */
+  RESEND_FROM?: string;
 }
 
 const EVENT_TYPES = ["hello", "instance_created", "server_started", "players_seen"] as const;
@@ -44,6 +50,7 @@ export default {
     if (req.method === "POST" && url.pathname === "/api/license/activate") return handleLicenseActivate(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/issue") return handleLicenseIssue(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/reset") return handleLicenseReset(req, env);
+    if (req.method === "POST" && url.pathname === "/api/license/bmc-webhook") return handleBmcWebhook(req, env);
     return json({ error: "not found" }, 404);
   },
 } satisfies ExportedHandler<Env>;
@@ -269,4 +276,134 @@ async function handleLicenseReset(req: Request, env: Env): Promise<Response> {
     .bind(code)
     .run();
   return json({ ok: true, reset: res.meta.changes ?? 0 });
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Buy Me a Coffee 月費會員 webhook -> 自動發碼/續期,並用 Resend 把碼 email 給贊助者。
+ *  - membership.started / updated(續訂):依 email 找/建一張碼,expires_at 往後推。
+ *    新建立才寄 email(重試/續訂不重寄)。
+ *  - membership.cancelled / paused:不再續期,現有效期自然到期後鎖上。
+ * 簽章:header x-signature-sha256 = HMAC-SHA256(rawBody, BMC_WEBHOOK_SECRET) 的 hex。
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const RENEW_GRACE_DAYS = 33; // 月費 + 幾天寬限:每次續訂事件把效期推到這麼久之後
+
+async function hmacHex(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** 定時比較,避免時序側通道。 */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** 從 BMC 的 data 物件裡盡量撈出 email(欄位名各版本略有差異)。 */
+function pickEmail(data: Record<string, unknown>): string | null {
+  const cands = [
+    data.supporter_email,
+    data.payer_email,
+    data.email,
+    (data.supporter as Record<string, unknown> | undefined)?.email,
+    (data.member as Record<string, unknown> | undefined)?.email,
+  ];
+  for (const c of cands) {
+    if (typeof c === "string" && /.+@.+\..+/.test(c)) return c.toLowerCase();
+  }
+  return null;
+}
+
+async function sendCodeEmail(env: Env, to: string, code: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM) return; // 沒設定就只建碼、不寄信
+  const html = `
+    <p>感謝你的贊助!以下是你的 palserver GUI 先行版識別碼:</p>
+    <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
+    <p>在 GUI 的「設定 → 贊助者識別碼」貼上即可解鎖先行版功能。<br>
+    一組識別碼只能綁定一台伺服器;月費有效期間持續解鎖,取消後於當期到期時停用。</p>`;
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: env.RESEND_FROM,
+        to,
+        subject: "你的 palserver GUI 先行版識別碼",
+        html,
+      }),
+    });
+  } catch {
+    /* 寄信失敗不影響發碼;可用 /api/license/issue 手動補寄 */
+  }
+}
+
+async function handleBmcWebhook(req: Request, env: Env): Promise<Response> {
+  const raw = await req.text();
+  // 驗簽章:沒設密鑰一律拒絕(避免誤開後門)。
+  if (!env.BMC_WEBHOOK_SECRET) return json({ error: "webhook not configured" }, 503);
+  const provided = req.headers.get("x-signature-sha256") ?? "";
+  const expected = await hmacHex(env.BMC_WEBHOOK_SECRET, raw);
+  if (!timingSafeEqual(provided, expected)) return json({ error: "bad signature" }, 401);
+
+  let evt: { type?: string; data?: Record<string, unknown> };
+  try {
+    evt = JSON.parse(raw) as typeof evt;
+  } catch {
+    return json({ error: "invalid json" }, 400);
+  }
+  const type = String(evt.type ?? "");
+  const data = (evt.data ?? {}) as Record<string, unknown>;
+
+  const active = /(membership|recurring_donation)\.(started|updated)$/.test(type);
+  const inactive = /(membership|recurring_donation)\.(cancelled|paused)$/.test(type);
+  if (!active && !inactive) return json({ ok: true, ignored: type });
+
+  const email = pickEmail(data);
+  if (!email) return json({ ok: true, note: "no email in payload" });
+
+  const now = new Date();
+  if (inactive) {
+    // 不動效期:當期到期後 agent 重驗就會鎖上(等於「繳到當期為止」)。
+    return json({ ok: true, type, email, action: "let-expire" });
+  }
+
+  // active:找/建這個 email 的碼,把效期推到 now + 寬限。
+  const expiresAt = new Date(now.getTime() + RENEW_GRACE_DAYS * 86400_000).toISOString();
+  const existing = await env.DB.prepare("SELECT code FROM licenses WHERE email = ?1 LIMIT 1")
+    .bind(email)
+    .first<{ code: string }>();
+
+  if (existing) {
+    await env.DB.prepare("UPDATE licenses SET expires_at = ?1 WHERE code = ?2")
+      .bind(expiresAt, existing.code)
+      .run();
+    return json({ ok: true, type, email, action: "renewed", code: existing.code });
+  }
+
+  // 新贊助者:建碼 + 寄信。
+  for (let i = 0; i < 5; i++) {
+    const code = generateCode();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO licenses (code, tier, features, sponsor, created_at, expires_at, email, source)
+         VALUES (?1, 'sponsor', ?2, ?3, ?4, ?5, ?6, 'bmc')`,
+      )
+        .bind(code, JSON.stringify(["custom-pal"]), email, now.toISOString(), expiresAt, email)
+        .run();
+      await sendCodeEmail(env, email, code);
+      return json({ ok: true, type, email, action: "issued", code });
+    } catch {
+      /* 撞碼重試 */
+    }
+  }
+  return json({ error: "could not allocate code" }, 500);
 }

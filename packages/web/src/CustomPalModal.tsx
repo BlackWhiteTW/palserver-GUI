@@ -4,7 +4,7 @@ import { GiEggClutch } from "react-icons/gi";
 import type { CustomPalInput, KnownPlayer } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { EntityPicker } from "./EntityPicker";
-import { useGameData, palIconUrl } from "./gameData";
+import { useGameData, palIconUrl, itemIconUrl } from "./gameData";
 import { t, useI18n } from "./i18n";
 import { Overlay, btn, card, errorCls, inputCls } from "./ui";
 
@@ -40,7 +40,9 @@ export function CustomPalModal({
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [players, setPlayers] = useState<KnownPlayer[]>([]);
 
+  const [mode, setMode] = useState<"pal" | "egg">("pal");
   const [userId, setUserId] = useState("");
+  const [eggId, setEggId] = useState("");
   const [palId, setPalId] = useState("");
   const [nickname, setNickname] = useState("");
   const [gender, setGender] = useState<"" | "None" | "Male" | "Female">("");
@@ -65,8 +67,12 @@ export function CustomPalModal({
 
   const locked = entitled === false;
   const canSubmit = useMemo(
-    () => !locked && userId.trim() !== "" && palId.trim() !== "" && !busy,
-    [locked, userId, palId, busy],
+    () =>
+      !locked &&
+      palId.trim() !== "" &&
+      (mode === "egg" ? eggId.trim() !== "" : userId.trim() !== "") &&
+      !busy,
+    [locked, mode, eggId, userId, palId, busy],
   );
 
   const submit = async () => {
@@ -74,8 +80,9 @@ export function CustomPalModal({
     setError(null);
     setResult(null);
     const input: CustomPalInput = {
-      userId: userId.trim(),
+      mode,
       palId: palId.trim(),
+      ...(mode === "egg" ? { eggId: eggId.trim() } : { userId: userId.trim() }),
       ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
       ...(gender ? { gender } : {}),
       ...(numOrUndef(level) != null ? { level: numOrUndef(level) } : {}),
@@ -155,27 +162,66 @@ export function CustomPalModal({
 
         {/* 表單:未解鎖時整組變灰、不可操作 */}
         <div className={locked ? "pointer-events-none flex flex-col gap-3 opacity-55" : "flex flex-col gap-3"}>
+          {/* 給予方式:直接給帕魯,或給一顆帕魯蛋 */}
+          <div className="flex items-center gap-2 text-xs font-bold text-ink-muted">
+            {t("給予方式")}
+            <div className="inline-flex overflow-hidden rounded-lg border-2 border-line">
+              {(["pal", "egg"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`px-3 py-1 transition ${mode === m ? "bg-pal/15 text-pal" : "text-ink-muted hover:text-ink"}`}
+                  onClick={() => setMode(m)}
+                >
+                  {m === "pal" ? t("帕魯") : t("帕魯蛋")}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
-              {t("目標玩家")}
-              {players.length > 0 ? (
-                <select className={inputCls} value={userId} onChange={(e) => setUserId(e.target.value)}>
-                  <option value="">{t("選擇玩家…")}</option>
-                  {players.map((p) => (
-                    <option key={p.userId} value={p.userId}>
-                      {(p.name || p.accountName || p.userId) + (p.online ? " ●" : "")}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className={inputCls}
-                  value={userId}
-                  placeholder="steam_7650..."
-                  onChange={(e) => setUserId(e.target.value)}
-                />
-              )}
-            </label>
+            {mode === "egg" ? (
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
+                {t("蛋 ID")}
+                {gameData ? (
+                  <EntityPicker
+                    catalog={gameData.items}
+                    iconUrl={itemIconUrl}
+                    value={eggId}
+                    onChange={setEggId}
+                    placeholder={t("搜尋蛋名稱或輸入 ID…")}
+                  />
+                ) : (
+                  <input
+                    className={inputCls}
+                    value={eggId}
+                    placeholder="PalEgg_Ice_01"
+                    onChange={(e) => setEggId(e.target.value)}
+                  />
+                )}
+              </label>
+            ) : (
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
+                {t("目標玩家")}
+                {players.length > 0 ? (
+                  <select className={inputCls} value={userId} onChange={(e) => setUserId(e.target.value)}>
+                    <option value="">{t("選擇玩家…")}</option>
+                    {players.map((p) => (
+                      <option key={p.userId} value={p.userId}>
+                        {(p.name || p.accountName || p.userId) + (p.online ? " ●" : "")}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className={inputCls}
+                    value={userId}
+                    placeholder="steam_7650..."
+                    onChange={(e) => setUserId(e.target.value)}
+                  />
+                )}
+              </label>
+            )}
             <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-ink-muted">
               {t("帕魯")}
               {gameData ? (
@@ -261,7 +307,8 @@ export function CustomPalModal({
           onClick={submit}
           disabled={!canSubmit}
         >
-          <GiEggClutch className="size-4" /> {busy ? t("發送中…") : t("給予帕魯")}
+          <GiEggClutch className="size-4" />{" "}
+          {busy ? t("發送中…") : mode === "egg" ? t("給予帕魯蛋") : t("給予帕魯")}
         </button>
       </div>
     </Overlay>

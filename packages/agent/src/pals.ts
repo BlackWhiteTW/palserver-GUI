@@ -55,8 +55,20 @@ export async function giveCustomPal(
   const name = `gui_${crypto.randomBytes(6).toString("hex")}`;
   const file = path.join(dir, `${name}.json`);
   fs.writeFileSync(file, JSON.stringify(buildTemplate(input), null, 2));
+
+  let command: string;
+  if (input.mode === "egg") {
+    // /giveegg_j <EggId> <PalTemplate> [Level] —— 沒有目標玩家(給呼叫者/管理員)。
+    if (!input.eggId) throw Object.assign(new Error("缺少蛋 ID"), { statusCode: 400 });
+    command = `giveegg_j ${input.eggId} ${name}${input.level != null ? ` ${input.level}` : ""}`;
+  } else {
+    // /givepal_j <UserID> <PalTemplate>
+    if (!input.userId) throw Object.assign(new Error("缺少目標玩家"), { statusCode: 400 });
+    command = `givepal_j ${input.userId} ${name}`;
+  }
+
   try {
-    return await rconExec(rec, `givepal_j ${input.userId} ${name}`);
+    return await rconExec(rec, command);
   } finally {
     fs.rmSync(file, { force: true });
   }

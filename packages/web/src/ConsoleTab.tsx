@@ -286,21 +286,19 @@ export function ConsoleTab({ client, instanceId }: { client: AgentClient; instan
               placeholder={t("搜尋指令…")}
             />
           </div>
-          {/* 贊助者先行版:自訂帕魯 —— 一律顯示,點了跳彈窗;未解鎖時彈窗內表單不可用 */}
+          {/* 贊助者先行版:自訂帕魯 —— 一律顯示,點了跳彈窗;未解鎖時彈窗內表單不可用。
+              樣式與下方指令項目統一。 */}
           {catalog.paldefender && (
             <button
               type="button"
-              className="flex shrink-0 items-center gap-2 rounded-lg border-2 border-pal/30 bg-pal/5 px-2 py-1.5 text-left transition hover:bg-pal/10"
+              className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
               onClick={() => setShowCustomPal(true)}
             >
-              <GiEggClutch className="size-4 shrink-0 text-pal" />
-              <span className="min-w-0 flex-1">
-                <span className="inline-flex items-center gap-1 text-[13px] font-extrabold text-pal">
-                  {t("自訂帕魯")}
-                  <FiStar className="size-3" />
-                </span>
-                <span className="block text-xs text-ink-muted">{t("詞條 / 體質 / 星星")}</span>
+              <span className="inline-flex items-center gap-1 font-extrabold text-pal">
+                {t("自訂帕魯")}
+                <FiStar className="size-3" />
               </span>
+              <span className="block text-xs text-ink-muted">{t("詞條 / 體質 / 星星")}</span>
             </button>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">

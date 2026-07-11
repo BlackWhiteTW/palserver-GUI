@@ -6,6 +6,7 @@ import {
   type EngineSettings,
   type PalDefenderConfig,
   CreateInstanceSchema,
+  CustomPalSchema,
   UpdateSettingsSchema,
   WorldSettingsSchema,
   detectVpn,
@@ -43,7 +44,8 @@ import { getConfigHealth, regenerateConfig } from "./config-health.js";
 import { getPalDefenderConfig, writePalDefenderConfig } from "./paldefender-config.js";
 import { getPlayerDetail, getPdRestStatus, setPdRestEnabled, provisionPdToken } from "./paldefender-rest.js";
 import { setTelemetryEnabled, telemetryStatus, track } from "./telemetry.js";
-import { licenseStatus, setLicenseKey, clearLicenseKey } from "./license.js";
+import { licenseStatus, setLicenseKey, clearLicenseKey, featureEnabled } from "./license.js";
+import { giveCustomPal } from "./pals.js";
 import { applyUpdate, getUpdateStatus, setUpdatePrefs, type UpdateOps } from "./self-update.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -603,6 +605,26 @@ export function registerRoutes(
     const { command } = z.object({ command: z.string().min(1).max(500) }).parse(req.body);
     const output = await rconExec(rec, command);
     return { command, output };
+  });
+
+  // 自訂帕魯(贊助者先行版 custom-pal):PalDefender 範本 + RCON givepal_j。
+  app.post("/api/instances/:id/pals/give", async (req, reply) => {
+    if (!featureEnabled("custom-pal")) {
+      return reply
+        .code(403)
+        .send({ error: "此功能為贊助者先行版,請在設定頁輸入贊助者識別碼解鎖。" });
+    }
+    const rec = getOr404((req.params as { id: string }).id);
+    if (rec.backend !== "native") {
+      return reply.code(409).send({ error: "自訂帕魯目前僅支援原生模式的實例" });
+    }
+    if (!getModsStatus(rec, ctxOf(rec)).paldefender.installed) {
+      return reply.code(409).send({ error: "需要先安裝 PalDefender 才能發帕魯" });
+    }
+    requireRcon(rec);
+    const input = CustomPalSchema.parse(req.body);
+    const output = await giveCustomPal(rec, ctxOf(rec), input);
+    return { output };
   });
 
   // ── PalDefender Config.json ──

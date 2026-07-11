@@ -70,6 +70,47 @@ export const CreateInstanceSchema = z.object({
 });
 export type CreateInstanceInput = z.infer<typeof CreateInstanceSchema>;
 
+/**
+ * 自訂帕魯(贊助者先行版功能 custom-pal):透過 PalDefender 的 PalTemplate + RCON
+ * `givepal_j` 發一隻客製帕魯給玩家。欄位對應 PalTemplate:詞條=Passives、體質=IVs、
+ * 星星=CondensedPals、靈魂=PalSouls。省略的欄位就用 PalDefender 預設。
+ */
+export const CustomPalSchema = z.object({
+  /** 目標玩家的 UserId(givepal_j 的第一個參數)。 */
+  userId: z.string().trim().min(1).max(128),
+  /** 帕魯種類 ID,例:Anubis(paldb.cc 可查)。 */
+  palId: z.string().trim().min(1).max(64),
+  nickname: z.string().trim().max(40).optional(),
+  gender: z.enum(["Male", "Female", "None"]).optional(),
+  level: z.number().int().min(1).max(100).optional(),
+  /** 主動技(最多 3 個技能 ID)。 */
+  activeSkills: z.array(z.string().trim().min(1).max(64)).max(3).optional(),
+  /** 詞條 / 被動技(技能 ID)。 */
+  passives: z.array(z.string().trim().min(1).max(64)).max(8).optional(),
+  /** 體質 / IV,0–255。 */
+  ivs: z
+    .object({
+      health: z.number().int().min(0).max(255).optional(),
+      attackMelee: z.number().int().min(0).max(255).optional(),
+      attackShot: z.number().int().min(0).max(255).optional(),
+      defense: z.number().int().min(0).max(255).optional(),
+    })
+    .optional(),
+  /** 星星 / 濃縮等級,0–4。 */
+  condensedPals: z.number().int().min(0).max(4).optional(),
+  /** 靈魂強化,每項 0–20。 */
+  souls: z
+    .object({
+      health: z.number().int().min(0).max(20).optional(),
+      attack: z.number().int().min(0).max(20).optional(),
+      defense: z.number().int().min(0).max(20).optional(),
+      craftSpeed: z.number().int().min(0).max(20).optional(),
+    })
+    .optional(),
+  partnerSkillLevel: z.number().int().min(1).max(5).optional(),
+});
+export type CustomPalInput = z.infer<typeof CustomPalSchema>;
+
 export interface InstanceSummary {
   id: string;
   name: string;

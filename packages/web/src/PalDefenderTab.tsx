@@ -12,6 +12,7 @@ import {
 } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { FileEditor } from "./FileManager";
+import { CustomPalCard } from "./CustomPalCard";
 import { t, useI18n } from "./i18n";
 import { btn, btnGhost, card, errorCls, inputCls } from "./ui";
 
@@ -100,6 +101,8 @@ export function PalDefenderTab({
       {notice && (
         <p className="rounded-xl bg-grass/10 px-3 py-2 text-[13px] font-bold text-grass">{notice}</p>
       )}
+
+      <CustomPalCard client={client} instanceId={instanceId} />
 
       <div className={`${card} flex flex-wrap items-center justify-between gap-2`}>
         <p className="inline-flex items-center gap-2 text-sm font-extrabold">

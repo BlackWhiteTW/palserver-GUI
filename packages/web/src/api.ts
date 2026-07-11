@@ -7,6 +7,7 @@ import type {
   ConfigHealth,
   ConnectionInfo,
   CreateInstanceInput,
+  CustomPalInput,
   DirEntry,
   EngineSettings,
   EngineSettingsStatus,
@@ -253,6 +254,14 @@ export class AgentClient {
     return this.request(`/api/instances/${id}/mods/lua-toggle`, {
       method: "POST",
       body: JSON.stringify({ name, enabled }),
+    });
+  }
+
+  /** 自訂帕魯(贊助者先行版):PalDefender 範本 + givepal_j。 */
+  giveCustomPal(id: string, input: CustomPalInput): Promise<{ output: string }> {
+    return this.request(`/api/instances/${id}/pals/give`, {
+      method: "POST",
+      body: JSON.stringify(input),
     });
   }
 

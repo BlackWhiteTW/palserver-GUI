@@ -50,7 +50,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "mods", label: "模組" },
   { id: "paldefender", label: "PalDefender" },
   { id: "saves", label: "存檔備份" },
-  { id: "restart", label: "自動重啟" },
+  { id: "restart", label: "伺服器重啟" },
   { id: "instance", label: "設定" },
   { id: "logs", label: "日誌" },
 ];
@@ -100,7 +100,7 @@ export function InstanceDetailPage({
   }, [refresh]);
 
   const act = async (action: "start" | "stop" | "restart") => {
-    // 手動停止/重啟時,agent 端會依「自動重啟設定」裡的倒數秒數,在遊戲聊天室倒數公告
+    // 手動停止/重啟時,agent 端會依「伺服器重啟設定」裡的倒數秒數,在遊戲聊天室倒數公告
     // 再執行;公告訊息用 GUI 介面語言的模板({n} 由 agent 代入剩餘秒數)。前端只負責把
     // 模板傳過去,並用讀到的秒數跑一個純顯示用的本地倒數。
     const isDowntime = (action === "stop" || action === "restart") && detail?.status === "running";

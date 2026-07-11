@@ -46,7 +46,7 @@ export function RestartCard({ client, instanceId }: { client: AgentClient; insta
   if (!status.supported) {
     return (
       <div className={card}>
-        <h3 className="text-sm font-extrabold text-ink-muted">{t("自動重啟")}</h3>
+        <h3 className="text-sm font-extrabold text-ink-muted">{t("伺服器重啟")}</h3>
         <p className="mt-1 text-[13px] text-ink-muted">{status.reason}</p>
       </div>
     );
@@ -59,7 +59,7 @@ export function RestartCard({ client, instanceId }: { client: AgentClient; insta
     setError(null);
     try {
       await client.updateRestartPolicy(instanceId, draft);
-      setNotice(t("已儲存自動重啟設定"));
+      setNotice(t("已儲存伺服器重啟設定"));
       setTimeout(() => setNotice(null), 3000);
       await refresh();
     } catch (err) {
@@ -75,7 +75,7 @@ export function RestartCard({ client, instanceId }: { client: AgentClient; insta
     <div className={`${card} flex flex-col gap-4`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="inline-flex items-center gap-2 text-sm font-extrabold">
-          <FiRefreshCw className="size-4 text-pal" /> {t("自動重啟")}
+          <FiRefreshCw className="size-4 text-pal" /> {t("伺服器重啟")}
         </h3>
         <span className="text-xs text-ink-muted">
           {status.memoryMB !== null && `${t("目前記憶體")} ${status.memoryMB} MB · `}

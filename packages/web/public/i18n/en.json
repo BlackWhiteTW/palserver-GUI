@@ -847,5 +847,7 @@
  "伺服器將在 {n} 秒後重新啟動": "Server will restart in {n} seconds",
  "已在遊戲聊天室公告,{n} 秒後執行…": "Announced in game chat — running in {n}s…",
  "停止 / 重啟前的預告秒數(0 = 不預告)": "Warning countdown before stop / restart (seconds; 0 = no warning)",
- "計畫性重啟以及你手動按停止 / 重啟時,都會先在遊戲聊天室倒數公告這麼多秒(手動用介面語言),並在重啟前先存檔。崩潰重啟不預告(伺服器已經不在了)。": "Both scheduled restarts and your manual stop / restart count down this many seconds in the in-game chat first (manual uses the interface language) and save the world before restarting. Crash restarts skip the warning (the server is already gone)."
+ "計畫性重啟以及你手動按停止 / 重啟時,都會先在遊戲聊天室倒數公告這麼多秒(手動用介面語言),並在重啟前先存檔。崩潰重啟不預告(伺服器已經不在了)。": "Both scheduled restarts and your manual stop / restart count down this many seconds in the in-game chat first (manual uses the interface language) and save the world before restarting. Crash restarts skip the warning (the server is already gone).",
+ "伺服器重啟": "Server restart",
+ "已儲存伺服器重啟設定": "Server restart settings saved"
 }

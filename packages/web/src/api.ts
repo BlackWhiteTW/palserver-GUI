@@ -188,7 +188,7 @@ export class AgentClient {
   }
 
   /** announceTemplate(含 {n} 佔位)只用於 stop/restart:agent 會用它在遊戲聊天室
-   * 倒數公告(語言由呼叫端決定),秒數取自該實例自動重啟設定的 announceSeconds。 */
+   * 倒數公告(語言由呼叫端決定),秒數取自該實例伺服器重啟設定的 announceSeconds。 */
   action(
     id: string,
     action: "start" | "stop" | "restart",

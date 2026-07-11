@@ -122,7 +122,9 @@ export async function provisionPdToken(
 const PD_ERROR_MESSAGES: Record<string, string> = {
   INVALID_TOKEN: "存取權杖尚未生效 — 請重啟伺服器一次(或確認 RCON 已啟用,讓 agent 能自動載入權杖)",
   MISSING_PERMISSION: "存取權杖權限不足",
-  PLAYER_NOT_FOUND: "此玩家目前不在線上 — PalDefender 只能查詢在線玩家的帕魯與背包",
+  // PalDefender 1.8.0 起 /player、/pals、/items 都支援離線玩家,所以查不到通常代表這個
+  // 玩家從未加入過,或 PalDefender 版本過舊(1.8 之前只能查在線)。
+  PLAYER_NOT_FOUND: "找不到這個玩家 —— 可能從未加入過此伺服器,或你的 PalDefender 版本過舊(需 1.8.0 以上才能查詢離線玩家,請更新 PalDefender)。",
   PLAYER_ACCOUNT_NOT_FOUND: "找到玩家但無法載入其存檔資料",
   REQUEST_TIMEOUT: "PalDefender 回應逾時,請稍後再試",
   REQUEST_FAILED: "PalDefender 處理請求時發生錯誤",

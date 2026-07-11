@@ -811,5 +811,6 @@
  "搬移中…": "Moving…",
  "搬移到這個路徑": "Move to this path",
  "正在背景搬移伺服器檔案,完成前狀態會顯示為「安裝中」…": "Moving server files in the background; the status will show \"installing\" until it finishes…",
- "已搬移伺服器檔案到新位置。": "Moved the server files to the new location."
+ "已搬移伺服器檔案到新位置。": "Moved the server files to the new location.",
+ "玩家細節需要安裝 PalDefender 並啟用其 REST API。PalDefender 1.8.0 以上連離線玩家也能查詢。": "Player detail requires PalDefender with its REST API enabled. PalDefender 1.8.0+ can query offline players too."
 }

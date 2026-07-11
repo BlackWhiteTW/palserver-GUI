@@ -56,7 +56,9 @@ export function PlayerDetailModal({
             <GiShield className="mx-auto mb-2 size-11" />
             <p className="font-bold">{t("無法讀取玩家細節")}</p>
             <p className="mt-1 text-[13px]">{detail.reason}</p>
-            <p className="mt-2 text-xs">{t("玩家細節需要安裝 PalDefender 並啟用其 REST API。")}</p>
+            <p className="mt-2 text-xs">
+              {t("玩家細節需要安裝 PalDefender 並啟用其 REST API。PalDefender 1.8.0 以上連離線玩家也能查詢。")}
+            </p>
           </div>
         )}
 

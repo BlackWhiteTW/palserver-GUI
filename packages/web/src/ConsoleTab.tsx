@@ -279,7 +279,7 @@ export function ConsoleTab({
                 className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
                 onClick={() => setCustomPalMode("pal")}
               >
-                <span className="inline-flex items-center gap-1 font-mono text-sponsor">
+                <span className="inline-flex items-center gap-1 font-mono text-premium">
                   givepal_j <FiStar className="size-3" />
                 </span>
                 <span className="block text-xs text-ink-muted">{t("自訂帕魯(詞條 / 體質 / 星星)")}</span>
@@ -289,7 +289,7 @@ export function ConsoleTab({
                 className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
                 onClick={() => setCustomPalMode("egg")}
               >
-                <span className="inline-flex items-center gap-1 font-mono text-sponsor">
+                <span className="inline-flex items-center gap-1 font-mono text-premium">
                   giveegg_j <FiStar className="size-3" />
                 </span>
                 <span className="block text-xs text-ink-muted">{t("自訂帕魯蛋(詞條 / 體質 / 星星)")}</span>

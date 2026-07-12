@@ -16,7 +16,8 @@
   --color-grass: #58ba64; /* success */
   --color-berry: #ef6a6a; /* danger */
   --color-sun: #f2b64f; /* warning */
-  --color-sponsor: #ec5f9e; /* sponsor / 先行版標示 — 粉紅 */
+  --color-sponsor: #ec5f9e; /* 捐款 / 贊助我們 CTA — 粉紅 */
+  --color-premium: #9b7fe0; /* 贊助者先行版功能標示 — 淡紫(premium) */
   --color-line: #dcebf3;
 
   --radius-cute: 18px;

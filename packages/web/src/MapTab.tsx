@@ -152,7 +152,7 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                     onClick={() => setShowBases((v) => !v)}
                   >
                     <FiHome className="size-4" /> {t("公會據點")}
-                    <FiStar className="size-3.5 text-sponsor" />
+                    <FiStar className="size-3.5 text-premium" />
                   </button>
                 ) : (
                   <button
@@ -161,7 +161,7 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                     onClick={() => setGuildHint((v) => !v)}
                   >
                     <FiHome className="size-4" /> {t("公會據點")}
-                    <FiStar className="size-3.5 text-sponsor" />
+                    <FiStar className="size-3.5 text-premium" />
                   </button>
                 )}
               </div>

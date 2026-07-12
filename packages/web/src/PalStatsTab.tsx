@@ -174,7 +174,7 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
       <div className={`${card} flex flex-wrap items-center justify-between gap-2`}>
         <p className="inline-flex items-center gap-2 text-sm font-extrabold">
           <GiSheep className="size-4 text-pal" /> {t("帕魯物種數值編輯器")}
-          <span className="inline-flex items-center gap-1 rounded-full bg-sponsor/10 px-2 py-0.5 text-xs font-bold text-sponsor">
+          <span className="inline-flex items-center gap-1 rounded-full bg-premium/10 px-2 py-0.5 text-xs font-bold text-premium">
             <FiStar className="size-3" /> {t("贊助者")}
           </span>
         </p>

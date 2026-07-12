@@ -188,7 +188,7 @@ export function SettingsModal({
         {SHOW_SPONSOR_FEATURES && lic && (
           <div className="border-t border-line pt-3">
             <h3 className="inline-flex items-center gap-1.5 text-sm font-extrabold">
-              <FiStar className="size-4 text-sponsor" /> {t("贊助者識別碼")}
+              <FiStar className="size-4 text-premium" /> {t("贊助者識別碼")}
             </h3>
             <p className="mt-1 text-xs text-ink-muted">
               {t("輸入贊助者識別碼即可搶先體驗先行版功能。一組識別碼只能綁定一台伺服器,這台的機器碼為")}{" "}

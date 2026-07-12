@@ -170,9 +170,9 @@ export function CustomPalModal({
       >
         <div className="flex shrink-0 items-center justify-between">
           <h2 className="inline-flex items-center gap-2 text-lg font-extrabold">
-            <GiEggClutch className="size-5 text-sponsor" />{" "}
+            <GiEggClutch className="size-5 text-premium" />{" "}
             {mode === "egg" ? t("自訂帕魯蛋") : t("自訂帕魯")}
-            <span className="inline-flex items-center gap-1 rounded-full bg-sponsor/10 px-2 py-0.5 text-xs font-bold text-sponsor">
+            <span className="inline-flex items-center gap-1 rounded-full bg-premium/10 px-2 py-0.5 text-xs font-bold text-premium">
               <FiStar className="size-3" /> {t("贊助者")}
             </span>
           </h2>

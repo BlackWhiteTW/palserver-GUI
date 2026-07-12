@@ -26,16 +26,18 @@ import { Overlay, btn, btnGhost, card, errorCls } from "./ui";
  * map-coordinate bounds the wiki's DataMaps publishes for that image, so the
  * whole thing is correct by construction.
  */
-const MAP_IMAGE = "/palpagos-world-map.webp";
+const MAP_IMAGE = "/palworld-full-map.jpg";
 
 /**
- * MAP_IMAGE is framed to the in-game map coordinate square: [-1000, 1000] on
- * both axes (the same system savToMap outputs and the REST/in-game coordinates
- * use). Verified empirically — two known-coordinate terrain points land within
- * ~0.0005 of the ±1000 prediction. CRS.Simple uses [lat,lng] = [mapY (north),
- * mapX (east)], so the image spans [[south, west], [north, east]]:
+ * Full world map (Palpagos + Sakurajima + Feybreak), stitched from palworld.gg's
+ * map tiles. It covers the game's full land-texture bounds, world
+ * X∈[-1099400, 349400], Y∈[-724400, 724400]. Converted through savToMap
+ * (mapX=(worldY-158000)/459, mapY=(worldX+123888)/459) that is, in our map coord
+ * system, mapX∈[-1922.44, 1233.99], mapY∈[-2125.30, 1031.13]. CRS.Simple uses
+ * [lat,lng] = [mapY (north), mapX (east)] → [[south, west], [north, east]].
+ * Verified: Mt Obsidian, the snow island and Sakurajima all land in-region.
  */
-const IMAGE_BOUNDS = L.latLngBounds([-1000, -1000], [1000, 1000]);
+const IMAGE_BOUNDS = L.latLngBounds([-2125.3, -1922.44], [1031.13, 1233.99]);
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
@@ -428,7 +430,7 @@ function PlayerMap({
       crs: L.CRS.Simple,
       attributionControl: false,
       zoomSnap: 0.25,
-      maxZoom: 3,
+      maxZoom: 4,
     });
     map.setView(IMAGE_BOUNDS.getCenter(), -2); // provisional view; applySize refits properly
     el.style.background = "transparent"; // let the card bg show past the image instead of Leaflet's grey

@@ -102,7 +102,6 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
   const [showLandmarks, setShowLandmarks] = useState(false);
   const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [guildHint, setGuildHint] = useState(false);
-  const [picks, setPicks] = useState<{ x: number; y: number }[]>([]);
 
   // Static landmark set (bundled), loaded once.
   useEffect(() => {
@@ -233,24 +232,6 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                 {t("公會據點是贊助者專屬功能,可在設定頁輸入贊助者識別碼解鎖。")}
               </p>
             )}
-            {/* 暫時的校正讀數:點地圖上你知道座標的地標,把座標念給我。 */}
-            <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]`}>
-              <span className="font-bold text-ink-muted">{t("校正:點地圖顯示該處座標")}</span>
-              {picks.length === 0 ? (
-                <span className="text-ink-muted">{t("(還沒點)")}</span>
-              ) : (
-                picks.map((p, i) => (
-                  <span key={i} className="font-mono">
-                    #{i + 1} {p.x}, {p.y}
-                  </span>
-                ))
-              )}
-              {picks.length > 0 && (
-                <button className={btnGhost} onClick={() => setPicks([])}>
-                  {t("清除")}
-                </button>
-              )}
-            </div>
             <div className="min-h-0 flex-1 overflow-hidden rounded-xl">
               <PlayerMap
                 players={live.players}
@@ -265,7 +246,6 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                 gameData={gameData}
                 onGuildClick={setGuildDetailId}
                 onPlayerClick={(id, label) => setPlayerDetail({ id, label })}
-                onPick={(x, y) => setPicks((p) => [...p, { x: Math.round(x), y: Math.round(y) }].slice(-4))}
               />
             </div>
           </div>
@@ -416,7 +396,6 @@ function PlayerMap({
   gameData,
   onGuildClick,
   onPlayerClick,
-  onPick,
 }: {
   players: RestPlayer[];
   guilds: PdGuild[];
@@ -433,8 +412,6 @@ function PlayerMap({
   onGuildClick?: (guildId: string) => void;
   /** Open the full player-detail view (same as the player list). */
   onPlayerClick?: (userId: string, name: string) => void;
-  /** Calibration: report the clicked in-game coordinate (mapX, mapY). */
-  onPick?: (mapX: number, mapY: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -443,8 +420,6 @@ function PlayerMap({
   onGuildClickRef.current = onGuildClick;
   const onPlayerClickRef = useRef(onPlayerClick);
   onPlayerClickRef.current = onPlayerClick;
-  const onPickRef = useRef(onPick);
-  onPickRef.current = onPick;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -460,8 +435,6 @@ function PlayerMap({
     L.imageOverlay(MAP_IMAGE, IMAGE_BOUNDS).addTo(map);
     map.setMaxBounds(IMAGE_BOUNDS.pad(0.3));
     markersRef.current = L.layerGroup().addTo(map);
-    // Calibration readout: report the clicked in-game coordinate (lng=mapX, lat=mapY).
-    map.on("click", (e) => onPickRef.current?.(e.latlng.lng, e.latlng.lat));
     mapRef.current = map;
 
     // The square container's height comes from layout and may be 0 on the first

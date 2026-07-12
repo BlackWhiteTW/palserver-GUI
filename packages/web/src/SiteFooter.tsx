@@ -64,13 +64,13 @@ export function SiteFooter({ conn }: { conn: Connection | null }) {
           </a>
           ,{" "}
           <a className={authorLink} href="https://iosoftware.ai" target="_blank" rel="noreferrer">
-            io Software
+            io Software{" "}
           </a>
           &{" "}
           <a className={authorLink} href="https://toc.icu" target="_blank" rel="noreferrer">
             TOC
           </a>
-          <span className="opacity-70"> (toc.icu)</span>
+        
           {byAfter}
         </div>
         <div className="mt-0.5 flex items-center gap-2">

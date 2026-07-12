@@ -1,4 +1,4 @@
-import { GitHubIcon, LogoMark } from './icons';
+import { GitHubIcon } from './icons';
 import LangSwitch from './LangSwitch';
 import NavMenu from './NavMenu';
 import type { Dictionary } from '@/i18n/dictionaries';
@@ -10,7 +10,7 @@ export default function Nav({ d, lang }: { d: Dictionary['nav']; lang: Locale })
       <div className="in">
         <a className="logo" href="#top">
           <span className="m">
-            <LogoMark />
+            <img src="/assets/logo.png" alt="" width={30} height={30} />
           </span>
           <span className="lt">palserver GUI</span>
         </a>

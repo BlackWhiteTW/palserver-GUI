@@ -62,7 +62,8 @@ const RAID_RADIUS = 70;
  * system). type → colour + i18n label key. */
 interface Landmark {
   type: string;
-  name: string;
+  /** Name per interface language (from paldb's per-locale map data). */
+  name: { en: string; zh: string; ja: string };
   x: number;
   y: number;
   lv?: number;
@@ -85,7 +86,7 @@ function avatarIconUrl(seed: string, gameData: GameData | null): string | null {
 }
 
 export function MapTab({ client, instanceId }: { client: AgentClient; instanceId: string }) {
-  useI18n();
+  const { lang } = useI18n();
   const gameData = useGameData();
   const [live, setLive] = useState<LiveStatus | null>(null);
   const [guilds, setGuilds] = useState<PdGuild[]>([]);
@@ -237,6 +238,7 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                 guilds={guilds}
                 pdPlayers={pdPlayers}
                 landmarks={landmarks}
+                lang={lang}
                 showPlayers={showPlayers}
                 showOffline={showOffline}
                 showBases={showBases}
@@ -386,6 +388,7 @@ function PlayerMap({
   guilds,
   pdPlayers,
   landmarks,
+  lang,
   showPlayers,
   showOffline,
   showBases,
@@ -400,6 +403,7 @@ function PlayerMap({
    * (when showOffline) provides offline players' last-saved positions. */
   pdPlayers: PdPlayerSummary[];
   landmarks: Landmark[];
+  lang: "zh" | "en" | "ja";
   showPlayers: boolean;
   showOffline: boolean;
   showBases: boolean;
@@ -511,7 +515,7 @@ function PlayerMap({
           fillOpacity: 0.9,
         })
           .bindTooltip(
-            `<div style="font-weight:800">${escapeHtml(lm.name)}</div>` +
+            `<div style="font-weight:800">${escapeHtml(lm.name[lang] || lm.name.en)}</div>` +
               `<div>${t(style.label)}${lm.lv ? ` · Lv.${lm.lv}` : ""}</div>`,
             { direction: "top", className: "pmap-detail" },
           )
@@ -623,7 +627,7 @@ function PlayerMap({
         marker.on("click", () => onPlayerClickRef.current?.(p.userId, p.name));
         group.addLayer(marker);
       }
-  }, [players, guilds, pdPlayers, landmarks, showPlayers, showOffline, showBases, showLandmarks, gameData]);
+  }, [players, guilds, pdPlayers, landmarks, lang, showPlayers, showOffline, showBases, showLandmarks, gameData]);
 
   return <div ref={containerRef} className="h-full w-full rounded-xl bg-card-soft" />;
 }

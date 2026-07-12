@@ -333,3 +333,17 @@ export function writePalStats(
   fs.writeFileSync(statsFile(root), JSON.stringify(merged, null, 4));
   return { supported: true, schema, rows: rowsFromRaw(merged) };
 }
+
+/** 清空所有已寫入的物種數值調整(移除受管 table),PalSchema 本體保留。
+ *  刻意不做贊助者 gate:讓「贊助→取消贊助」的使用者也能把數值改回原本設定。 */
+export function clearPalStats(rec: InstanceRecord, ctx: DriverContext): PalStatsStatus {
+  const schema = getPalSchemaStatus(rec, ctx);
+  if (!schema.supported) throw Object.assign(new Error(schema.reason ?? "unsupported"), { statusCode: 409 });
+  if (!schema.installed) throw Object.assign(new Error("尚未安裝 PalSchema"), { statusCode: 409 });
+  const root = serverRoot(rec, ctx);
+  scaffoldOurMod(root);
+  const raw = readStatsRaw(root);
+  delete raw[PAL_STATS_TABLE];
+  fs.writeFileSync(statsFile(root), JSON.stringify(raw, null, 4));
+  return { supported: true, schema, rows: rowsFromRaw(raw) };
+}

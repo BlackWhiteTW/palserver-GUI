@@ -42,7 +42,7 @@ import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
 import { getModsStatus, installComponent, installedEnhancements, removeComponent, setLuaModEnabled } from "./mods.js";
 import * as pakMods from "./pak-mods.js";
-import { getPalSchemaStatus, getPalStats, installPalSchema, removePalSchema, writePalStats } from "./palschema.js";
+import { clearPalStats, getPalSchemaStatus, getPalStats, installPalSchema, removePalSchema, writePalStats } from "./palschema.js";
 import { getModerationLists, moderation } from "./moderation.js";
 import { getLiveStatus, rest } from "./restapi.js";
 import * as files from "./files.js";
@@ -995,6 +995,12 @@ export function registerRoutes(
       .parse(req.body);
     // 改動寫進 PalSchema mod 檔,伺服器重啟後生效(不即時)。
     return writePalStats(rec, ctxOf(rec), body.row, body.values as PalStatValues);
+  });
+
+  // 清空所有物種數值調整。刻意「不」做贊助者 gate:贊助到期的使用者也要能改回原設定。
+  app.delete("/api/instances/:id/pal-stats", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    return clearPalStats(rec, ctxOf(rec));
   });
 
   // ── config-file health & regeneration ──

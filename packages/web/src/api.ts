@@ -450,6 +450,11 @@ export class AgentClient {
     });
   }
 
+  /** 清空所有物種數值調整(改回原本設定)。非贊助者也可用。 */
+  clearPalStats(id: string): Promise<PalStatsStatus> {
+    return this.request(`/api/instances/${id}/pal-stats`, { method: "DELETE" });
+  }
+
   configHealth(id: string): Promise<ConfigHealth> {
     return this.request(`/api/instances/${id}/config-health`);
   }

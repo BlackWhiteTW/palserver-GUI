@@ -179,6 +179,28 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
     }
   };
 
+  // 清空所有物種數值調整。刻意不受贊助者鎖限制:贊助到期的使用者也能改回原設定。
+  const clearAll = async () => {
+    if (
+      !confirm(
+        t("確定要刪除所有物種數值調整嗎?所有帕魯會改回原本設定,重啟伺服器後生效,此動作無法復原。"),
+      )
+    )
+      return;
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await client.clearPalStats(instanceId);
+      setStatus(next);
+      setNotice(t("已刪除所有物種數值調整,重啟伺服器後生效"));
+      setTimeout(() => setNotice(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {error && <p className={errorCls}>{error}</p>}
@@ -243,12 +265,21 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
         <>
           {status.rows.length > 0 && (
             <div className={`${card} flex flex-col gap-2`}>
-              <h3 className="inline-flex items-center gap-2 text-sm font-extrabold text-ink-muted">
-                <FiList className="size-4 text-pal" /> {t("已修改的帕魯")}
-                <span className="rounded-full bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
-                  {status.rows.length}
-                </span>
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="inline-flex items-center gap-2 text-sm font-extrabold text-ink-muted">
+                  <FiList className="size-4 text-pal" /> {t("已修改的帕魯")}
+                  <span className="rounded-full bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
+                    {status.rows.length}
+                  </span>
+                </h3>
+                <button
+                  className={`${btnGhost} inline-flex items-center gap-1.5 text-berry hover:border-berry`}
+                  onClick={clearAll}
+                  disabled={saving}
+                >
+                  <FiTrash2 className="size-4" /> {t("刪除所有修改")}
+                </button>
+              </div>
               <p className="text-xs text-ink-muted">
                 {t("這裡列出已寫入 PalSchema 的所有物種數值調整;點「編輯」可載回上方表單修改。")}
               </p>

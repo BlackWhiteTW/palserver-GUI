@@ -868,5 +868,9 @@
  "讀取失敗": "Failed to load",
  "靠近他人據點:{name}": "Near another guild's base: {name}",
  "公會據點是贊助者專屬功能,可在設定頁輸入贊助者識別碼解鎖。": "Guild bases are a sponsor-only feature — unlock it by entering a sponsor code on the settings page.",
- "最後位置": "Last seen"
+ "最後位置": "Last seen",
+ "地標": "Landmarks",
+ "快速旅行": "Fast travel",
+ "頭目塔": "Tower boss",
+ "地牢": "Dungeon"
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiRefreshCw, FiMap, FiX, FiHome, FiUsers, FiStar, FiMoon } from "react-icons/fi";
+import { FiRefreshCw, FiMap, FiX, FiHome, FiUsers, FiStar, FiMoon, FiMapPin } from "react-icons/fi";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -58,6 +58,21 @@ function pingColor(ping: number): string {
  * a *different* guild to flag a possible raid. */
 const RAID_RADIUS = 70;
 
+/** Static landmarks (from paldb.cc's map data; ipos is already in our map coord
+ * system). type → colour + i18n label key. */
+interface Landmark {
+  type: string;
+  name: string;
+  x: number;
+  y: number;
+  lv?: number;
+}
+const LANDMARK_STYLE: Record<string, { color: string; label: string }> = {
+  "Fast Travel": { color: "#33bccb", label: "快速旅行" },
+  Tower: { color: "#b07ce8", label: "頭目塔" },
+  Dungeon: { color: "#e0913f", label: "地牢" },
+};
+
 /** Same deterministic "random Pal" avatar as the player list (PlayerAvatar):
  * hash the userId and pick a Pal that has artwork. Returns its icon URL. */
 function avatarIconUrl(seed: string, gameData: GameData | null): string | null {
@@ -83,7 +98,17 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
   const [showPlayers, setShowPlayers] = useState(true);
   const [showOffline, setShowOffline] = useState(false);
   const [showBases, setShowBases] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(false);
+  const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [guildHint, setGuildHint] = useState(false);
+
+  // Static landmark set (bundled), loaded once.
+  useEffect(() => {
+    fetch("/game-data/landmarks.json")
+      .then((r) => (r.ok ? (r.json() as Promise<Landmark[]>) : []))
+      .then((d) => setLandmarks(Array.isArray(d) ? d : []))
+      .catch(() => setLandmarks([]));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -165,6 +190,14 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                     <FiMoon className="size-4" /> {t("離線玩家")}
                   </button>
                 )}
+                {landmarks.length > 0 && (
+                  <button
+                    className={`${btnGhost} inline-flex items-center gap-1.5 ${showLandmarks ? "border-pal text-pal" : "opacity-60"}`}
+                    onClick={() => setShowLandmarks((v) => !v)}
+                  >
+                    <FiMapPin className="size-4" /> {t("地標")}
+                  </button>
+                )}
                 {guildsUnlocked ? (
                   <button
                     className={`${btnGhost} inline-flex items-center gap-1.5 ${showBases ? "border-pal text-pal" : "opacity-60"}`}
@@ -203,9 +236,11 @@ export function MapTab({ client, instanceId }: { client: AgentClient; instanceId
                 players={live.players}
                 guilds={guilds}
                 pdPlayers={pdPlayers}
+                landmarks={landmarks}
                 showPlayers={showPlayers}
                 showOffline={showOffline}
                 showBases={showBases}
+                showLandmarks={showLandmarks}
                 gameData={gameData}
                 onGuildClick={setGuildDetailId}
                 onPlayerClick={(id, label) => setPlayerDetail({ id, label })}
@@ -350,9 +385,11 @@ function PlayerMap({
   players,
   guilds,
   pdPlayers,
+  landmarks,
   showPlayers,
   showOffline,
   showBases,
+  showLandmarks,
   gameData,
   onGuildClick,
   onPlayerClick,
@@ -362,9 +399,11 @@ function PlayerMap({
   /** PalDefender /players roster — matches live players to their guild, and
    * (when showOffline) provides offline players' last-saved positions. */
   pdPlayers: PdPlayerSummary[];
+  landmarks: Landmark[];
   showPlayers: boolean;
   showOffline: boolean;
   showBases: boolean;
+  showLandmarks: boolean;
   gameData: GameData | null;
   onGuildClick?: (guildId: string) => void;
   /** Open the full player-detail view (same as the player list). */
@@ -458,6 +497,27 @@ function PlayerMap({
       }
       return null;
     };
+
+    // Static landmarks (fast travel / towers / dungeons) as the bottom layer.
+    if (showLandmarks) {
+      for (const lm of landmarks) {
+        const style = LANDMARK_STYLE[lm.type];
+        if (!style) continue;
+        L.circleMarker([lm.y, lm.x], {
+          radius: 4,
+          weight: 1.5,
+          color: "#ffffff",
+          fillColor: style.color,
+          fillOpacity: 0.9,
+        })
+          .bindTooltip(
+            `<div style="font-weight:800">${escapeHtml(lm.name)}</div>` +
+              `<div>${t(style.label)}${lm.lv ? ` · Lv.${lm.lv}` : ""}</div>`,
+            { direction: "top", className: "pmap-detail" },
+          )
+          .addTo(group);
+      }
+    }
 
     // Guild bases first (under players). world_pos → savToMap, same frame.
     // The whole guild feature is sponsor-only, so if we have any guild data the
@@ -563,7 +623,7 @@ function PlayerMap({
         marker.on("click", () => onPlayerClickRef.current?.(p.userId, p.name));
         group.addLayer(marker);
       }
-  }, [players, guilds, pdPlayers, showPlayers, showOffline, showBases, gameData]);
+  }, [players, guilds, pdPlayers, landmarks, showPlayers, showOffline, showBases, showLandmarks, gameData]);
 
   return <div ref={containerRef} className="h-full w-full rounded-xl bg-card-soft" />;
 }

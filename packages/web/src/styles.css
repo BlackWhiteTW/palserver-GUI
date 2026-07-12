@@ -65,8 +65,10 @@
   --shadow-cute-hover: 0 10px 24px rgb(0 0 0 / 0.45);
 }
 
-/* ── 贊助者專屬主題:白銀(Vercel 風)。純黑底 + 銀白 + 銀色漸層。有效贊助者可在設定頁選用。 ── */
-:root[data-theme="sponsor"] {
+/* ══ 主題系列(贊助者限定):白銀(Vercel 風)、翡翠棲地。各有深/淺兩版。 ══ */
+
+/* ── 白銀 · 深色:純黑底 + 銀白 + 多層銀光暈 ── */
+:root[data-theme="silver-dark"] {
   color-scheme: dark;
   --color-sky-soft: #000000; /* 純黑(Vercel) */
   --color-card: #0f0f0f;
@@ -80,7 +82,7 @@
   --shadow-cute-hover: 0 12px 32px rgb(0 0 0 / 0.85);
 }
 /* 頁面背景:純黑 + 多層銀白光暈(中央聚光 + 廣域柔halo + 角落微光) */
-:root[data-theme="sponsor"] body {
+:root[data-theme="silver-dark"] body {
   background-color: #000000;
   background-image:
     radial-gradient(1300px 760px at 50% -12%, rgb(255 255 255 / 0.24), transparent 56%),
@@ -90,16 +92,105 @@
   background-attachment: fixed;
 }
 /* 主色按鈕(bg-pal):白→銀直向漸層 + 深色字(Vercel 主按鈕質感) */
-:root[data-theme="sponsor"] .bg-pal {
+:root[data-theme="silver-dark"] .bg-pal {
   background-image: linear-gradient(180deg, #ffffff 0%, #cfcfd4 100%);
   color: #0a0a0a;
 }
-:root[data-theme="sponsor"] .bg-pal:hover {
+:root[data-theme="silver-dark"] .bg-pal:hover {
   background-image: linear-gradient(180deg, #ffffff 0%, #e3e3e7 100%);
 }
 /* 卡片:銀色玻璃 sheen(頂緣亮 → 淡出)+ 微微高光 */
-:root[data-theme="sponsor"] .bg-card {
+:root[data-theme="silver-dark"] .bg-card {
   background-image: linear-gradient(180deg, rgb(255 255 255 / 0.10), rgb(255 255 255 / 0.02) 120px, rgb(255 255 255 / 0) 240px);
+}
+
+/* ── 白銀 · 淺色:白/淺灰底 + 石墨黑 + 銀灰漸層(Vercel 淺色) ── */
+:root[data-theme="silver-light"] {
+  color-scheme: light;
+  --color-sky-soft: #f4f5f7;
+  --color-card: #ffffff;
+  --color-card-soft: #eceef1;
+  --color-ink: #16171a;
+  --color-ink-muted: #6b7178;
+  --color-pal: #18181b; /* 主色=石墨黑(按鈕 / 連結 / 星星) */
+  --color-pal-strong: #000000;
+  --color-line: #e2e5e9;
+  --shadow-cute: 0 6px 18px rgb(20 24 28 / 0.10);
+  --shadow-cute-hover: 0 10px 24px rgb(20 24 28 / 0.16);
+}
+:root[data-theme="silver-light"] body {
+  background-color: #f4f5f7;
+  background-image:
+    radial-gradient(1200px 640px at 50% -18%, rgb(20 24 28 / 0.05), transparent 60%),
+    radial-gradient(900px 520px at 92% 6%, rgb(20 24 28 / 0.03), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="silver-light"] .bg-pal {
+  background-image: linear-gradient(180deg, #2b2b2f 0%, #0a0a0a 100%);
+  color: #fafafa;
+}
+:root[data-theme="silver-light"] .bg-pal:hover {
+  background-image: linear-gradient(180deg, #3a3a3f 0%, #161616 100%);
+}
+:root[data-theme="silver-light"] .bg-card {
+  background-image: linear-gradient(180deg, rgb(20 24 28 / 0.03), rgb(20 24 28 / 0) 120px);
+}
+
+/* ── 翡翠棲地 · 淺色:薄荷奶油 + 翡翠綠 ── */
+:root[data-theme="emerald-light"] {
+  color-scheme: light;
+  --color-sky-soft: #f0f9f4;
+  --color-card: #ffffff;
+  --color-card-soft: #e6f4ec;
+  --color-ink: #14241c;
+  --color-ink-muted: #5c7266;
+  --color-pal: #12996a;
+  --color-pal-strong: #0e7d56;
+  --color-line: #d2eade;
+  --shadow-cute: 0 6px 18px rgb(18 153 106 / 0.14);
+  --shadow-cute-hover: 0 10px 24px rgb(18 153 106 / 0.22);
+}
+:root[data-theme="emerald-light"] body {
+  background-color: #f0f9f4;
+  background-image:
+    radial-gradient(1200px 560px at 12% -10%, rgb(18 153 106 / 0.12), transparent 60%),
+    radial-gradient(1000px 520px at 100% 4%, rgb(31 179 124 / 0.10), transparent 58%);
+  background-attachment: fixed;
+}
+:root[data-theme="emerald-light"] .bg-pal {
+  background-image: linear-gradient(135deg, #1fb37c 0%, #0e7d56 100%);
+}
+:root[data-theme="emerald-light"] .bg-card {
+  background-image: linear-gradient(180deg, rgb(18 153 106 / 0.05), rgb(18 153 106 / 0) 120px);
+}
+
+/* ── 翡翠棲地 · 深色:森林墨綠 + 亮翡翠 + 微綠光暈 ── */
+:root[data-theme="emerald-dark"] {
+  color-scheme: dark;
+  --color-sky-soft: #0e1c16;
+  --color-card: #16261f;
+  --color-card-soft: #1d3128;
+  --color-ink: #eaf3ee;
+  --color-ink-muted: #90a89b;
+  --color-pal: #24c78d;
+  --color-pal-strong: #3fdba1;
+  --color-line: #274135;
+  --shadow-cute: 0 8px 22px rgb(0 0 0 / 0.5);
+  --shadow-cute-hover: 0 12px 30px rgb(0 0 0 / 0.62);
+}
+:root[data-theme="emerald-dark"] body {
+  background-color: #0e1c16;
+  background-image:
+    radial-gradient(1200px 620px at 12% -12%, rgb(36 199 141 / 0.16), transparent 58%),
+    radial-gradient(1000px 560px at 100% 0%, rgb(36 199 141 / 0.10), transparent 55%);
+  background-attachment: fixed;
+}
+:root[data-theme="emerald-dark"] .bg-pal {
+  background-image: linear-gradient(135deg, #2fd699 0%, #128a5f 100%);
+  color: #06140d;
+}
+:root[data-theme="emerald-dark"] .bg-card {
+  background-image: linear-gradient(180deg, rgb(36 199 141 / 0.08), rgb(36 199 141 / 0) 120px);
 }
 
 body {

@@ -3,22 +3,58 @@ import { FiMoon, FiSun } from "react-icons/fi";
 import { useI18n } from "./i18n";
 
 /**
- * 深淺色模式:預設跟隨系統(auto),但 auto 只是還沒選過的初始狀態 ——
- * 一旦手動切換就只在淺色/深色之間互切,不再回到跟隨系統。
- * 手動選擇時在 <html> 上掛 data-theme,styles.css 據此覆蓋色票;
- * 選擇存 localStorage,main.tsx 在 React 掛載前先套用,避免閃色。
+ * 主題 = 「系列(family) × 深/淺」雙軸。
+ *  - family: pal(帕魯原色,免費)、silver(白銀 Vercel,贊助)、emerald(翡翠棲地,贊助)
+ *  - 深/淺: pal 支援 auto(跟隨系統);silver/emerald 為明確 light/dark
+ * 手動選擇在 <html> 掛 data-theme,styles.css 據此覆蓋色票;存 localStorage,
+ * main.tsx 在 React 掛載前先套用避免閃色。舊值 "sponsor" 遷移為 "silver-dark"。
  */
 
-/** auto/light/dark 是深淺色;sponsor 是贊助者專屬主題(白銀漸層,Vercel 風),
- *  只在 SettingsModal 對有效贊助者開放選用。 */
-export type ThemeMode = "auto" | "light" | "dark" | "sponsor";
+export const THEME_FAMILIES = ["pal", "silver", "emerald"] as const;
+export type ThemeFamily = (typeof THEME_FAMILIES)[number];
+
+/** 存檔/套用用的完整主題值。pal 家族沿用舊的 auto/light/dark(向後相容)。 */
+export type ThemeMode =
+  | "auto"
+  | "light"
+  | "dark"
+  | "silver-light"
+  | "silver-dark"
+  | "emerald-light"
+  | "emerald-dark";
 
 const KEY = "palserver.theme";
+
+export function themeFamily(m: ThemeMode): ThemeFamily {
+  if (m.startsWith("silver")) return "silver";
+  if (m.startsWith("emerald")) return "emerald";
+  return "pal";
+}
+
+/** 由「系列 + 是否深色」組出主題值。 */
+export function composeTheme(family: ThemeFamily, dark: boolean): ThemeMode {
+  if (family === "pal") return dark ? "dark" : "light";
+  return `${family}-${dark ? "dark" : "light"}` as ThemeMode;
+}
+
+/** 此主題值在目前系統外觀下是否為深色(auto 才需要 systemDark)。 */
+export function isThemeDark(m: ThemeMode, systemDark: boolean): boolean {
+  if (m === "auto") return systemDark;
+  return m.endsWith("dark");
+}
 
 export function loadThemeMode(): ThemeMode {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "light" || v === "dark" || v === "sponsor" ? v : "auto";
+    if (v === "sponsor") return "silver-dark"; // 舊值遷移
+    if (
+      v === "light" || v === "dark" ||
+      v === "silver-light" || v === "silver-dark" ||
+      v === "emerald-light" || v === "emerald-dark"
+    ) {
+      return v;
+    }
+    return "auto";
   } catch {
     return "auto";
   }
@@ -29,7 +65,7 @@ export function applyThemeMode(mode: ThemeMode): void {
   else document.documentElement.dataset.theme = mode;
 }
 
-/** 套用並記住主題選擇(給 SettingsModal 的贊助者主題開關用)。 */
+/** 套用並記住主題選擇(供設定頁的主題選擇器 / header 切換用)。 */
 export function setThemeMode(mode: ThemeMode): void {
   applyThemeMode(mode);
   try {
@@ -40,14 +76,8 @@ export function setThemeMode(mode: ThemeMode): void {
   }
 }
 
-/**
- * header 上的圓形切換鈕,點一下在淺色/深色之間互切(從目前實際外觀的
- * 反面開始)。圖示顯示目前實際的深淺色(太陽/月亮);還沒選過時跟著
- * 系統外觀走,系統切換時圖示也即時跟著換。
- */
-export function ThemeToggle() {
-  const { t } = useI18n();
-  const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
+/** 訂閱系統深淺色。 */
+export function useSystemDark(): boolean {
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -57,16 +87,22 @@ export function ThemeToggle() {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
-  const isDark = mode === "dark" || (mode === "auto" && systemDark);
+  return systemDark;
+}
+
+/**
+ * header 上的圓形切換鈕:在目前主題「系列」內切換深/淺(從目前實際外觀的反面開始)。
+ * 圖示顯示目前實際的深淺色(太陽/月亮)。
+ */
+export function ThemeToggle() {
+  const { t } = useI18n();
+  const [mode, setMode] = useState<ThemeMode>(loadThemeMode);
+  const systemDark = useSystemDark();
+  const isDark = isThemeDark(mode, systemDark);
   const toggle = () => {
-    const next: ThemeMode = isDark ? "light" : "dark";
+    const next = composeTheme(themeFamily(mode), !isDark);
     setMode(next);
-    applyThemeMode(next);
-    try {
-      localStorage.setItem(KEY, next);
-    } catch {
-      /* 無痕模式等存不進去就只作用這一次 */
-    }
+    setThemeMode(next);
   };
   const Icon = isDark ? FiMoon : FiSun;
   const label = isDark ? t("深色模式") : t("淺色模式");

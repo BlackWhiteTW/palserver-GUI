@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiX, FiCopy, FiCheck, FiRefreshCw, FiSmartphone, FiKey, FiWifi, FiTrash2, FiStar, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiX, FiCopy, FiCheck, FiRefreshCw, FiSmartphone, FiKey, FiWifi, FiTrash2, FiStar, FiEye, FiEyeOff, FiSun } from "react-icons/fi";
 import type { LicenseStatus } from "@palserver/shared";
 import type { AgentClient, Connection, TelemetryStatus } from "./api";
 import { copyText } from "./clipboard";
@@ -7,7 +7,7 @@ import { PrivacyModal } from "./PrivacyModal";
 import { UpdateCard } from "./UpdateCard";
 import { useI18n } from "./i18n";
 import { SHOW_SPONSOR_FEATURES } from "./flags";
-import { loadThemeMode, setThemeMode, type ThemeMode } from "./theme";
+import { ThemePicker } from "./ThemePicker";
 import { Overlay, card, btn, btnGhost } from "./ui";
 
 /**
@@ -34,7 +34,7 @@ export function SettingsModal({
   const [lic, setLic] = useState<LicenseStatus | null>(null);
   const [licInput, setLicInput] = useState("");
   const [licBusy, setLicBusy] = useState(false);
-  const [themeMode, setThemeModeLocal] = useState<ThemeMode>(loadThemeMode);
+  const [showThemes, setShowThemes] = useState(false);
 
   useEffect(() => {
     client.pairingCode().then((r) => setCode(r.pairingCode)).catch(() => setCode(null));
@@ -183,6 +183,24 @@ export function SettingsModal({
             ))}
         </div>
 
+        {/* 外觀主題 */}
+        <div className="border-t border-line pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-extrabold">{t("外觀主題")}</h3>
+              <p className="mt-1 text-xs text-ink-muted">
+                {t("深 / 淺色與主題風格。白銀、翡翠為贊助者專屬。")}
+              </p>
+            </div>
+            <button
+              className={`${btnGhost} inline-flex shrink-0 items-center gap-1.5`}
+              onClick={() => setShowThemes(true)}
+            >
+              <FiSun className="size-4" /> {t("選擇主題")}
+            </button>
+          </div>
+        </div>
+
         {/* GUI 自我更新(對接 GitHub Releases) */}
         <UpdateCard client={client} />
 
@@ -219,22 +237,6 @@ export function SettingsModal({
                 <button className={`${btnGhost} inline-flex w-fit items-center gap-1.5`} onClick={clearLicense} disabled={licBusy}>
                   <FiTrash2 className="size-4" /> {t("移除識別碼")}
                 </button>
-                {lic.valid && (
-                  <label className="mt-1 flex items-center gap-2 text-[13px] font-bold text-ink-muted">
-                    <input
-                      type="checkbox"
-                      className="accent-pal"
-                      checked={themeMode === "sponsor"}
-                      onChange={(e) => {
-                        const next: ThemeMode = e.target.checked ? "sponsor" : "auto";
-                        setThemeMode(next);
-                        setThemeModeLocal(next);
-                      }}
-                    />
-                    <FiStar className="size-3.5 text-pal" />
-                    {t("啟用贊助者專屬主題(白銀 × 漸層,Vercel 風)")}
-                  </label>
-                )}
               </div>
             ) : (
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -288,6 +290,7 @@ export function SettingsModal({
           </div>
         )}
         {showPrivacy && <PrivacyModal onClose={() => setShowPrivacy(false)} />}
+        {showThemes && <ThemePicker entitled={!!lic?.valid} onClose={() => setShowThemes(false)} />}
 
         {/* 清除暫存資料 */}
         <div className="border-t border-line pt-3">

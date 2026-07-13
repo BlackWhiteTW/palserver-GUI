@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiArrowLeft, FiPlay, FiSquare, FiRefreshCw, FiSave, FiTerminal, FiX, FiAlertTriangle } from "react-icons/fi";
+import { FiArrowLeft, FiPlay, FiSquare, FiRefreshCw, FiSave, FiTerminal, FiFileText, FiX, FiAlertTriangle } from "react-icons/fi";
 import type {
   InstanceDetail as Detail,
   LogSource,
@@ -51,6 +51,7 @@ export function InstanceDetailPage({
     if (!LOCKED_TABS.includes(tab) && hiddenTabs.includes(tab)) setTab("overview");
   }, [hiddenTabs, tab]);
   const [showConsole, setShowConsole] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -199,6 +200,12 @@ export function InstanceDetailPage({
           )}
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
+            onClick={() => setShowLogs(true)}
+          >
+            <FiFileText className="size-4" /> {t("日誌")}
+          </button>
+          <button
+            className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowConsole(true)}
             title={t("指令台")}
             aria-label={t("指令台")}
@@ -233,6 +240,25 @@ export function InstanceDetailPage({
         </Overlay>
       )}
 
+      {showLogs && (
+        <Overlay onClose={() => setShowLogs(false)}>
+          <div
+            className={`${card} flex max-h-[90vh] w-240 max-w-full flex-col gap-3 overflow-y-auto`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between">
+              <h2 className="inline-flex items-center gap-2 text-lg font-extrabold">
+                <FiFileText className="size-5 text-pal" /> {t("日誌")}
+              </h2>
+              <button className={btnGhost} onClick={() => setShowLogs(false)} aria-label={t("關閉")}>
+                <FiX className="size-4" />
+              </button>
+            </div>
+            <LogsTab client={client} instanceId={detail.id} />
+          </div>
+        </Overlay>
+      )}
+
       {notice && (
         <p className="rounded-xl bg-grass/10 px-3 py-2 text-[13px] font-bold text-grass">{notice}</p>
       )}
@@ -248,7 +274,7 @@ export function InstanceDetailPage({
               : detail.installError.message}{" "}
             <button
               className="underline underline-offset-2 hover:opacity-80"
-              onClick={() => setTab("logs")}
+              onClick={() => setShowLogs(true)}
             >
               {t("查看日誌")}
             </button>
@@ -316,7 +342,6 @@ export function InstanceDetailPage({
       {tab === "instance" && (
         <InstanceSettingsTab client={client} detail={detail} onChanged={refresh} onDeleted={onDeleted} />
       )}
-      {tab === "logs" && <LogsTab client={client} instanceId={detail.id} />}
     </div>
   );
 }

@@ -273,21 +273,6 @@ export function ModsTab({
         )}
       </div>
 
-      <div className={card}>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-extrabold text-ink-muted">{t("伺服器檔案")}</h3>
-          <button
-            className={`${btnGhost} inline-flex items-center gap-1.5`}
-            onClick={() => setBrowsing("")}
-          >
-            <FiFolder className="size-4" /> {t("瀏覽全部")}
-          </button>
-        </div>
-        <p className="text-[13px] text-ink-muted">
-          {t("直接編輯、上傳或刪除伺服器目錄裡的檔案(例如 PalDefender 的 Config.json)。")}
-        </p>
-      </div>
-
       {browsing !== null && (
         <FileBrowserDialog
           client={client}

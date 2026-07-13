@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { FiAlertTriangle, FiColumns, FiCopy, FiDownloadCloud, FiHardDrive, FiLayout, FiSave, FiTrash2 } from "react-icons/fi";
+import { FiAlertTriangle, FiColumns, FiCopy, FiDownloadCloud, FiFolder, FiHardDrive, FiLayout, FiSave, FiTrash2 } from "react-icons/fi";
 import type { InstanceDetail } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { CopyPath } from "./CopyPath";
+import { FileBrowserDialog } from "./FileManager";
 import { LaunchOptionsCard } from "./LaunchOptionsCard";
 import {
   TABS,
@@ -53,6 +54,8 @@ export function InstanceSettingsTab({
 
       <LaunchOptionsCard client={client} instanceId={detail.id} category="general" />
 
+      <ServerFilesCard client={client} instanceId={detail.id} />
+
       <TabVisibilityCard />
 
       <OverviewCardsCard />
@@ -64,6 +67,38 @@ export function InstanceSettingsTab({
         adminPassword={String(detail.settings.AdminPassword ?? "")}
         onDeleted={onDeleted}
       />
+    </div>
+  );
+}
+
+/** 伺服器檔案瀏覽器入口(直接編輯 / 上傳 / 刪除伺服器目錄裡的檔案)。 */
+function ServerFilesCard({ client, instanceId }: { client: AgentClient; instanceId: string }) {
+  useI18n();
+  const [browsing, setBrowsing] = useState<string | null>(null);
+  return (
+    <div className={card}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="inline-flex items-center gap-2 text-sm font-extrabold">
+          <FiFolder className="size-4 text-pal" /> {t("伺服器檔案")}
+        </h3>
+        <button
+          className={`${btnGhost} inline-flex items-center gap-1.5`}
+          onClick={() => setBrowsing("")}
+        >
+          <FiFolder className="size-4" /> {t("瀏覽全部")}
+        </button>
+      </div>
+      <p className="text-[13px] text-ink-muted">
+        {t("直接編輯、上傳或刪除伺服器目錄裡的檔案(例如 PalDefender 的 Config.json)。")}
+      </p>
+      {browsing !== null && (
+        <FileBrowserDialog
+          client={client}
+          instanceId={instanceId}
+          initialPath={browsing}
+          onClose={() => setBrowsing(null)}
+        />
+      )}
     </div>
   );
 }

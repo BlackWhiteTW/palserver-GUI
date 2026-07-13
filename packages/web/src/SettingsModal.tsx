@@ -163,27 +163,6 @@ export function SettingsModal({
           </div>
         </div>
 
-        {/* 外觀主題 */}
-        <div className="border-t border-line pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-sm font-extrabold">{t("外觀主題")}</h3>
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("深 / 淺色與主題風格。白銀、翡翠為贊助者專屬。")}
-              </p>
-            </div>
-            <button
-              className={`${btnGhost} inline-flex shrink-0 items-center gap-1.5`}
-              onClick={() => setShowThemes(true)}
-            >
-              <FiSun className="size-4" /> {t("選擇主題")}
-            </button>
-          </div>
-        </div>
-
-        {/* GUI 自我更新(對接 GitHub Releases) */}
-        <UpdateCard client={client} />
-
         {/* 贊助者識別碼(先行版)—— 未公布前用 SHOW_SPONSOR_FEATURES 隱藏 */}
         {SHOW_SPONSOR_FEATURES && lic && (
           <div className="border-t border-line pt-3">
@@ -234,6 +213,27 @@ export function SettingsModal({
             )}
           </div>
         )}
+
+        {/* 外觀主題 */}
+        <div className="border-t border-line pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-extrabold">{t("外觀主題")}</h3>
+              <p className="mt-1 text-xs text-ink-muted">
+                {t("深 / 淺色與主題風格。白銀、翡翠為贊助者專屬。")}
+              </p>
+            </div>
+            <button
+              className={`${btnGhost} inline-flex shrink-0 items-center gap-1.5`}
+              onClick={() => setShowThemes(true)}
+            >
+              <FiSun className="size-4" /> {t("選擇主題")}
+            </button>
+          </div>
+        </div>
+
+        {/* GUI 自我更新(對接 GitHub Releases) */}
+        <UpdateCard client={client} />
 
         {/* 進階:API token */}
         <div className="border-t border-line pt-3">

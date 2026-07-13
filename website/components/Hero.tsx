@@ -36,7 +36,7 @@ export default function Hero({ d, lang }: { d: Dictionary['hero']; lang: Locale 
           ))}
         </div>
         <div className="hero-shot">
-          <Shot src={`/assets/${lang}/overview.jpg`} alt={d.shotAlt} label={d.shotLabel} width={1320} height={848} priority />
+          <Shot src={`/assets/${lang}/content.png`} alt={d.shotAlt} label={d.shotLabel} width={1320} height={848} priority />
         </div>
       </div>
     </header>

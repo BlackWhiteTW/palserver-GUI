@@ -471,30 +471,43 @@ async function getNativeStatus(
 
 async function spawnServer(rec: InstanceRecord, ctx: DriverContext): Promise<void> {
   writeIni(rec, ctx);
-  const launcher = path.join(serverRoot(rec, ctx), SERVER_LAUNCHER);
-  // DepotDownloader (and adopted installs copied from elsewhere) don't
-  // preserve/set the executable bit on Linux.
-  if (!IS_WIN) fs.chmodSync(launcher, 0o755);
-  fs.appendFileSync(logFile(ctx), "[palserver] starting PalServer...\n");
-  const out = fs.openSync(logFile(ctx), "a");
-  const child = spawn(
-    launcher,
-    [
-      `-port=${rec.gamePort}`,
-      // 每台唯一的 Steam 查詢埠;不帶的話全部搶 27015,第二台就死在 ::bind。
-      ...(rec.queryPort ? [`-queryport=${rec.queryPort}`] : []),
-      // 其餘啟動參數(publiclobby / 效能旗標 / logformat…)由使用者在面板設定;
-      // publiclobby 預設開啟(維持舊行為),見 LAUNCH_OPTIONS。
-      ...buildLaunchArgs(rec.launchOptions),
-    ],
-    {
-      cwd: serverRoot(rec, ctx),
-      detached: true, // survives agent restarts; we track it via the pid file
-      stdio: ["ignore", out, out],
-      windowsHide: true, // 別讓伺服器行程在 Windows 彈出主控台視窗(日誌已導到檔案)。
-    },
+  const root = serverRoot(rec, ctx);
+
+  const serverArgs = [
+    `-port=${rec.gamePort}`,
+    // 每台唯一的 Steam 查詢埠;不帶的話全部搶 27015,第二台就死在 ::bind。
+    ...(rec.queryPort ? [`-queryport=${rec.queryPort}`] : []),
+    // 其餘啟動參數(publiclobby / 效能旗標 / logformat…)由使用者在面板設定;
+    // publiclobby 預設開啟(維持舊行為),見 LAUNCH_OPTIONS。
+    ...buildLaunchArgs(rec.launchOptions),
+  ];
+
+  // 直接啟動「真正的」伺服器執行檔(shipping),而非 PalServer.exe launcher —— launcher
+  // 會另開一個帶自己 console 的子行程,那個 console 才是遊戲日誌、我們接不到。直接啟動
+  // shipping 才能把它的 stdout/stderr 導進 game.log(唯一拿得到原生日誌的方式)。找不到
+  // shipping(佈局不同/未來改版)就退回 launcher —— 伺服器照常啟動,只是遊戲日誌會是空的。
+  const shipping = shippingExe(root);
+  const useShipping = fs.existsSync(shipping);
+  const exe = useShipping ? shipping : path.join(root, SERVER_LAUNCHER);
+  // shipping 需要第一個參數是 UE 專案名(launcher 平常會幫你帶上)。
+  const args = useShipping ? ["Pal", ...serverArgs] : serverArgs;
+
+  // DepotDownloader(與從別處複製來的 adopt 安裝)在 Linux 不會保留可執行位元。
+  if (!IS_WIN) fs.chmodSync(exe, 0o755);
+
+  fs.appendFileSync(
+    logFile(ctx),
+    `[palserver] starting ${useShipping ? "PalServer (shipping, 日誌已擷取)" : "PalServer launcher(找不到 shipping,遊戲日誌將為空)"}...\n`,
   );
-  fs.closeSync(out);
+  // 遊戲 console 輸出 → game.log(每次開機重來一份,UE 本來也是一次一份)。
+  const gameOut = fs.openSync(gameLogFile(ctx), "w");
+  const child = spawn(exe, args, {
+    cwd: root,
+    detached: true, // survives agent restarts; we track it via the pid file
+    stdio: ["ignore", gameOut, gameOut],
+    windowsHide: true, // 別讓伺服器行程在 Windows 彈出主控台視窗(日誌已導到 game.log)。
+  });
+  fs.closeSync(gameOut);
   if (!child.pid) throw new Error("failed to spawn PalServer");
   child.unref();
   // 記下 PID + 建立時間當身分指紋,之後 isAlive/停止前都靠它辨認,避免 PID 重用誤殺。
@@ -609,7 +622,7 @@ export const nativeDriver: ServerDriver = {
   logSources(rec, ctx) {
     return [
       { id: "agent" as const, label: "agent", available: fs.existsSync(logFile(ctx)) },
-      { id: "game" as const, label: "遊戲", available: fs.existsSync(gameLogFile(rec, ctx)) },
+      { id: "game" as const, label: "遊戲", available: fs.existsSync(gameLogFile(ctx)) },
       {
         id: "paldefender" as const,
         label: "PalDefender",
@@ -621,7 +634,7 @@ export const nativeDriver: ServerDriver = {
   async streamLogs(rec, ctx, onLine, _onEnd, source = "agent") {
     // Files may not exist yet (first boot) — the followers attach when they
     // appear, so the socket stays open instead of closing early.
-    if (source === "game") return followFile(gameLogFile(rec, ctx), onLine, 200);
+    if (source === "game") return followFile(gameLogFile(ctx), onLine, 200);
     if (source === "paldefender") {
       const dir = palDefenderLogDir(rec, ctx);
       if (!dir) {
@@ -637,8 +650,19 @@ export const nativeDriver: ServerDriver = {
   },
 };
 
-const gameLogFile = (rec: InstanceRecord, ctx: DriverContext) =>
-  path.join(serverRoot(rec, ctx), "Pal", "Saved", "Logs", "Pal.log");
+/**
+ * 遊戲日誌 = 我們親自擷取的伺服器 console 輸出(見 spawnServer)。
+ * 注意:Palworld 專用伺服器預設「不寫任何日誌檔」(連 -log 都沒用),所有輸出只進 stdout;
+ * 所以不能讀 Pal/Saved/Logs/Pal.log(永遠不存在),而是由 agent 把 stdout 導進這個檔。
+ */
+const gameLogFile = (ctx: DriverContext) => path.join(ctx.instanceDir, "game.log");
+
+/** 真正的遊戲執行檔(不是 launcher)。它的 stdout 才是遊戲日誌;PalServer.exe 只是
+ *  轉手再開一個帶自己 console 的子行程,那個 console 的輸出我們接不到。 */
+const shippingExe = (root: string): string =>
+  IS_WIN
+    ? path.join(root, "Pal", "Binaries", "Win64", "PalServer-Win64-Shipping-Cmd.exe")
+    : path.join(root, "Pal", "Binaries", "Linux", "PalServer-Linux-Shipping");
 
 /** PalDefender's log dir; the plugin was formerly named Palguard and older
  * installs still write to palguard/logs. Returns null when neither exists. */

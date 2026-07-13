@@ -163,29 +163,6 @@ export function SettingsModal({
           </div>
         </div>
 
-        {/* 進階:API token */}
-        <div className="border-t border-line pt-3">
-          <button
-            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink-muted hover:text-ink"
-            onClick={() => setShowToken((v) => !v)}
-          >
-            <FiKey className="size-4" /> {t("進階:API token(自動化用)")}
-          </button>
-          {showToken &&
-            (conn.token ? (
-              <div className="mt-2">
-                <Copyable text={conn.token} mono />
-              </div>
-            ) : (
-              <p className="mt-2 rounded-xl bg-card-soft px-3 py-2 text-xs text-ink-muted">
-                {t("你目前是本機免密碼連線,手上沒有 token。API token 顯示在 agent 啟動的視窗裡(標示「API token」那行)。")}
-              </p>
-            ))}
-        </div>
-
-        {/* 安全 / 網路設定(進階,可折疊) */}
-        <SecuritySettings client={client} />
-
         {/* 外觀主題 */}
         <div className="border-t border-line pt-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -257,6 +234,29 @@ export function SettingsModal({
             )}
           </div>
         )}
+
+        {/* 進階:API token */}
+        <div className="border-t border-line pt-3">
+          <button
+            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink-muted hover:text-ink"
+            onClick={() => setShowToken((v) => !v)}
+          >
+            <FiKey className="size-4" /> {t("進階:API token(自動化用)")}
+          </button>
+          {showToken &&
+            (conn.token ? (
+              <div className="mt-2">
+                <Copyable text={conn.token} mono />
+              </div>
+            ) : (
+              <p className="mt-2 rounded-xl bg-card-soft px-3 py-2 text-xs text-ink-muted">
+                {t("你目前是本機免密碼連線,手上沒有 token。API token 顯示在 agent 啟動的視窗裡(標示「API token」那行)。")}
+              </p>
+            ))}
+        </div>
+
+        {/* 安全 / 網路設定(進階,可折疊) */}
+        <SecuritySettings client={client} />
 
         {/* 匿名使用統計 */}
         {telemetry && (

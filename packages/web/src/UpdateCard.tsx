@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FiDownload, FiCheck, FiRefreshCw, FiExternalLink, FiAlertTriangle } from "react-icons/fi";
 import type { AgentUpdateStatus } from "@palserver/shared";
 import type { AgentClient } from "./api";
-import { Markdown } from "./Markdown";
 import { t, useI18n } from "./i18n";
 import { btn, btnGhost, errorCls } from "./ui";
 
@@ -18,7 +17,6 @@ export function UpdateCard({ client }: { client: AgentClient }) {
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
-  const [notes, setNotes] = useState(false);
   const startedFrom = useRef<string | null>(null);
   const errorBefore = useRef<string | null>(null);
 
@@ -112,11 +110,6 @@ export function UpdateCard({ client }: { client: AgentClient }) {
               <button className={`${btn} inline-flex items-center gap-1.5`} onClick={apply} disabled={!status.supported}>
                 <FiDownload className="size-4" /> {t("立即更新")}
               </button>
-              {status.releaseNotes && (
-                <button className={btnGhost} onClick={() => setNotes((v) => !v)}>
-                  {notes ? t("收合說明") : t("更新說明")}
-                </button>
-              )}
               {status.releaseUrl && (
                 <a
                   className={`${btnGhost} inline-flex items-center gap-1.5`}
@@ -124,15 +117,9 @@ export function UpdateCard({ client }: { client: AgentClient }) {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <FiExternalLink className="size-4" /> GitHub
+                  <FiExternalLink className="size-4" /> {t("更新說明")}
                 </a>
               )}
-            </div>
-          )}
-
-          {notes && status.releaseNotes && (
-            <div className="mt-2 max-h-48 overflow-y-auto border-t border-line pt-2 text-[13px]">
-              <Markdown source={status.releaseNotes} />
             </div>
           )}
         </div>

@@ -106,13 +106,13 @@ function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => v
 
   return (
     // data-content-root:左下角的 SiteFooter 靠它判斷自己有沒有蓋到內容。
-    <div data-content-root className="mx-auto max-w-[1200px] p-6">
-      <header className="mb-6 flex items-center justify-between">
+    <div data-content-root className="mx-auto max-w-[1200px] p-4 sm:p-6">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-2.5">
         <button className="flex items-center gap-2.5" onClick={() => setSelectedId(null)}>
-          <img src="/logo.png" alt="" className="size-10 rounded-xl" />
-          <h1 className="text-[22px] font-extrabold tracking-wide">palserver GUI</h1>
+          <img src="/logo.png" alt="" className="size-9 rounded-xl sm:size-10" />
+          <h1 className="text-lg font-extrabold tracking-wide sm:text-[22px]">palserver GUI</h1>
         </button>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <LangSelect />
           <ThemeToggle />
           <a
@@ -120,22 +120,25 @@ function Shell({ conn, onDisconnect }: { conn: Connection; onDisconnect: () => v
             href={faq}
             target="_blank"
             rel="noreferrer"
+            title={t("常見問題")}
           >
-            <FiHelpCircle className="size-4" /> {t("常見問題")}
+            <FiHelpCircle className="size-4" /> <span className="hidden sm:inline">{t("常見問題")}</span>
           </a>
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowCredits(true)}
             data-testid="open-credits"
+            title={t("感謝名單")}
           >
-            <FiHeart className="size-4" /> {t("感謝名單")}
+            <FiHeart className="size-4" /> <span className="hidden sm:inline">{t("感謝名單")}</span>
           </button>
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowSettings(true)}
             data-testid="open-settings"
+            title={t("設定")}
           >
-            <FiSettings className="size-4" /> {t("設定")}
+            <FiSettings className="size-4" /> <span className="hidden sm:inline">{t("設定")}</span>
           </button>
           <button className={btnGhost} onClick={onDisconnect}>
             {t("中斷連線")}
@@ -243,7 +246,7 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={ordered.map((i) => i.id)} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-3.5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(290px,100%),1fr))] gap-3.5">
               {ordered.map((inst) => (
                 <SortableServerCard key={inst.id} inst={inst} onOpen={onOpen} />
               ))}

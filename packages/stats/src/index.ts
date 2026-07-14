@@ -52,6 +52,7 @@ export default {
     if (req.method === "GET" && url.pathname === "/api/stats") return handleStats(env);
     // 贊助者識別碼(先行版授權)
     if (req.method === "POST" && url.pathname === "/api/license/activate") return handleLicenseActivate(req, env);
+    if (req.method === "POST" && url.pathname === "/api/license/deactivate") return handleLicenseDeactivate(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/issue") return handleLicenseIssue(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/list") return handleLicenseList(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/reset") return handleLicenseReset(req, env);
@@ -178,9 +179,10 @@ async function githubDownloads(env: Env): Promise<number | null> {
 
 /* ────────────────────────────────────────────────────────────────────────
  * 贊助者識別碼(先行版授權)
- *  - /api/license/activate {code, machineId} — 驗證 + 首次啟用綁機器(公開)
- *  - /api/license/issue    {tier?, features?, sponsor?, expiresAt?} — 發碼(管理)
- *  - /api/license/reset    {code} — 解除綁定,讓贊助者換機(管理)
+ *  - /api/license/activate   {code, machineId} — 驗證 + 首次啟用綁機器(公開)
+ *  - /api/license/deactivate {code, machineId} — 自助解綁:只有目前綁定的那台能解(公開)
+ *  - /api/license/issue      {tier?, features?, sponsor?, expiresAt?} — 發碼(管理)
+ *  - /api/license/reset      {code} — 解除綁定,讓贊助者換機(管理,救援用)
  * 管理端點需 header `X-Admin-Token: <ADMIN_TOKEN>`。
  * ──────────────────────────────────────────────────────────────────────── */
 
@@ -249,6 +251,34 @@ async function handleLicenseActivate(req: Request, env: Env): Promise<Response> 
     features: JSON.parse(row.features) as string[],
     expiresAt,
   });
+}
+
+/** 自助解綁(換機用):要同時持有 code 與「目前綁定的 machineId」才能解,
+ *  所以只有綁定中的那台 agent 做得到 —— 不需要管理員。冪等:沒綁過也回 ok。
+ *  換機流程:舊機在 GUI 移除識別碼(agent 會呼叫這裡)→ 新機貼碼重新啟用。 */
+async function handleLicenseDeactivate(req: Request, env: Env): Promise<Response> {
+  let body: { code?: unknown; machineId?: unknown };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return json({ ok: false, reason: "invalid" }, 400);
+  }
+  const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
+  const machineId = typeof body.machineId === "string" ? body.machineId.slice(0, 64) : "";
+  if (!code || !machineId) return json({ ok: false, reason: "invalid" }, 400);
+
+  const row = await env.DB.prepare("SELECT bound_to FROM licenses WHERE code = ?1")
+    .bind(code)
+    .first<{ bound_to: string | null }>();
+  if (!row) return json({ ok: false, reason: "invalid" });
+  if (!row.bound_to) return json({ ok: true, note: "not-bound" });
+  if (row.bound_to !== machineId) return json({ ok: false, reason: "bound-to-another" });
+
+  // 保留 activated_at:試用碼的效期在首次啟用時已寫入 expires_at,換機不重算。
+  await env.DB.prepare("UPDATE licenses SET bound_to = NULL WHERE code = ?1 AND bound_to = ?2")
+    .bind(code, machineId)
+    .run();
+  return json({ ok: true });
 }
 
 async function handleLicenseIssue(req: Request, env: Env): Promise<Response> {
@@ -427,7 +457,8 @@ const EMAIL_I18N: Record<Lang, { subject: string; html: (code: string) => string
     <p>感謝你的贊助!以下是你的 palserver GUI 先行版識別碼:</p>
     <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
     <p>在 GUI 的「設定 → 贊助者識別碼」貼上即可解鎖先行版功能。<br>
-    一組識別碼只能綁定一台伺服器;月費有效期間持續解鎖,取消後於當期到期時停用。</p>`,
+    一組識別碼同時只能綁定一台伺服器;要換機時,先在舊伺服器移除識別碼,再到新伺服器貼上即可。<br>
+    月費有效期間持續解鎖,取消後於當期到期時停用。</p>`,
   },
   en: {
     subject: "Your palserver GUI early-access code",
@@ -435,7 +466,8 @@ const EMAIL_I18N: Record<Lang, { subject: string; html: (code: string) => string
     <p>Thank you for your support! Here is your palserver GUI early-access code:</p>
     <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
     <p>Paste it into <b>Settings → Sponsor code</b> in the GUI to unlock the early-access features.<br>
-    One code binds to a single server; it stays unlocked while your membership is active and stops at the end of the period after you cancel.</p>`,
+    One code binds to a single server at a time — to move it, remove the code on the old server first, then paste it on the new one.<br>
+    It stays unlocked while your membership is active and stops at the end of the period after you cancel.</p>`,
   },
   ja: {
     subject: "palserver GUI 先行アクセスコード",
@@ -443,7 +475,8 @@ const EMAIL_I18N: Record<Lang, { subject: string; html: (code: string) => string
     <p>ご支援ありがとうございます!palserver GUI の先行アクセスコードはこちらです:</p>
     <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
     <p>GUI の「設定 → スポンサーコード」に貼り付けると先行アクセス機能が解除されます。<br>
-    1つのコードはサーバー1台に紐づきます。メンバーシップが有効な間は解除され、解約後は当期の終了時に無効になります。</p>`,
+    1つのコードは同時にサーバー1台のみに紐づきます。別のサーバーへ移す場合は、先に旧サーバーでコードを削除してから新しいサーバーで貼り付けてください。<br>
+    メンバーシップが有効な間は解除され、解約後は当期の終了時に無効になります。</p>`,
   },
 };
 
@@ -546,16 +579,25 @@ async function handleBmcWebhook(req: Request, env: Env): Promise<Response> {
     return json({ ok: true, type, email, action: "renewed", code: existing.code });
   }
 
-  // 新贊助者:建碼 + 寄信。
+  // 新贊助者:建碼 + 寄信。BMC 對同一次訂閱會連發多個事件(membership.started 與
+  // recurring_donation.started、或逾時重送),並發時上面的 SELECT 都撈不到 →
+  // 全靠 email 的部分唯一索引擋:只有一個 INSERT 真的成功,其餘走 ON CONFLICT
+  // 變成續期。RETURNING 的 code 若不是這次生成的,代表碼已由別的請求建立,不重寄信。
   for (let i = 0; i < 5; i++) {
     const code = generateCode();
     try {
-      await env.DB.prepare(
+      const row = await env.DB.prepare(
         `INSERT INTO licenses (code, tier, features, sponsor, created_at, expires_at, email, source)
-         VALUES (?1, 'sponsor', ?2, ?3, ?4, ?5, ?6, 'bmc')`,
+         VALUES (?1, 'sponsor', ?2, ?3, ?4, ?5, ?6, 'bmc')
+         ON CONFLICT(email) WHERE email IS NOT NULL DO UPDATE SET expires_at = excluded.expires_at
+         RETURNING code`,
       )
         .bind(code, JSON.stringify(["custom-pal"]), email, now.toISOString(), expiresAt, email)
-        .run();
+        .first<{ code: string }>();
+      if (!row) throw new Error("insert returned no row");
+      if (row.code !== code) {
+        return json({ ok: true, type, email, action: "renewed", code: row.code });
+      }
       const emailed = await sendCodeEmail(env, email, code, pickLang(data));
       return json({
         ok: true,
@@ -567,7 +609,7 @@ async function handleBmcWebhook(req: Request, env: Env): Promise<Response> {
         ...(emailed.error ? { emailError: emailed.error } : {}),
       });
     } catch {
-      /* 撞碼重試 */
+      /* 撞碼(code 主鍵)重試 */
     }
   }
   return json({ error: "could not allocate code" }, 500);

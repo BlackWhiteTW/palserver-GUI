@@ -93,6 +93,23 @@ async function activate(code: string): Promise<Cache | null> {
   }
 }
 
+/** 向 worker 解除這台機器的綁定(換機用):解綁後這張碼就能在別台重新啟用。
+ *  連不上或被拒都回 false,不擋本機清除流程。 */
+async function deactivate(code: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${LICENSE_URL}/api/license/deactivate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, machineId: machineId() }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = (await res.json()) as { ok?: boolean };
+    return !!data.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** 目前有效的授權(套用離線寬限期)。無 key 或寬限期已過則視為無授權。 */
 function effectiveCache(): Cache | null {
   if (!readKey()) return null;
@@ -116,18 +133,26 @@ export async function refreshLicense(force = false): Promise<void> {
   else if (c) writeCache({ ...c }); // 保留舊快取(不更新 checkedAt),讓寬限期繼續計時
 }
 
-/** 設定/更換識別碼:存檔並立即向 worker 驗證。回傳最新狀態。 */
+/** 設定/更換識別碼:存檔並立即向 worker 驗證。回傳最新狀態。
+ *  換碼視同移除舊碼:先幫舊碼解綁,它才能在別台重新使用。 */
 export async function setLicenseKey(code: string): Promise<LicenseStatus> {
+  const next = code.trim().toUpperCase();
+  const prev = readKey();
+  if (prev && prev !== next) await deactivate(prev);
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(KEY_FILE, JSON.stringify({ code: code.trim().toUpperCase() }, null, 2));
+  fs.writeFileSync(KEY_FILE, JSON.stringify({ code: next }, null, 2));
   const fresh = await activate(code);
   if (fresh) writeCache(fresh);
   else writeCache({ valid: false, tier: null, features: [], expiresAt: null, reason: "offline", checkedAt: new Date().toISOString() });
   return licenseStatus();
 }
 
-/** 清除識別碼(不影響 worker 上的綁定;要換機請用管理端的 reset)。 */
-export function clearLicenseKey(): LicenseStatus {
+/** 清除識別碼:先向 worker 解綁(這張碼即可在別台重新啟用),再刪本機檔。
+ *  連不上 worker 時照樣清本機 —— 綁定留在雲端,之後在原機重貼會自動通過,
+ *  或請管理員 reset。 */
+export async function clearLicenseKey(): Promise<LicenseStatus> {
+  const code = readKey();
+  if (code) await deactivate(code);
   fs.rmSync(KEY_FILE, { force: true });
   fs.rmSync(CACHE_FILE, { force: true });
   return licenseStatus();

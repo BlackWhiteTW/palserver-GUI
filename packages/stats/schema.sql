@@ -44,4 +44,16 @@ CREATE TABLE IF NOT EXISTS licenses (
 --   ALTER TABLE licenses ADD COLUMN email TEXT;
 --   ALTER TABLE licenses ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
 --   ALTER TABLE licenses ADD COLUMN trial_days INTEGER;
-CREATE INDEX IF NOT EXISTS idx_licenses_email ON licenses(email);
+
+-- email 部分唯一索引:同一個 BMC email 永遠只有一張碼。這是 webhook 防重複發碼的
+-- 依靠(BMC 對同一次訂閱會連發多個事件,INSERT 走 ON CONFLICT(email) 變續期)。
+-- 舊庫升級:若已有重複 email 會建索引失敗,先看重複再去重(留已綁定的,其次最早的;
+-- 落選的碼 email 清空 → 保持可用但不再續期):
+--   SELECT email, COUNT(*) n, GROUP_CONCAT(code) codes FROM licenses
+--     WHERE email IS NOT NULL GROUP BY email HAVING n > 1;
+--   UPDATE licenses SET email = NULL
+--   WHERE email IS NOT NULL AND code NOT IN (
+--     SELECT code FROM licenses l WHERE l.email = licenses.email
+--     ORDER BY (l.bound_to IS NOT NULL) DESC, l.created_at ASC, l.code ASC LIMIT 1);
+DROP INDEX IF EXISTS idx_licenses_email;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_email_unique ON licenses(email) WHERE email IS NOT NULL;

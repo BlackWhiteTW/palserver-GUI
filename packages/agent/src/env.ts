@@ -79,15 +79,20 @@ export const GITHUB_REPO = process.env.PALSERVER_GITHUB_REPO ?? "io-software-ai/
 /** 設 PALSERVER_AUTO_UPDATE=0 完全停用自我更新(連檢查都不做)。 */
 export const AUTO_UPDATE_DISABLED_BY_ENV = process.env.PALSERVER_AUTO_UPDATE === "0";
 
-/** 匿名使用統計收集端(見 PRIVACY.md);部署自己的 worker 後可用環境變數覆寫。 */
-export const STATS_URL =
-  process.env.PALSERVER_STATS_URL ?? "https://palserver-stats.iosoftware.workers.dev";
+/** 匿名使用統計收集端(見 PRIVACY.md);部署自己的 worker 後可用環境變數覆寫。
+ * 自訂網域為主、workers.dev 為備 —— *.workers.dev 在部分地區(中國大陸線路)被 DNS 污染,連不上。 */
+export const STATS_URLS = process.env.PALSERVER_STATS_URL
+  ? [process.env.PALSERVER_STATS_URL]
+  : ["https://stats.iosoftware.ai", "https://palserver-stats.iosoftware.workers.dev"];
+export const STATS_URL = STATS_URLS[0];
 
 /** 設 PALSERVER_TELEMETRY=0 強制停用匿名使用統計(優先於 GUI 內的開關)。 */
 export const TELEMETRY_DISABLED_BY_ENV = process.env.PALSERVER_TELEMETRY === "0";
 
 /** 贊助者識別碼(先行版授權)驗證端 —— 與 stats 同一個 worker,可用環境變數覆寫。 */
-export const LICENSE_URL = process.env.PALSERVER_LICENSE_URL ?? STATS_URL;
+export const LICENSE_URLS = process.env.PALSERVER_LICENSE_URL
+  ? [process.env.PALSERVER_LICENSE_URL]
+  : STATS_URLS;
 
 export const CONTAINER_PREFIX = "palserver-";
 export const INSTANCE_LABEL = "app.palserver.instance";

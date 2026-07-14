@@ -1,0 +1,7 @@
+# 舊網址 palserver-stats.iosoftware.workers.dev 的轉發殼。
+# 主 worker 已搬到另一個 Cloudflare 帳號並綁 stats.iosoftware.ai(見 ../README.md);
+# 這個 proxy 部署在「舊帳號」、沿用原 worker 名稱,把既有安裝(舊版 agent 寫死
+# workers.dev 網址)的請求原樣轉發到新端點,統計與授權資料才不會分家。
+name = "palserver-stats"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"

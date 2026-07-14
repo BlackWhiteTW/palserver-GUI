@@ -530,6 +530,8 @@ function licReason(t: (s: string) => string, reason: string | null): string {
       return t("此識別碼已綁定另一台伺服器");
     case "expired":
       return t("識別碼已到期");
+    case "unreachable":
+      return t("連不上驗證伺服器,請確認這台伺服器主機能連上網際網路");
     case "offline":
       return t("暫時連不上驗證伺服器(離線寬限期已過)");
     default:

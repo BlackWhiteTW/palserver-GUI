@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { DATA_DIR, LICENSE_URL } from "./env.js";
+import { DATA_DIR, LICENSE_URLS } from "./env.js";
 import { EARLY_ACCESS_FEATURES, featureFreeNow, hasFeature, type LicenseStatus } from "@palserver/shared";
 
 /**
@@ -63,51 +63,58 @@ function writeCache(c: Cache): void {
   fs.writeFileSync(CACHE_FILE, JSON.stringify(c, null, 2));
 }
 
-/** 向 worker 啟用/驗證識別碼(首次會綁機器)。網路失敗回 null,交給呼叫端沿用舊快取。 */
+/** 向 worker 啟用/驗證識別碼(首次會綁機器)。多端點依序嘗試(自訂網域為主、
+ *  workers.dev 為備);全部連不上回 null,交給呼叫端沿用舊快取。 */
 async function activate(code: string): Promise<Cache | null> {
-  try {
-    const res = await fetch(`${LICENSE_URL}/api/license/activate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, machineId: machineId() }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok && res.status >= 500) return null; // 伺服器錯 -> 沿用快取
-    const data = (await res.json()) as {
-      valid?: boolean;
-      tier?: string;
-      features?: string[];
-      expiresAt?: string | null;
-      reason?: string;
-    };
-    return {
-      valid: !!data.valid,
-      tier: data.tier ?? null,
-      features: Array.isArray(data.features) ? data.features : [],
-      expiresAt: data.expiresAt ?? null,
-      reason: data.valid ? null : (data.reason ?? "invalid"),
-      checkedAt: new Date().toISOString(),
-    };
-  } catch {
-    return null; // 連不上 -> 沿用快取
+  for (const base of LICENSE_URLS) {
+    try {
+      const res = await fetch(`${base}/api/license/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, machineId: machineId() }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok && res.status >= 500) continue; // 這個端點壞了 -> 換下一個
+      const data = (await res.json()) as {
+        valid?: boolean;
+        tier?: string;
+        features?: string[];
+        expiresAt?: string | null;
+        reason?: string;
+      };
+      return {
+        valid: !!data.valid,
+        tier: data.tier ?? null,
+        features: Array.isArray(data.features) ? data.features : [],
+        expiresAt: data.expiresAt ?? null,
+        reason: data.valid ? null : (data.reason ?? "invalid"),
+        checkedAt: new Date().toISOString(),
+      };
+    } catch {
+      continue; // 連不上 -> 換下一個端點
+    }
   }
+  return null;
 }
 
 /** 向 worker 解除這台機器的綁定(換機用):解綁後這張碼就能在別台重新啟用。
  *  連不上或被拒都回 false,不擋本機清除流程。 */
 async function deactivate(code: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${LICENSE_URL}/api/license/deactivate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, machineId: machineId() }),
-      signal: AbortSignal.timeout(8000),
-    });
-    const data = (await res.json()) as { ok?: boolean };
-    return !!data.ok;
-  } catch {
-    return false;
+  for (const base of LICENSE_URLS) {
+    try {
+      const res = await fetch(`${base}/api/license/deactivate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, machineId: machineId() }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = (await res.json()) as { ok?: boolean };
+      return !!data.ok;
+    } catch {
+      continue;
+    }
   }
+  return false;
 }
 
 /** 目前有效的授權(套用離線寬限期)。無 key 或寬限期已過則視為無授權。 */
@@ -127,7 +134,9 @@ export async function refreshLicense(force = false): Promise<void> {
   const code = readKey();
   if (!code) return;
   const c = readCache();
-  if (!force && c && Date.now() - Date.parse(c.checkedAt) < RECHECK_MS) return;
+  // 上次是「連不上」的話不受 12 小時門檻限制,下個背景週期就重試。
+  const fresh12h = c && Date.now() - Date.parse(c.checkedAt) < RECHECK_MS && c.reason !== "unreachable";
+  if (!force && fresh12h) return;
   const fresh = await activate(code);
   if (fresh) writeCache(fresh);
   else if (c) writeCache({ ...c }); // 保留舊快取(不更新 checkedAt),讓寬限期繼續計時
@@ -141,9 +150,10 @@ export async function setLicenseKey(code: string): Promise<LicenseStatus> {
   if (prev && prev !== next) await deactivate(prev);
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(KEY_FILE, JSON.stringify({ code: next }, null, 2));
-  const fresh = await activate(code);
+  const fresh = await activate(next);
   if (fresh) writeCache(fresh);
-  else writeCache({ valid: false, tier: null, features: [], expiresAt: null, reason: "offline", checkedAt: new Date().toISOString() });
+  // 首次啟用就連不上驗證端 -> "unreachable"(與寬限期過後的 "offline" 區分,前端文案不同)。
+  else writeCache({ valid: false, tier: null, features: [], expiresAt: null, reason: "unreachable", checkedAt: new Date().toISOString() });
   return licenseStatus();
 }
 

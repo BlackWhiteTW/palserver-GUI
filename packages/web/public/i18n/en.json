@@ -1136,5 +1136,7 @@
  "超出建議範圍 {min}–{max},遊戲可能有非預期行為": "Outside the suggested range {min}–{max}; the game may behave unexpectedly.",
  "連不上驗證伺服器,請確認這台伺服器主機能連上網際網路": "Cannot reach the verification server. Make sure this server machine has internet access.",
  "礦物": "Ores",
- "跳到地圖位置": "Jump to map location"
+ "跳到地圖位置": "Jump to map location",
+ "進階顯示": "Advanced view",
+ "在首頁卡片直接顯示在線玩家數與資源用量": "Show online players and resource usage right on the dashboard cards"
 }

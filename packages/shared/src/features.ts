@@ -20,6 +20,7 @@ export const EARLY_ACCESS_FEATURES: EarlyAccessFeature[] = [
   { id: "bulk-items", label: "批量給予道具(物品選單 + 數量)", until: "2027-12-31" },
   { id: "teleport", label: "傳送玩家(玩家 / 地圖座標描點)", until: "2027-12-31" },
   { id: "log-tools", label: "日誌重點標記與格式化(事件上色 + 易讀套版)", until: "2027-12-31" },
+  { id: "dashboard-stats", label: "首頁進階顯示(在線玩家 / 資源用量一覽)", until: "2027-12-31" },
 ];
 
 /** 這個功能現在是否已對所有人免費(不在目錄裡的一律視為免費)。 */

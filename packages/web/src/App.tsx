@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GiSheep, GiEggClutch } from "react-icons/gi";
-import { FiDownload, FiHeart, FiHelpCircle, FiPlus, FiSettings, FiAlertTriangle } from "react-icons/fi";
-import type { Backend, ExternalWorldCandidate, InstanceSummary } from "@palserver/shared";
+import { FiActivity, FiAlertTriangle, FiCpu, FiDownload, FiHardDrive, FiHeart, FiHelpCircle, FiPlus, FiSettings, FiStar, FiUsers, FiZap } from "react-icons/fi";
+import { hasFeature } from "@palserver/shared";
+import type { Backend, ExternalWorldCandidate, InstanceStats, InstanceSummary, LiveStatus } from "@palserver/shared";
 import {
   DndContext,
   closestCenter,
@@ -32,6 +33,7 @@ import { ImportSaveModal } from "./ImportSaveModal";
 import { OPEN_SETTINGS_EVENT, SiteFooter } from "./SiteFooter";
 import { ThemeToggle } from "./theme";
 import { LangSelect, useI18n, t as translate } from "./i18n";
+import { fmtBytes, knownCpuSample } from "./PerformanceTab";
 import { InstallProgress, Overlay, Select, StatusBadge, btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
 export default function App() {
@@ -180,6 +182,14 @@ function sortByOrder(list: InstanceSummary[], order: string[]): InstanceSummary[
   return [...list].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
 }
 
+// 首頁「進階顯示」開關(運作中的卡片直接顯示玩家數/CPU/記憶體/FPS)。
+const ADVANCED_KEY = "palserver.dashboardAdvanced";
+/** 進階顯示時每張運作中卡片的即時資料(stats 一定拿得到;REST 未啟用時 live 為 null)。 */
+interface CardExtra {
+  stats: InstanceStats | null;
+  live: LiveStatus | null;
+}
+
 function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: string) => void }) {
   const { t } = useI18n();
   const [instances, setInstances] = useState<InstanceSummary[] | null>(null);
@@ -189,6 +199,22 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
   // 匯入存檔流程選定的世界:帶著它開「建立伺服器」對話框,建立後自動匯入。
   const [pendingImport, setPendingImport] = useState<ExternalWorldCandidate | null>(null);
   const [order, setOrder] = useState<string[]>(loadInstanceOrder);
+  const [advanced, setAdvanced] = useState(() => localStorage.getItem(ADVANCED_KEY) === "1");
+  const [extras, setExtras] = useState<Record<string, CardExtra>>({});
+  // 進階顯示是贊助者先行功能(dashboard-stats),與其他早鳥功能同一套判斷。
+  const [entitled, setEntitled] = useState(false);
+  const toggleAdvanced = () =>
+    setAdvanced((v) => {
+      localStorage.setItem(ADVANCED_KEY, v ? "0" : "1");
+      return !v;
+    });
+
+  useEffect(() => {
+    client
+      .license()
+      .then((l) => setEntitled(hasFeature("dashboard-stats", l)))
+      .catch(() => setEntitled(false));
+  }, [client]);
 
   const ordered = instances ? sortByOrder(instances, order) : [];
   // 拖曳需要移動 8px 才啟動,讓「單純點擊卡片」照樣開啟該伺服器;鍵盤也能排序(無障礙)。
@@ -219,6 +245,41 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
     return () => clearInterval(timer);
   }, [refresh]);
 
+  // 進階顯示:輪詢每台運作中伺服器的 stats(+REST live)。依賴用排序後的 id 字串,
+  // 避免 instances 每 5 秒換新物件導致計時器不停重建。
+  const runningKey = (instances ?? [])
+    .filter((i) => i.status === "running")
+    .map((i) => i.id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (!advanced || !entitled || !runningKey) {
+      setExtras({});
+      return;
+    }
+    const ids = runningKey.split(",");
+    let alive = true;
+    const poll = async () => {
+      const entries = await Promise.all(
+        ids.map(async (id) => {
+          const [stats, live] = await Promise.all([
+            client.stats(id).catch(() => null),
+            // REST 未啟用時 live() 會拋錯,不能拖垮整輪。
+            client.live(id).catch(() => null),
+          ]);
+          return [id, { stats, live }] as const;
+        }),
+      );
+      if (alive) setExtras(Object.fromEntries(entries));
+    };
+    void poll();
+    const timer = setInterval(poll, 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [advanced, client, runningKey]);
+
   return (
     <>
       <Mascot />
@@ -229,6 +290,24 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-[17px] font-extrabold">{t("伺服器")}</h2>
         <div className="flex items-center gap-2">
+          {entitled ? (
+            <button
+              className={`${btnGhost} inline-flex items-center gap-1.5 ${advanced ? "border-pal text-pal" : "opacity-70"}`}
+              onClick={toggleAdvanced}
+              title={t("在首頁卡片直接顯示在線玩家數與資源用量")}
+            >
+              <FiActivity className="size-4" /> {t("進階顯示")}
+              <FiStar className="size-3.5 text-pal" />
+            </button>
+          ) : (
+            <button
+              className={`${btnGhost} inline-flex items-center gap-1.5 opacity-70`}
+              title={t("此功能為贊助者專屬功能,可在設定頁輸入贊助者識別碼解鎖。")}
+            >
+              <FiActivity className="size-4" /> {t("進階顯示")}
+              <FiStar className="size-3.5 text-pal" />
+            </button>
+          )}
           <button
             className={`${btn} inline-flex items-center gap-1.5`}
             onClick={() => setShowCreate(true)}
@@ -260,7 +339,12 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
           <SortableContext items={ordered.map((i) => i.id)} strategy={rectSortingStrategy}>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(min(290px,100%),1fr))] gap-3.5">
               {ordered.map((inst) => (
-                <SortableServerCard key={inst.id} inst={inst} onOpen={onOpen} />
+                <SortableServerCard
+                  key={inst.id}
+                  inst={inst}
+                  onOpen={onOpen}
+                  extra={advanced && entitled && inst.status === "running" ? (extras[inst.id] ?? null) : undefined}
+                />
               ))}
             </div>
           </SortableContext>
@@ -296,8 +380,17 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
   );
 }
 
-/** 單張可拖曳排序的伺服器卡片(@dnd-kit)。整張卡是拖曳把手,單純點擊仍會開啟。 */
-function SortableServerCard({ inst, onOpen }: { inst: InstanceSummary; onOpen: (id: string) => void }) {
+/** 單張可拖曳排序的伺服器卡片(@dnd-kit)。整張卡是拖曳把手,單純點擊仍會開啟。
+ * extra:進階顯示(贊助者)開啟且運作中才有 —— undefined=不顯示,null=載入中。 */
+function SortableServerCard({
+  inst,
+  onOpen,
+  extra,
+}: {
+  inst: InstanceSummary;
+  onOpen: (id: string) => void;
+  extra?: CardExtra | null;
+}) {
   useI18n(); // 語言切換時重繪
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: inst.id,
@@ -322,6 +415,28 @@ function SortableServerCard({ inst, onOpen }: { inst: InstanceSummary; onOpen: (
         {inst.enhancements.length > 0 ? translate("強化") : translate("原味")} · UDP {inst.gamePort}
         {inst.gameVersion && ` · ${inst.gameVersion}`}
       </p>
+      {extra !== undefined && (
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-xl bg-card-soft px-3 py-2 text-xs font-bold text-ink-muted">
+          <span className="inline-flex items-center gap-1.5" title={translate("在線玩家")}>
+            <FiUsers className="size-3.5 shrink-0 text-pal" />
+            {extra?.live?.available
+              ? `${extra.live.players.length}${extra.live.metrics ? ` / ${extra.live.metrics.maxplayernum}` : ""}`
+              : "—"}
+          </span>
+          <span className="inline-flex items-center gap-1.5" title={translate("伺服器 FPS")}>
+            <FiZap className="size-3.5 shrink-0 text-pal" />
+            {extra?.live?.metrics ? `${extra.live.metrics.serverfps} FPS` : "—"}
+          </span>
+          <span className="inline-flex items-center gap-1.5" title="CPU">
+            <FiCpu className="size-3.5 shrink-0 text-pal" />
+            {extra?.stats && knownCpuSample(extra.stats.cpuPercent) ? `${extra.stats.cpuPercent.toFixed(0)}%` : "—"}
+          </span>
+          <span className="inline-flex items-center gap-1.5" title={translate("記憶體")}>
+            <FiHardDrive className="size-3.5 shrink-0 text-pal" />
+            {extra?.stats ? fmtBytes(extra.stats.memoryBytes) : "—"}
+          </span>
+        </div>
+      )}
       {inst.updateAvailable && (
         <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-sun/40 bg-sun/15 px-2.5 py-1 text-xs font-bold text-sun">
           <FiDownload className="size-3.5" /> {translate("有新版本可更新")}

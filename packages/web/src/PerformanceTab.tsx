@@ -308,11 +308,11 @@ function Trend({
   );
 }
 
-function fmtBytes(n: number): string {
+export function fmtBytes(n: number): string {
   return n >= 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GB` : `${Math.round(n / (1 << 20))} MB`;
 }
 
-function knownCpuSample(value: number | null | undefined): value is number {
+export function knownCpuSample(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 

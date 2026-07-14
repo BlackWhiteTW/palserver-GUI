@@ -387,6 +387,7 @@
  "在 v1 介面按「開啟伺服器資料夾」,把那個伺服器目錄的路徑貼到下面。小提示:v1 伺服器在同一台機器時,也可以改用「建立伺服器」時填「既有伺服器路徑」直接原地收編,連搬都不用搬。": "In the v1 UI, click \"Open server folder\" and paste that server directory's path below. Tip: if the v1 server is on this same machine, you can instead fill \"existing server path\" when creating a server to adopt it in place — no copying at all.",
  "本機(四人邀請碼)存檔在 %LOCALAPPDATA%\\Pal\\Saved\\SaveGames\\<SteamID>\\ 底下。主機玩家的角色需要過戶,GUI 已內建工具:建立後讓主機玩家先加入一次,再到「存檔備份」分頁按「修復主機角色」即可。": "Local co-op (invite-code) saves live under %LOCALAPPDATA%\\Pal\\Saved\\SaveGames\\<SteamID>\\. The host player's character needs a transfer, and the tool is built in: after creating, have the host join once, then hit \"Fix host character\" in the Backups tab.",
  "修復主機角色": "Fix host character",
+ "匯入後新增": "Added after import",
  "修復完成!主機角色已過戶給新 ID。": "Done! The host character has been transferred to the new ID.",
  "修復前已自動備份:{backup}(出問題可在下方備份清單一鍵還原)。": "A backup was made automatically before the fix: {backup} (restore it from the backups list below if anything goes wrong).",
  "啟動伺服器,該玩家就能用原本的角色進來了。若公會顯示異常,讓該玩家退出公會再重新加入即可。": "Start the server and the player can join with their original character. If the guild looks off, have them leave and rejoin it.",

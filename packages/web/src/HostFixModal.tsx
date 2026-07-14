@@ -27,9 +27,14 @@ export function HostFixModal({
 }) {
   useI18n();
   const hostSav = world.playerSaves.find((p) => p.playerUid === COOP_HOST_UID) ?? null;
+  // 「匯入後新增」的檔案排最前(共玩搬家時幾乎就是主機的新角色檔),其次照時間新→舊。
   const candidates = world.playerSaves
     .filter((p) => p.playerUid !== COOP_HOST_UID)
-    .sort((a, b) => (b.modifiedAt ?? "").localeCompare(a.modifiedAt ?? ""));
+    .sort(
+      (a, b) =>
+        Number(b.newSinceImport ?? false) - Number(a.newSinceImport ?? false) ||
+        (b.modifiedAt ?? "").localeCompare(a.modifiedAt ?? ""),
+    );
   const [picked, setPicked] = useState<string | null>(candidates[0]?.file ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +123,11 @@ export function HostFixModal({
                           {p.modifiedAt ? ` · ${new Date(p.modifiedAt).toLocaleString()}` : ""}
                         </span>
                       </span>
+                      {p.newSinceImport && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-grass/15 px-2 py-0.5 text-xs font-bold text-grass">
+                          <FiCheck className="size-3" /> {t("匯入後新增")}
+                        </span>
+                      )}
                     </label>
                   ))}
                 </div>

@@ -548,6 +548,9 @@ export interface PlayerSave {
   sizeBytes: number;
   /** 檔案最後修改時間(k8s 後端拿不到,可能缺)。 */
   modifiedAt?: string;
+  /** 匯入外部存檔「之後」才出現的角色檔(比對匯入時的快照)——共玩搬家時,
+   *  這幾乎就是主機玩家加入後產生的新角色檔。無快照(非 GUI 匯入)則缺。 */
+  newSinceImport?: boolean;
 }
 
 /** 共玩主機玩家的固定 PlayerUid,「檔名形式」(32 hex 無連字號,同 PlayerSave.playerUid)。

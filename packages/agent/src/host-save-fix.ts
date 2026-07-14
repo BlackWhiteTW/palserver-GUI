@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import type { HostFixResult } from "@palserver/shared";
+import { oodleDecompress } from "./oodle.js";
 
 /**
  * 內建版 palworld-host-save-fix(github.com/xNul/palworld-host-save-fix)。
@@ -23,11 +24,12 @@ import type { HostFixResult } from "@palserver/shared";
  * 該玩家退出公會再重新加入。
  */
 
-/* ── PlZ 容器(palsav.py 的對應實作)── */
+/* ── 存檔容器:PlZ(zlib,舊版)與 PlM(Oodle,新版)── */
 
-const MAGIC = "PlZ";
+const MAGIC_ZLIB = "PlZ";
+const MAGIC_OODLE = "PlM";
 
-function decompressSav(buf: Buffer): { data: Buffer; saveType: number } {
+async function decompressSav(buf: Buffer): Promise<{ data: Buffer; saveType: number }> {
   let off = 0;
   let uncompressedLen = buf.readUInt32LE(0);
   let magic = buf.subarray(8, 11).toString("latin1");
@@ -40,7 +42,13 @@ function decompressSav(buf: Buffer): { data: Buffer; saveType: number } {
     saveType = buf[23];
     off = 24;
   }
-  if (magic !== MAGIC) throw fail(`不是 Palworld 存檔(magic=${JSON.stringify(magic)})`, 422);
+  if (magic === MAGIC_OODLE) {
+    // 新版存檔:payload 是 Oodle 壓縮流(實測為 Mermaid)。只看過 0x31,其他值先擋。
+    if (saveType !== 0x31) throw fail(`不支援的 PlM 存檔壓縮類型 0x${saveType.toString(16)}`, 422);
+    const data = await oodleDecompress(buf.subarray(off), uncompressedLen);
+    return { data, saveType };
+  }
+  if (magic !== MAGIC_ZLIB) throw fail(`不是 Palworld 存檔(magic=${JSON.stringify(magic)})`, 422);
   if (saveType !== 0x31 && saveType !== 0x32) throw fail(`不支援的存檔壓縮類型 0x${saveType.toString(16)}`, 422);
   let data = zlib.inflateSync(buf.subarray(off));
   if (saveType === 0x32) data = zlib.inflateSync(data);
@@ -48,6 +56,8 @@ function decompressSav(buf: Buffer): { data: Buffer; saveType: number } {
   return { data, saveType };
 }
 
+/** 寫回一律用 zlib 的 PlZ 容器 —— 即使來源是 PlM(Oodle):遊戲兩種都讀
+ *  (歷次改版舊 PlZ 存檔都載得起來),這樣就不需要實作 Oodle 壓縮。 */
 function compressSav(data: Buffer, saveType: number): Buffer {
   let comp = zlib.deflateSync(data);
   const compLen = comp.length;
@@ -55,7 +65,7 @@ function compressSav(data: Buffer, saveType: number): Buffer {
   const head = Buffer.alloc(12);
   head.writeUInt32LE(data.length, 0);
   head.writeUInt32LE(compLen, 4);
-  head.write(MAGIC, 8, "latin1");
+  head.write(MAGIC_ZLIB, 8, "latin1");
   head[11] = saveType;
   return Buffer.concat([head, comp]);
 }
@@ -138,11 +148,11 @@ function savNameToUuid(name: string): string {
  * @param oldSavName 舊角色檔名(通常 00000000…0001.sav)
  * @param newSavName 新角色檔名(該玩家加入專用伺服器後產生的)
  */
-export function applyHostFix(
+export async function applyHostFix(
   worldDir: string,
   oldSavName: string,
   newSavName: string,
-): Omit<HostFixResult, "backup"> {
+): Promise<Omit<HostFixResult, "backup">> {
   if (!SAV_NAME_RE.test(oldSavName) || !SAV_NAME_RE.test(newSavName)) {
     throw fail("玩家存檔檔名格式不合法", 422);
   }
@@ -166,7 +176,7 @@ export function applyHostFix(
 
   // ── 玩家檔:改 SaveData.PlayerUId 與 SaveData.IndividualId.PlayerUId(恰 2 處),
   //    並讀出 IndividualId.InstanceId 當 Level.sav 的比對錨。
-  const oldPlayer = decompressSav(fs.readFileSync(oldPath));
+  const oldPlayer = await decompressSav(fs.readFileSync(oldPath));
   const uidProps = findGuidProps(oldPlayer.data, "PlayerUId");
   const matching = uidProps.filter((p) => p.uuid === oldUid);
   if (uidProps.length !== 2 || matching.length !== 2) {
@@ -185,7 +195,7 @@ export function applyHostFix(
 
   // ── Level.sav:CharacterSaveParameterMap 裡「PlayerUId==舊 && 後隨 InstanceId==角色實例」
   //    的那一筆,把 PlayerUId 改成新的。錨定要求 InstanceId 緊跟在同一條目內(≤256 bytes)。
-  const level = decompressSav(fs.readFileSync(levelPath));
+  const level = await decompressSav(fs.readFileSync(levelPath));
   const levelUids = findGuidProps(level.data, "PlayerUId");
   const targets: number[] = [];
   for (const p of levelUids) {

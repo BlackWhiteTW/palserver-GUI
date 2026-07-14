@@ -440,7 +440,38 @@ export async function getSavesStatus(
       backups: listBackups(ctx),
     };
   }
-  return { supported: true, worlds: listWorlds(root), backups: listBackups(ctx) };
+  return { supported: true, worlds: markNewSinceImport(listWorlds(root), ctx), backups: listBackups(ctx) };
+}
+
+/* ── 匯入快照:標示「匯入後才出現」的玩家檔 ──
+ * importExternalWorld 會把匯入當下的 Players/*.sav 清單存成快照;之後清單裡
+ * 沒有的檔案就是新加入的玩家產生的 —— 共玩搬家時,主機玩家的新角色檔靠這個
+ * 被 UI 精準標出來(而不是用 mtime 猜)。 */
+
+const importManifestPath = (ctx: DriverContext, worldGuid: string) =>
+  path.join(ctx.instanceDir, `import-manifest-${worldGuid}.json`);
+
+interface ImportManifest {
+  importedAt: string;
+  playerFiles: string[];
+}
+
+function readImportManifest(ctx: DriverContext, worldGuid: string): ImportManifest | null {
+  try {
+    return JSON.parse(fs.readFileSync(importManifestPath(ctx, worldGuid), "utf8")) as ImportManifest;
+  } catch {
+    return null;
+  }
+}
+
+function markNewSinceImport(worlds: WorldSave[], ctx: DriverContext): WorldSave[] {
+  for (const w of worlds) {
+    const manifest = readImportManifest(ctx, w.guid);
+    if (!manifest) continue;
+    const imported = new Set(manifest.playerFiles.map((f) => f.toLowerCase()));
+    for (const p of w.playerSaves) p.newSinceImport = !imported.has(p.file.toLowerCase());
+  }
+  return worlds;
 }
 
 /** Ask the running server to flush the world first, so the archive isn't
@@ -796,6 +827,17 @@ export async function importExternalWorld(
   fs.mkdirSync(path.dirname(gus), { recursive: true });
   const ini = fs.existsSync(gus) ? fs.readFileSync(gus, "utf8") : "";
   fs.writeFileSync(gus, applyDedicatedServerName(ini, guid));
+
+  // 匯入快照:記下這一刻有哪些玩家檔,之後新出現的就是「匯入後新增」
+  // (共玩搬家時 UI 用它精準標出主機玩家的新角色檔)。
+  const playersDirDest = path.join(dest, "Players");
+  const playerFiles = fs.existsSync(playersDirDest)
+    ? fs.readdirSync(playersDirDest).filter((f) => f.toLowerCase().endsWith(".sav"))
+    : [];
+  fs.writeFileSync(
+    importManifestPath(ctx, guid),
+    JSON.stringify({ importedAt: new Date().toISOString(), playerFiles } satisfies ImportManifest, null, 2),
+  );
 
   return { worldGuid: guid, backedUp };
 }

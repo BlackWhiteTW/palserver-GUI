@@ -1434,7 +1434,7 @@ export function registerRoutes(
     }
     // 改壞角色無法復原 — 修復前強制留一份世界備份。
     const backup = await saves.createBackup(rec, ctxOf(rec), worldGuid);
-    const result = applyHostFix(saves.worldDirOf(rec, ctxOf(rec), worldGuid), oldSav, newSav);
+    const result = await applyHostFix(saves.worldDirOf(rec, ctxOf(rec), worldGuid), oldSav, newSav);
     return { ...result, backup: backup.name };
   });
 

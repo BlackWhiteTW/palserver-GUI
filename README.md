@@ -1,6 +1,6 @@
 # palserver GUI
 
-**繁體中文** | [English](README.en.md) | [日本語](README.ja.md)
+**繁體中文** | [简体中文](README.zh-CN.md) | [English](README.en.md) | [日本語](README.ja.md)
 
 <p align="center"><a href="https://palserver-GUI.iosoftware.ai"><b>官方網站 palserver-GUI.iosoftware.ai</b></a> —— 下載、教學、常見問題</p>
 
@@ -22,7 +22,7 @@
 
 ## 畫面預覽
 
-> 介面支援繁體中文 / English / 日本語,三套主題(帕魯原色 / 白銀 / 極光翡翠)分別有深色 / 淺色可切換;截圖中的玩家與資料為展示用途。
+> 介面支援繁體中文 / 简体中文 / English / 日本語,三套主題(帕魯原色 / 白銀 / 極光翡翠)分別有深色 / 淺色可切換;截圖中的玩家與資料為展示用途。
 
 ![玩家管理](docs/screenshots/players.png)
 
@@ -104,7 +104,7 @@
 - 自訂帕魯 / 帕魯蛋、公會據點詳情、地標名稱
 
 **其他**
-- 三種語言:繁體中文 / English / 日本語;**三套主題**(帕魯原色 / 白銀 / 極光翡翠)× 深色 / 淺色,白銀與極光翡翠為贊助者專屬
+- 四種語言:繁體中文 / 简体中文 / English / 日本語;**三套主題**(帕魯原色 / 白銀 / 極光翡翠)× 深色 / 淺色,白銀與極光翡翠為贊助者專屬
 - 首頁伺服器卡片**拖曳排序**;分頁可**自訂顯示 / 隱藏**;總覽卡片可關閉
 - 連線診斷:偵測公網 IP、是否在 NAT/CGNAT 後面,並提供 VPN(Tailscale / Radmin)開服教學
 - GUI 自我更新(可選):從 GitHub Releases 檢查新版,驗證 SHA256 後換檔重啟

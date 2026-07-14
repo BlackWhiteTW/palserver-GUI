@@ -10,6 +10,8 @@ export interface GameEntity {
   name: string;
   /** Traditional-Chinese name where known; extend the catalogs to add more */
   zh?: string;
+  /** Simplified-Chinese name where known(scripts/fetch-zh-cn.mjs 由 paldb.cc /cn/ 抓) */
+  zhCN?: string;
   /** Japanese name where known(scripts/fetch-game-data-i18n.mjs 由 paldb.cc 抓) */
   ja?: string;
   /** icon filename within the category folder, if we have artwork for it */
@@ -23,6 +25,7 @@ export interface GameEntity {
 /** Preferred display name for the current UI language (fallback: English). */
 export const displayName = (e: GameEntity) => {
   const lang = getLang();
+  if (lang === "zh-CN") return e.zhCN ?? e.zh ?? e.name;
   if (lang === "zh") return e.zh ?? e.name;
   if (lang === "ja") return e.ja ?? e.name;
   return e.name;

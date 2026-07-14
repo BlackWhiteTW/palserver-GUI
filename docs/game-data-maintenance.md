@@ -24,14 +24,17 @@
 
 | 檔案 | schema | 圖示資料夾 | 來源 |
 |---|---|---|---|
-| `pals.json` | `{id, name, icon?, zh?, ja?}` | `pals/` | paldb.cc / paldeck.cc |
-| `items.json` | `{id, name, icon?, zh?, ja?}` | `items/` | paldb.cc |
-| `passives.json` | `{id, name, zh?, ja?, rank}` | 無（前端畫箭頭） | paldb.cc + paldeck.cc |
-| `activeSkills.json` | `{id, name, zh?, ja?, element?}` | 無 | paldb.cc + paldeck.cc |
+| `pals.json` | `{id, name, icon?, zh?, zhCN?, ja?}` | `pals/` | paldb.cc / paldeck.cc |
+| `items.json` | `{id, name, icon?, zh?, zhCN?, ja?}` | `items/` | paldb.cc |
+| `passives.json` | `{id, name, zh?, zhCN?, ja?, rank}` | 無（前端畫箭頭） | paldb.cc + paldeck.cc |
+| `activeSkills.json` | `{id, name, zh?, zhCN?, ja?, element?}` | 無 | paldb.cc + paldeck.cc |
+| `landmarks.json` / `bosses.json` | `{name:{en, zh, zhCN?, ja}, x, y, ...}` | landmark-icons / pals | paldb.cc map data |
+
+`zh` 是繁中、`zhCN` 是簡中（介面選簡中時前端 `displayName` / MapTab 優先取 zhCN，缺則 fallback 繁中→英文）。
 
 **關鍵原則**：`id` 是遊戲/PalDefender 內部 id（不是顯示名），是對接遊戲存檔與 REST 的鍵，
 **絕不能改**。名稱翻譯（zh/ja）可以更新；`id` 一旦錯了，玩家資料就對不上。JSON 一律
-compact 單行（`JSON.stringify(x) + "\n"`），欄位順序固定 `id, name, icon, zh, ja, ...` 方便 diff。
+compact 單行（`JSON.stringify(x) + "\n"`），欄位順序固定 `id, name, icon, zh, zhCN, ja, ...` 方便 diff。
 
 抓取一律帶 User-Agent `palserver-gui-data-sync (maintainer-approved; github.com/io-software-ai/palserver-gui)`
 （維護者已獲 paldb.cc 同意，見 `packages/web/public/game-data/CREDITS.md`），並禮貌節流。
@@ -126,6 +129,19 @@ node scripts/fetch-skills-passives.mjs
 5. **build 過**：`pnpm --filter @palserver/web exec vite build`。
 6. **抽查渲染**：挑幾個新怕魯/物品，確認 name/zh/ja/icon 四欄都對。
 7. commit 時**只加自己動到的檔**（使用者常同時在改別的檔案，用明確路徑 `git add`，別 `git add -A`）。
+
+## 補簡體中文 zhCN 欄位
+
+`zhCN` 是簡中顯示名。paldb.cc 的 `/cn/` 是**獨立維護的簡中版**（不是 `/tw/` 繁轉簡，部分譯名用詞不同），
+所以優先抓官方簡中，抓不到才用繁轉簡 fallback。
+
+1. **抓官方簡中**：`node scripts/fetch-zh-cn.mjs`——比照 `fetch-game-data-i18n.mjs`，把站點換 `/cn/`：
+   pals/items 靠 `?s=<Kind>%2F<id>` anchor 對接；activeSkills 靠 `EPalWazaID::<id>`；
+   passives 靠 en/cn 卡片位置對齊；landmarks/bosses 靠 `js/map_data_cn.js` 的 `ipos` 座標比對。
+   只新增 `zhCN`，不覆蓋既有欄位。
+2. **繁轉簡 fallback**：`/cn/` 抓不到對應的個別條目，用 OpenCC 純字轉（`from:'t', to:'cn'`）從 `zh` 補，
+   避免詞彙誤替換（遊戲專名）。無名條目（如無名地牢 name 各語言皆空）保持空白、不硬補。
+3. 收尾同下方驗證清單：確認每個「有名字」的條目都有非空 `zhCN`（無名地牢的空 `zhCN` 屬正常）。
 
 ## 踩坑筆記（別重踩）
 

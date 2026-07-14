@@ -15,10 +15,11 @@ import { FiChevronDown } from "react-icons/fi";
  *     翻譯檔改了不用重新出版,使用者下次載入就拿到。
  */
 
-export type Lang = "zh" | "en" | "ja";
+export type Lang = "zh" | "zh-CN" | "en" | "ja";
 
 export const LANG_LABELS: Record<Lang, string> = {
-  zh: "中文",
+  zh: "繁體中文",
+  "zh-CN": "简体中文",
   en: "English",
   ja: "日本語",
 };
@@ -34,12 +35,16 @@ type Dict = Record<string, string>;
 function detectLang(): Lang {
   try {
     const stored = localStorage.getItem(KEY);
-    if (stored === "zh" || stored === "en" || stored === "ja") return stored;
+    if (stored === "zh" || stored === "zh-CN" || stored === "en" || stored === "ja") return stored;
   } catch {
     /* ignore */
   }
   const nav = (navigator.language || "").toLowerCase();
-  if (nav.startsWith("zh")) return "zh";
+  if (nav.startsWith("zh")) {
+    // 簡體地區(大陸/新加坡)與 Hans 標記 → 簡中;其餘(台灣/香港/澳門)→ 繁中
+    if (nav.startsWith("zh-cn") || nav.startsWith("zh-sg") || nav.includes("hans")) return "zh-CN";
+    return "zh";
+  }
   if (nav.startsWith("ja")) return "ja";
   return "en";
 }

@@ -33,6 +33,19 @@ const LANGS = {
     ],
     footer: "開源專案,歡迎 Star 支持!",
   },
+  "zh-CN": {
+    headline: '最简单的<br><span class="blue">Palworld</span><br>服务器管理工具',
+    tagline: "轻松管理服务器,从开服到备份,一切尽在掌握。",
+    badges: ["免费开源", "跨平台支持", "简体中文界面"],
+    features: [
+      ["服务器管理", "一键开服 / 停止 / 重启"],
+      ["玩家管理", "查看玩家 / 踢人 / 封禁"],
+      ["性能调校", "优化设置 / 性能分析"],
+      ["存档备份", "自动备份 / 还原存档"],
+      ["模组管理", "安装 / 更新 / 管理"],
+    ],
+    footer: "开源项目,欢迎 Star 支持!",
+  },
   en: {
     headline: 'The Simplest<br><span class="blue">Palworld</span> Server<br>Management Tool',
     tagline: "Easily manage your server, from launching to backups — everything under control.",

@@ -1,6 +1,6 @@
 # palserver GUI
 
-[繁體中文](README.md) | **English** | [日本語](README.ja.md)
+[繁體中文](README.md) | [简体中文](README.zh-CN.md) | **English** | [日本語](README.ja.md)
 
 <p align="center"><a href="https://palserver-GUI.iosoftware.ai"><b>Official site: palserver-GUI.iosoftware.ai</b></a> — downloads, guides & FAQ</p>
 
@@ -22,7 +22,7 @@ Browser (React Web UI)
 
 ## Screenshots
 
-> The UI ships in 繁體中文 / English / 日本語, with three switchable themes (Palworld Classic / Silver / Aurora Emerald), each with a light and dark variant; players and data in the screenshots are demo content.
+> The UI ships in 繁體中文 / 简体中文 / English / 日本語, with three switchable themes (Palworld Classic / Silver / Aurora Emerald), each with a light and dark variant; players and data in the screenshots are demo content.
 
 ![Player management](docs/screenshots/players.png)
 
@@ -104,7 +104,7 @@ If you hit a problem, check the **[FAQ](https://faq.toc.icu/)** first, or ask on
 - Custom Pals / eggs, guild base details, landmark names
 
 **Other**
-- Three languages: 繁體中文 / English / 日本語; **three themes** (Palworld Classic / Silver / Aurora Emerald) **×** light / dark — Silver and Aurora Emerald are sponsor-exclusive
+- Four languages: 繁體中文 / 简体中文 / English / 日本語; **three themes** (Palworld Classic / Silver / Aurora Emerald) **×** light / dark — Silver and Aurora Emerald are sponsor-exclusive
 - **Drag-to-reorder** server cards on the home page; tabs can be **customized (show / hide)**; the overview card can be dismissed
 - Connectivity diagnostics: detects your public IP, whether you're behind NAT/CGNAT, plus VPN (Tailscale / Radmin) hosting guides
 - Optional GUI self-update: checks GitHub Releases, verifies SHA256, swaps binaries and restarts itself

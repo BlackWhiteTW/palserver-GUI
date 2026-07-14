@@ -765,7 +765,7 @@ export async function importExternalWorld(
   const dest = path.join(destGames, guid);
   if (path.resolve(dest) === src) throw fail("來源就是這個實例自己的存檔,不需匯入", 409);
   if (fs.existsSync(dest) && !overwrite) {
-    throw fail(`目標已有同名世界 ${guid}。勾選「覆蓋同名世界」以取代(會先自動備份)`, 409);
+    throw fail(`目標實例已有同名世界 ${guid},為避免覆蓋現有資料已中止匯入`, 409);
   }
 
   // 匯入是覆蓋性操作:目標若有啟用中的世界,先照既有備份機制留一份。

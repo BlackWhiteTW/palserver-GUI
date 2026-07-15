@@ -576,6 +576,9 @@ export interface WorldSave {
   sizeBytes: number;
   modifiedAt: string;
   playerSaves: PlayerSave[];
+  /** 共玩存檔遺留的 WorldOptions.sav 存在時為 true —— 它會覆蓋 ini 的世界設定
+   *  (含 AdminPassword),必須停用伺服器才會改讀 GUI 管理的 ini。 */
+  hasWorldOptions?: boolean;
 }
 
 export interface BackupInfo {
@@ -945,4 +948,6 @@ export interface ImportSaveResult {
   worldGuid: string;
   /** 匯入前是否有自動備份原本的啟用世界。 */
   backedUp: boolean;
+  /** 匯入時發現共玩遺留的 WorldOptions.sav 並已自動停用(改名保留)。 */
+  worldOptionsDisabled?: boolean;
 }

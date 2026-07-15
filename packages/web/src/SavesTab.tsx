@@ -166,6 +166,17 @@ export function SavesTab({
             void act(() => client.deletePlayerSave(instanceId, world.guid, file), t("已刪除玩家存檔"));
           }}
           onHostFix={() => setHostFixWorld(world)}
+          onDisableWorldOptions={() => {
+            if (
+              !confirm(
+                t(
+                  "停用 WorldOptions.sav 後,這個世界的設定將改由 GUI 的「世界設定」(ini)接管,原檔會改名保留。\n\n確定要停用嗎?",
+                ),
+              )
+            )
+              return;
+            void act(() => client.disableWorldOptions(instanceId, world.guid), t("已停用 WorldOptions.sav,下次啟動生效"));
+          }}
         />
       ))}
 
@@ -467,6 +478,7 @@ function WorldCard({
   onBrowse,
   onDeletePlayer,
   onHostFix,
+  onDisableWorldOptions,
 }: {
   world: WorldSave;
   busy: boolean;
@@ -476,12 +488,30 @@ function WorldCard({
   onBrowse: () => void;
   onDeletePlayer: (file: string) => void;
   onHostFix: () => void;
+  onDisableWorldOptions: () => void;
 }) {
   const [showPlayers, setShowPlayers] = useState(false);
   // 偵測到共玩主機角色檔(0000…0001)→ 這個世界八成是共玩搬過來的,主動給修復入口。
   const hasCoopHost = world.playerSaves.some((p) => p.playerUid === COOP_HOST_UID);
   return (
     <div className={card}>
+      {world.hasWorldOptions && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2">
+          <p className="text-xs font-bold text-sun">
+            {t(
+              "偵測到共玩存檔遺留的 WorldOptions.sav — 它會覆蓋 GUI 的世界設定(含管理員密碼),REST API/RCON 會因此連不上。",
+            )}
+          </p>
+          <button
+            className={`${btnGhost} shrink-0`}
+            onClick={onDisableWorldOptions}
+            disabled={busy || running}
+            title={running ? t("請先停止伺服器") : undefined}
+          >
+            {t("停用它(改名保留)")}
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 font-mono text-sm font-extrabold break-all">

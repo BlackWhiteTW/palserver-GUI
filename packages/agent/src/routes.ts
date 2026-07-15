@@ -1404,6 +1404,18 @@ export function registerRoutes(
     return saves.createBackup(rec, ctxOf(rec), worldGuid);
   });
 
+  // ── 停用共玩遺留的 WorldOptions.sav(它會蓋掉 ini 的世界設定與 AdminPassword)──
+  app.post("/api/instances/:id/saves/world-options-fix", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { worldGuid } = z
+      .object({ worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法") })
+      .parse(req.body);
+    if (await isRunning(rec)) {
+      throw Object.assign(new Error("請先停止伺服器再停用 WorldOptions.sav(重啟後才會生效)"), { statusCode: 409 });
+    }
+    return saves.disableWorldOptions(rec, ctxOf(rec), worldGuid);
+  });
+
   // ── 存檔健檢(save-slim Stage 1,唯讀分析)──
   app.get("/api/instances/:id/saves/health", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);

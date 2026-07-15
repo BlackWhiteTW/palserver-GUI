@@ -1192,5 +1192,9 @@
  "這位玩家名下沒有帕魯。": "This player owns no pals.",
  "頭目": "Alpha",
  "個體值:血量 / 攻擊 / 防禦(0-100)": "IVs: HP / Attack / Defense (0-100)",
- "顯示全部 {n} 隻": "Show all {n}"
+ "顯示全部 {n} 隻": "Show all {n}",
+ "偵測到共玩存檔遺留的 WorldOptions.sav — 它會覆蓋 GUI 的世界設定(含管理員密碼),REST API/RCON 會因此連不上。": "Co-op leftover WorldOptions.sav detected — it overrides the GUI's world settings (including the admin password), so REST API/RCON can't authenticate.",
+ "停用它(改名保留)": "Disable it (rename & keep)",
+ "停用 WorldOptions.sav 後,這個世界的設定將改由 GUI 的「世界設定」(ini)接管,原檔會改名保留。\n\n確定要停用嗎?": "After disabling WorldOptions.sav, this world's settings will be managed by the GUI's World Settings (ini). The original file is renamed and kept.\n\nDisable it?",
+ "已停用 WorldOptions.sav,下次啟動生效": "WorldOptions.sav disabled — takes effect on next start"
 }

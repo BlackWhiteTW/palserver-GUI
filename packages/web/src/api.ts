@@ -613,6 +613,13 @@ export class AgentClient {
     });
   }
 
+  disableWorldOptions(id: string, worldGuid: string): Promise<{ disabledTo: string }> {
+    return this.request(`/api/instances/${id}/saves/world-options-fix`, {
+      method: "POST",
+      body: JSON.stringify({ worldGuid }),
+    });
+  }
+
   playersSnapshot(id: string, worldGuid?: string): Promise<SavePlayersSummary & { worldGuid: string }> {
     const q = worldGuid ? `?worldGuid=${encodeURIComponent(worldGuid)}` : "";
     return this.request(`/api/instances/${id}/saves/players-snapshot${q}`);

@@ -2,7 +2,12 @@ import fs from "node:fs";
 import type { Readable } from "node:stream";
 import { parserStream } from "stream-json";
 import type { Token } from "stream-json/parser.js";
-import type { SaveHealthCounts, SaveHealthPlayerRow } from "@palserver/shared";
+import type {
+  SaveHealthCounts,
+  SaveHealthPlayerRow,
+  SavePalRow,
+  SavePlayerProfile,
+} from "@palserver/shared";
 
 /**
  * Level.sav JSON(palsav convert --to-json 的輸出)串流分析器。
@@ -19,7 +24,13 @@ export interface LevelJsonAnalysis {
   counts: SaveHealthCounts;
   inactivePlayers: SaveHealthPlayerRow[];
   emptyGuildNames: string[];
+  /** 玩家快照(玩家詳情頁用):等級/公會/最後上線 + 名下帕魯明細。 */
+  players: SavePlayerProfile[];
 }
+
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+/** 單一玩家保留的帕魯明細上限(palCount 仍是真實總數)。 */
+const MAX_PALS_PER_PLAYER = 1000;
 
 /** FDateTime ticks(100ns,自 0001-01-01)→ Unix epoch 的偏移。 */
 const EPOCH_TICKS = 621_355_968_000_000_000;
@@ -68,6 +79,20 @@ interface ElementCtx {
   slotNum?: number;
   hasItem?: boolean;
   mapObjectId?: string;
+  /* CharacterSaveParameterMap 元素的欄位收集(玩家快照用) */
+  keyPlayerUid?: string;
+  nickName?: string;
+  levelNum?: number;
+  expNum?: number;
+  ownerUid?: string;
+  characterId?: string;
+  gender?: string;
+  rank?: number;
+  isLucky?: boolean;
+  talentHp?: number;
+  talentShot?: number;
+  talentDefense?: number;
+  passives?: string[];
 }
 
 class Analyzer {
@@ -95,6 +120,10 @@ class Analyzer {
   /** uid → 名冊資料(跨公會取最近一次上線)。 */
   readonly playersSeen = new Map<string, { name: string; guildName: string; ticks: number }>();
   private charEntries = 0;
+  /** uid → 玩家角色資料(來自 CharacterSaveParameterMap 的玩家 entry)。 */
+  private readonly playerChars = new Map<string, { name: string; level: number | null; exp: number | null }>();
+  /** ownerUid → 名下帕魯明細。 */
+  private readonly palsByOwner = new Map<string, { rows: SavePalRow[]; total: number }>();
   /** 存檔內的世界時鐘(GameTimeSaveData.RealDateTimeTicks)——上游清理工具
    *  以它為「現在」計算離線天數;拿得到就優先用,mtime 只當 fallback。 */
   private realDateTimeTicks: number | null = null;
@@ -176,7 +205,38 @@ class Analyzer {
     switch (e.section) {
       case "CharacterSaveParameterMap":
         this.charEntries += 1;
-        if (e.isPlayer) c.players += 1;
+        if (e.isPlayer) {
+          c.players += 1;
+          if (e.keyPlayerUid && e.keyPlayerUid !== ZERO_UUID) {
+            this.playerChars.set(e.keyPlayerUid, {
+              name: e.nickName || "?",
+              level: e.levelNum ?? null,
+              exp: e.expNum ?? null,
+            });
+          }
+        } else if (e.ownerUid && e.ownerUid !== ZERO_UUID && e.characterId) {
+          let bucket = this.palsByOwner.get(e.ownerUid);
+          if (!bucket) {
+            bucket = { rows: [], total: 0 };
+            this.palsByOwner.set(e.ownerUid, bucket);
+          }
+          bucket.total += 1;
+          if (bucket.rows.length < MAX_PALS_PER_PLAYER) {
+            bucket.rows.push({
+              characterId: e.characterId,
+              nickname: e.nickName || undefined,
+              level: e.levelNum ?? null,
+              gender: e.gender === "EPalGenderType::Female" ? "female" : e.gender === "EPalGenderType::Male" ? "male" : null,
+              rank: e.rank ?? 0,
+              isLucky: e.isLucky ?? false,
+              isBoss: e.characterId.toUpperCase().startsWith("BOSS_"),
+              talentHp: e.talentHp ?? null,
+              talentShot: e.talentShot ?? null,
+              talentDefense: e.talentDefense ?? null,
+              passives: e.passives ?? [],
+            });
+          }
+        }
         c.pals = this.charEntries - c.players;
         break;
       case "GroupSaveDataMap": {
@@ -245,9 +305,43 @@ class Analyzer {
     const last = rel[rel.length - 1];
     const prev = rel[rel.length - 2];
     switch (e.section) {
-      case "CharacterSaveParameterMap":
-        if (prev === "IsPlayer" && last === "value" && t.name === "trueValue") e.isPlayer = true;
+      case "CharacterSaveParameterMap": {
+        if (prev === "IsPlayer" && last === "value" && t.name === "trueValue") {
+          e.isPlayer = true;
+          break;
+        }
+        // 元素 key:{"key":{"PlayerUId":{"value":uuid},...}}
+        if (rel[0] === "key" && prev === "PlayerUId" && last === "value" && t.name === "stringValue") {
+          e.keyPlayerUid = t.value as string;
+          break;
+        }
+        // SaveParameter.value 下的角色欄位(玩家與帕魯共用同一批 key 名)
+        if (last === "value" && typeof prev === "string") {
+          if (t.name === "stringValue") {
+            const v = t.value as string;
+            if (prev === "NickName") e.nickName = v;
+            else if (prev === "CharacterID") e.characterId = v;
+            else if (prev === "OwnerPlayerUId") e.ownerUid = v;
+            else if (v.startsWith("EPalGenderType::")) e.gender = v;
+          } else if (t.name === "numberValue") {
+            const n = Number(t.value);
+            if (prev === "Level") e.levelNum = n;
+            else if (prev === "Exp") e.expNum = n;
+            else if (prev === "Rank") e.rank = n;
+            else if (prev === "Talent_HP") e.talentHp = n;
+            else if (prev === "Talent_Shot") e.talentShot = n;
+            else if (prev === "Talent_Defense") e.talentDefense = n;
+          } else if (t.name === "trueValue" && prev === "IsRarePal") {
+            e.isLucky = true;
+          }
+          break;
+        }
+        // 詞條:PassiveSkillList.value.values[i] 的字串陣列
+        if (typeof last === "number" && t.name === "stringValue" && rel.includes("PassiveSkillList")) {
+          (e.passives ??= []).push(t.value as string);
+        }
         break;
+      }
       case "GroupSaveDataMap": {
         if (last === "group_type" && t.name === "stringValue") {
           e.groupType = t.value as string;
@@ -310,10 +404,38 @@ class Analyzer {
     }
     rows.sort((a, b) => (b.lastOnlineDaysAgo ?? 0) - (a.lastOnlineDaysAgo ?? 0));
     this.counts.playersInactive30d = rows.length;
+
+    // 玩家快照:角色 entry(等級/經驗)+ 公會名冊(公會/最後上線)+ 名下帕魯
+    const uids = new Set([...this.playerChars.keys(), ...this.playersSeen.keys()]);
+    const players: SavePlayerProfile[] = [];
+    for (const uid of uids) {
+      const ch = this.playerChars.get(uid);
+      const roster = this.playersSeen.get(uid);
+      let days: number | null = null;
+      if (roster && roster.ticks > 0) {
+        const d = (nowTicks - roster.ticks) / TICKS_PER_DAY;
+        if (d >= 0 && d <= MAX_PLAUSIBLE_DAYS) days = Math.floor(d);
+      }
+      const bucket = this.palsByOwner.get(uid);
+      const pals = (bucket?.rows ?? []).sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
+      players.push({
+        uid,
+        name: ch?.name || roster?.name || "?",
+        level: ch?.level ?? null,
+        exp: ch?.exp ?? null,
+        guildName: roster?.guildName ?? null,
+        lastOnlineDaysAgo: days,
+        palCount: bucket?.total ?? 0,
+        pals,
+      });
+    }
+    players.sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
+
     return {
       counts: this.counts,
       inactivePlayers: rows.slice(0, MAX_INACTIVE_ROWS),
       emptyGuildNames: this.emptyGuildNames,
+      players,
     };
   }
 }

@@ -660,6 +660,49 @@ export interface SaveHealthReport {
   emptyGuildNames: string[];
 }
 
+/** 存檔掃描順帶建立的「玩家快照」— 玩家詳情頁的檔案級資料來源。 */
+export interface SavePalRow {
+  /** 物種 id(CharacterID;BOSS_ 前綴 = 首領/alpha 個體) */
+  characterId: string;
+  nickname?: string;
+  level: number | null;
+  gender: "male" | "female" | null;
+  /** 星級(Rank,0/1 = 未強化) */
+  rank: number;
+  isLucky: boolean;
+  isBoss: boolean;
+  talentHp: number | null;
+  talentShot: number | null;
+  talentDefense: number | null;
+  passives: string[];
+}
+
+export interface SavePlayerProfile {
+  uid: string;
+  name: string;
+  level: number | null;
+  exp: number | null;
+  guildName: string | null;
+  lastOnlineDaysAgo: number | null;
+  palCount: number;
+  /** 依等級降冪;超過上限只留前段(palCount 仍是真實總數) */
+  pals: SavePalRow[];
+}
+
+export interface SavePlayersSnapshot {
+  worldGuid: string;
+  generatedAt: string;
+  levelSavMtime: string;
+  players: SavePlayerProfile[];
+}
+
+/** 快照清單回應:玩家欄位齊全但不含 pals 明細(單一玩家詳情另查)。 */
+export interface SavePlayersSummary {
+  generatedAt: string | null;
+  levelSavMtime: string | null;
+  players: Omit<SavePlayerProfile, "pals">[];
+}
+
 export type SaveHealthPhase = "idle" | "download" | "convert" | "analyze";
 
 export interface SaveHealthStatus {

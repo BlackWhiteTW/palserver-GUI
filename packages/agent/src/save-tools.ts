@@ -4,7 +4,14 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { SaveHealthReport, SaveHealthStatus, SaveHealthPhase } from "@palserver/shared";
+import type {
+  SaveHealthReport,
+  SaveHealthStatus,
+  SaveHealthPhase,
+  SavePlayerProfile,
+  SavePlayersSnapshot,
+  SavePlayersSummary,
+} from "@palserver/shared";
 import { AGENT_VERSION, DATA_DIR, GITHUB_REPO } from "./env.js";
 import type { InstanceRecord } from "./store.js";
 import type { DriverContext } from "./driver.js";
@@ -31,6 +38,7 @@ const SUMS_ASSET = "SHA256SUMS.txt";
 const CONVERT_TIMEOUT_MS = 30 * 60_000;
 
 const REPORTS_FILE = "save-health.json";
+const SNAPSHOTS_FILE = "save-players.json";
 const TMP_DIR = "health-tmp";
 
 function palsavAssetName(): string | null {
@@ -172,6 +180,44 @@ function writeReport(ctx: DriverContext, report: SaveHealthReport): void {
   fs.writeFileSync(reportsPath(ctx), JSON.stringify(all, null, 2));
 }
 
+/* ── 玩家快照持久化(instanceDir/save-players.json,worldGuid → snapshot) ── */
+
+function snapshotsPath(ctx: DriverContext): string {
+  return path.join(ctx.instanceDir, SNAPSHOTS_FILE);
+}
+
+function readSnapshots(ctx: DriverContext): Record<string, SavePlayersSnapshot> {
+  try {
+    return JSON.parse(fs.readFileSync(snapshotsPath(ctx), "utf8")) as Record<string, SavePlayersSnapshot>;
+  } catch {
+    return {};
+  }
+}
+
+function writeSnapshot(ctx: DriverContext, snapshot: SavePlayersSnapshot): void {
+  const all = readSnapshots(ctx);
+  all[snapshot.worldGuid] = snapshot;
+  fs.writeFileSync(snapshotsPath(ctx), JSON.stringify(all));
+}
+
+/** 玩家快照清單(不含 pals 明細)。 */
+export function getPlayersSummary(ctx: DriverContext, worldGuid: string): SavePlayersSummary & { worldGuid: string } {
+  const snap = readSnapshots(ctx)[worldGuid];
+  return {
+    worldGuid,
+    generatedAt: snap?.generatedAt ?? null,
+    levelSavMtime: snap?.levelSavMtime ?? null,
+    players: (snap?.players ?? []).map(({ pals: _pals, ...rest }) => rest),
+  };
+}
+
+/** 單一玩家完整檔案(含帕魯明細)。uid 比對忽略大小寫與連字號。 */
+export function getPlayerProfile(ctx: DriverContext, worldGuid: string, uid: string): SavePlayerProfile | null {
+  const norm = (s: string) => s.replace(/-/g, "").toLowerCase();
+  const snap = readSnapshots(ctx)[worldGuid];
+  return snap?.players.find((p) => norm(p.uid) === norm(uid)) ?? null;
+}
+
 /* ── 主流程 ── */
 
 /** 子行程跑 palsav convert;回傳 stderr 尾段供錯誤訊息。 */
@@ -269,6 +315,13 @@ async function runJob(rec: InstanceRecord, ctx: DriverContext, worldGuid: string
       emptyGuildNames: analysis.emptyGuildNames,
     };
     writeReport(ctx, report);
+    // 同一次掃描順帶產出玩家快照(玩家詳情頁「從存檔刷新」的資料來源)
+    writeSnapshot(ctx, {
+      worldGuid,
+      generatedAt: report.generatedAt,
+      levelSavMtime: report.levelSavMtime,
+      players: analysis.players,
+    });
     return report;
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

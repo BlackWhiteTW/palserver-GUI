@@ -44,6 +44,8 @@ import type {
   RestartPolicy,
   RestartStatus,
   SaveHealthStatus,
+  SavePlayerProfile,
+  SavePlayersSummary,
   SavesStatus,
   VersionStatus,
   WorldSettings,
@@ -609,6 +611,21 @@ export class AgentClient {
       method: "POST",
       body: JSON.stringify({ worldGuid }),
     });
+  }
+
+  playersSnapshot(id: string, worldGuid?: string): Promise<SavePlayersSummary & { worldGuid: string }> {
+    const q = worldGuid ? `?worldGuid=${encodeURIComponent(worldGuid)}` : "";
+    return this.request(`/api/instances/${id}/saves/players-snapshot${q}`);
+  }
+
+  playerSnapshotProfile(
+    id: string,
+    worldGuid: string,
+    uid: string,
+  ): Promise<{ worldGuid: string; profile: SavePlayerProfile }> {
+    return this.request(
+      `/api/instances/${id}/saves/players-snapshot?worldGuid=${encodeURIComponent(worldGuid)}&uid=${encodeURIComponent(uid)}`,
+    );
   }
 
   saveHealth(id: string, worldGuid: string): Promise<SaveHealthStatus> {

@@ -1180,5 +1180,17 @@
  "超過 30 天未上線的玩家": "Players inactive for 30+ days",
  "{n} 天前": "{n} days ago",
  "空公會": "Empty guilds",
- "這些統計僅供判讀參考;清理(瘦身)功能將在後續版本提供,屆時會強制先備份。": "These stats are for reference only; a cleanup (slimming) feature will ship in a later version, always with a forced backup first."
+ "這些統計僅供判讀參考;清理(瘦身)功能將在後續版本提供,屆時會強制先備份。": "These stats are for reference only; a cleanup (slimming) feature will ship in a later version, always with a forced backup first.",
+ "存檔資料": "Save Data",
+ "(掃描於 {when})": "(scanned {when})",
+ "從存檔刷新": "Refresh from Save",
+ "掃描存檔中…(依存檔大小可能需要幾分鐘)": "Scanning save… (may take a few minutes for large worlds)",
+ "尚未掃描過存檔。點「從存檔刷新」建立快照:不依賴 PalDefender,離線玩家也查得到,並包含個體值與詞條。": "No save scan yet. Click \"Refresh from Save\" to build a snapshot — works without PalDefender, covers offline players, and includes IVs and passives.",
+ "快照裡找不到這位玩家(名稱或 UID 對不上)。掃描一次最新存檔試試。": "This player isn't in the snapshot (name or UID mismatch). Try scanning the latest save.",
+ "今天": "Today",
+ "名下帕魯": "Owned Pals",
+ "這位玩家名下沒有帕魯。": "This player owns no pals.",
+ "頭目": "Alpha",
+ "個體值:血量 / 攻擊 / 防禦(0-100)": "IVs: HP / Attack / Defense (0-100)",
+ "顯示全部 {n} 隻": "Show all {n}"
 }

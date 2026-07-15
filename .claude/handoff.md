@@ -13,7 +13,14 @@
      (mtime 只當 fallback,來源:.claude/notes/upstream-clean-logic.md 子題 6),
      實機仍順眼確認天數合理即可。
   3. mac dev 順眼確認卡片顯示「不支援」訊息而非壞掉。
-- Stage 2(清理/寫回)未動,計畫在 .claude/notes/save-slim-plan.md。
+- **玩家快照(同 session 追加)**:同一次掃描順帶產出玩家檔案+名下帕魯明細
+  (個體值/詞條/星級/幸運/頭目),PlayerDetailModal 新增「存檔資料」區塊+「從存檔刷新」;
+  不依賴 PalDefender、離線玩家可查。端點 GET /saves/players-snapshot(worldGuid 可省略)。
+- Stage 2(清理/寫回)**使用者決定擱置**,計畫在 save-slim-plan.md;上游清理演算法研究
+  已落檔 .claude/notes/upstream-clean-logic.md(關鍵:now 基準=GameTimeSaveData.RealDateTimeTicks、
+  級聯刪除規則、必須同步的索引欄位)。另:stream-json 3.x 的 stringer 對 packed-only token
+  流會丟內容(scratchpad spike 實測),Stage 2 寫回若走 parser→filter→stringer 要先解決這個
+  (可能要 packValues+streamValues 並開,或自寫 stringer)。
 
 ## 本 session 完成(全部已 push)
 

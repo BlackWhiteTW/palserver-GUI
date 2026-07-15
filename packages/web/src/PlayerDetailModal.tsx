@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
-import { FiX, FiCpu, FiPackage, FiTrendingUp, FiZap, FiShield } from "react-icons/fi";
+import { useCallback, useEffect, useState } from "react";
+import { FiX, FiCpu, FiLock, FiPackage, FiRefreshCw, FiSave, FiTrendingUp, FiZap, FiShield } from "react-icons/fi";
 import { GiShield } from "react-icons/gi";
-import type { PlayerDetail, PdRestStatus } from "@palserver/shared";
+import {
+  hasFeature,
+  type PlayerDetail,
+  type PdRestStatus,
+  type SavePalRow,
+  type SavePlayerProfile,
+} from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { useGameData, displayName, palIconUrl, itemIconUrl, type GameData } from "./gameData";
 import { maskSteamId } from "./SteamId";
@@ -101,8 +107,256 @@ export function PlayerDetailModal({
         )}
 
         {detail?.available && <DetailBody detail={detail} gameData={gameData} />}
+
+        <SaveSnapshotSection
+          client={client}
+          instanceId={instanceId}
+          playerUid={detail?.available ? detail.playerUid : null}
+          playerName={displayLabel}
+          gameData={gameData}
+        />
       </div>
     </Overlay>
+  );
+}
+
+/** 存檔快照區塊:不依賴 PalDefender,由 save-tools 掃描 Level.sav 產出。
+ *  資料是「上次掃描時」的狀態,按「從存檔刷新」重掃(開服中也可以,分析
+ *  的是最近一次落盤的內容)。贊助者功能(save-slim)。 */
+function SaveSnapshotSection({
+  client,
+  instanceId,
+  playerUid,
+  playerName,
+  gameData,
+}: {
+  client: AgentClient;
+  instanceId: string;
+  /** PalDefender REST 給的 uid(可能拿不到,fallback 用名稱比對) */
+  playerUid: string | null;
+  playerName: string;
+  gameData: GameData | null;
+}) {
+  useI18n();
+  const [entitled, setEntitled] = useState<boolean | null>(null);
+  const [worldGuid, setWorldGuid] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [profile, setProfile] = useState<SavePlayerProfile | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [scanPhase, setScanPhase] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    client
+      .license()
+      .then((l) => setEntitled(hasFeature("save-slim", l)))
+      .catch(() => setEntitled(false));
+  }, [client, instanceId]);
+
+  const norm = (s: string) => s.replace(/-/g, "").toLowerCase();
+
+  const load = useCallback(async () => {
+    try {
+      const summary = await client.playersSnapshot(instanceId);
+      setWorldGuid(summary.worldGuid);
+      setGeneratedAt(summary.generatedAt);
+      if (!summary.generatedAt) return; // 還沒掃描過
+      const match =
+        (playerUid && summary.players.find((p) => norm(p.uid) === norm(playerUid))) ||
+        summary.players.find((p) => p.name === playerName);
+      if (!match) {
+        setProfile(null);
+        setNotFound(true);
+        return;
+      }
+      setNotFound(false);
+      const { profile: full } = await client.playerSnapshotProfile(instanceId, summary.worldGuid, match.uid);
+      setProfile(full);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [client, instanceId, playerUid, playerName]);
+
+  useEffect(() => {
+    if (entitled) void load();
+  }, [entitled, load]);
+
+  const refresh = async () => {
+    if (!worldGuid) return;
+    setError(null);
+    try {
+      await client.startSaveHealth(instanceId, worldGuid);
+      setScanPhase("convert");
+      // 輪詢到掃描結束,再重讀快照
+      await new Promise<void>((resolve) => {
+        const timer = setInterval(async () => {
+          try {
+            const s = await client.saveHealth(instanceId, worldGuid);
+            setScanPhase(s.phase === "idle" ? null : s.phase);
+            if (s.phase === "idle") {
+              clearInterval(timer);
+              if (s.error) setError(s.error);
+              resolve();
+            }
+          } catch {
+            /* 暫時性網路錯誤:下一輪再試 */
+          }
+        }, 2000);
+      });
+      await load();
+    } catch (err) {
+      setScanPhase(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  if (entitled === null) return null;
+
+  return (
+    <div className="border-t-2 border-line pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="inline-flex items-center gap-1.5 text-sm font-extrabold text-ink-muted">
+          <FiSave className="size-4 text-pal" /> {t("存檔資料")}
+          {generatedAt && (
+            <span className="text-xs font-normal">
+              {t("(掃描於 {when})", { when: new Date(generatedAt).toLocaleString() })}
+            </span>
+          )}
+        </h3>
+        {entitled && (
+          <button
+            className={`${btnGhost} inline-flex items-center gap-1.5`}
+            onClick={() => void refresh()}
+            disabled={!!scanPhase || !worldGuid}
+          >
+            <FiRefreshCw className={`size-3.5 ${scanPhase ? "animate-spin" : ""}`} />
+            {scanPhase ? t("掃描存檔中…(依存檔大小可能需要幾分鐘)") : t("從存檔刷新")}
+          </button>
+        )}
+      </div>
+
+      {!entitled && (
+        <div className="mt-2 inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
+          <FiLock className="size-4 shrink-0" />
+          {t("這是贊助者先行版功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}
+        </div>
+      )}
+
+      {entitled && (
+        <>
+          {error && <p className={`${errorCls} mt-2`}>{error}</p>}
+          {!generatedAt && !scanPhase && (
+            <p className="mt-2 text-[13px] text-ink-muted">
+              {t("尚未掃描過存檔。點「從存檔刷新」建立快照:不依賴 PalDefender,離線玩家也查得到,並包含個體值與詞條。")}
+            </p>
+          )}
+          {generatedAt && notFound && (
+            <p className="mt-2 text-[13px] text-ink-muted">
+              {t("快照裡找不到這位玩家(名稱或 UID 對不上)。掃描一次最新存檔試試。")}
+            </p>
+          )}
+          {profile && (
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                <Info label={t("等級")} value={profile.level !== null ? `Lv.${profile.level}` : "—"} />
+                <Info label={t("經驗值")} value={profile.exp?.toLocaleString() ?? "—"} />
+                <Info label={t("公會")} value={profile.guildName || t("無")} />
+                <Info
+                  label={t("最後上線")}
+                  value={
+                    profile.lastOnlineDaysAgo === null
+                      ? "—"
+                      : profile.lastOnlineDaysAgo === 0
+                        ? t("今天")
+                        : t("{n} 天前", { n: profile.lastOnlineDaysAgo })
+                  }
+                />
+              </div>
+              <SavePalGrid pals={profile.pals} total={profile.palCount} gameData={gameData} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const SHOWN_PALS = 60;
+
+function SavePalGrid({ pals, total, gameData }: { pals: SavePalRow[]; total: number; gameData: GameData | null }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? pals : pals.slice(0, SHOWN_PALS);
+  return (
+    <div>
+      <h3 className="mb-2 inline-flex items-center gap-1.5 text-sm font-extrabold text-ink-muted">
+        <FiZap className="size-4 text-pal" /> {t("名下帕魯")}({total})
+      </h3>
+      {total === 0 && <p className="text-[13px] text-ink-muted">{t("這位玩家名下沒有帕魯。")}</p>}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+        {shown.map((p, i) => {
+          const speciesId = p.characterId.replace(/^BOSS_/i, "");
+          const entity = gameData?.palById.get(p.characterId) ?? gameData?.palById.get(speciesId);
+          return (
+            <div key={`${p.characterId}-${i}`} className="rounded-xl border-2 border-line p-2">
+              <div className="flex items-center gap-2">
+                {entity?.icon ? (
+                  <img src={palIconUrl(entity.icon)} alt="" className="size-9 shrink-0" />
+                ) : (
+                  <span className="size-9 shrink-0 rounded bg-card-soft" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold">
+                    {p.nickname || (entity ? displayName(entity) : p.characterId)}
+                    {p.isLucky && <span className="ml-1 text-amber-500">✦</span>}
+                    {p.isBoss && (
+                      <span className="ml-1 rounded bg-berry/15 px-1 text-[10px] font-extrabold text-berry">
+                        {t("頭目")}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-ink-muted">
+                    {p.level !== null ? `Lv.${p.level}` : "—"}
+                    {p.gender === "female" ? " ♀" : p.gender === "male" ? " ♂" : ""}
+                    {p.rank > 1 && ` ★${p.rank - 1}`}
+                  </p>
+                </div>
+              </div>
+              {(p.talentHp !== null || p.passives.length > 0) && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {p.talentHp !== null && (
+                    <span
+                      className="rounded bg-card-soft px-1 py-0.5 text-[10px] font-bold text-ink-muted"
+                      title={t("個體值:血量 / 攻擊 / 防禦(0-100)")}
+                    >
+                      IV {p.talentHp}/{p.talentShot ?? "?"}/{p.talentDefense ?? "?"}
+                    </span>
+                  )}
+                  {p.passives.map((id) => {
+                    const meta = gameData?.passiveById.get(id);
+                    const bad = (meta?.rank ?? 0) < 0;
+                    return (
+                      <span
+                        key={id}
+                        className={`rounded px-1 py-0.5 text-[10px] font-bold ${
+                          bad ? "bg-berry/10 text-berry" : "bg-grass/10 text-grass"
+                        }`}
+                      >
+                        {meta ? displayName(meta) : id}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {pals.length > SHOWN_PALS && !showAll && (
+        <button className={`${btnGhost} mt-2`} onClick={() => setShowAll(true)}>
+          {t("顯示全部 {n} 隻", { n: pals.length })}
+        </button>
+      )}
+    </div>
   );
 }
 

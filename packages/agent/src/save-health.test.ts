@@ -20,21 +20,45 @@ function ticksDaysAgo(days: number): string {
   return String(now - BigInt(days) * TICKS_PER_DAY);
 }
 
-function charEntry(isPlayer: boolean) {
+function charEntry(uid: string, saveParameter: Record<string, unknown>) {
   return {
-    key: { PlayerUId: { value: "u" }, InstanceId: { value: "i" } },
+    key: { PlayerUId: { value: uid }, InstanceId: { value: "i" } },
     value: {
-      RawData: {
-        value: {
-          object: {
-            SaveParameter: {
-              value: isPlayer ? { IsPlayer: { value: true }, Level: { value: 10 } } : { Level: { value: 5 } },
-            },
-          },
-        },
-      },
+      RawData: { value: { object: { SaveParameter: { value: saveParameter } } } },
     },
   };
+}
+
+function playerEntry(uid: string, name: string, level: number) {
+  return charEntry(uid, {
+    IsPlayer: { value: true },
+    NickName: { value: name },
+    Level: { value: `__RAW_${level}__` },
+    Exp: { value: `__RAW_${level * 1000}__` },
+  });
+}
+
+const ZERO = "00000000-0000-0000-0000-000000000000";
+
+function palEntry(
+  owner: string,
+  characterId: string,
+  level: number,
+  opts: { lucky?: boolean; passives?: string[]; talents?: [number, number, number] } = {},
+) {
+  const [hp, shot, def] = opts.talents ?? [50, 50, 50];
+  return charEntry(ZERO, {
+    CharacterID: { value: characterId },
+    Level: { value: `__RAW_${level}__` },
+    Gender: { value: { type: "EPalGenderType", value: "EPalGenderType::Female" } },
+    Rank: { value: `__RAW_1__` },
+    ...(opts.lucky ? { IsRarePal: { value: true } } : {}),
+    Talent_HP: { value: `__RAW_${hp}__` },
+    Talent_Shot: { value: `__RAW_${shot}__` },
+    Talent_Defense: { value: `__RAW_${def}__` },
+    OwnerPlayerUId: { value: owner },
+    PassiveSkillList: { value: { values: opts.passives ?? [] } },
+  });
 }
 
 function guildEntry(name: string, players: { uid: string; name: string; daysAgo: number }[]) {
@@ -97,7 +121,13 @@ function buildJson(): string {
             value: { RealDateTimeTicks: { value: `__RAW_${ticksDaysAgo(0)}__` } },
           },
           CharacterSaveParameterMap: {
-            value: [charEntry(true), charEntry(true), charEntry(false), charEntry(false), charEntry(false)],
+            value: [
+              playerEntry("p1", "Alice", 25),
+              playerEntry("p2", "Bob", 18),
+              palEntry("p1", "SheepBall", 12, { lucky: true, passives: ["Rare", "PAL_ALLAttack_up2"], talents: [80, 90, 100] }),
+              palEntry("p1", "BOSS_Penguin", 30),
+              palEntry(ZERO, "Kitsunebi", 7), // 野生/無主:不入任何玩家名下
+            ],
           },
           GroupSaveDataMap: {
             value: [
@@ -153,6 +183,35 @@ test("analyzeLevelJsonStream:計數與離線名單", async () => {
   assert.equal(r.inactivePlayers[0].uid, "p2");
   assert.equal(r.inactivePlayers[0].guildName, "ActiveGuild");
   assert.equal(r.inactivePlayers[0].lastOnlineDaysAgo, 45);
+});
+
+test("analyzeLevelJsonStream:玩家快照(檔案+帕魯明細)", async () => {
+  const r = await analyzeLevelJsonStream(Readable.from([buildJson()]), MTIME_MS);
+
+  assert.equal(r.players.length, 2);
+  const alice = r.players.find((p) => p.uid === "p1")!;
+  assert.equal(alice.name, "Alice");
+  assert.equal(alice.level, 25);
+  assert.equal(alice.exp, 25000);
+  assert.equal(alice.guildName, "ActiveGuild");
+  assert.equal(alice.lastOnlineDaysAgo, 2);
+  assert.equal(alice.palCount, 2);
+  // 依等級降冪:BOSS_Penguin(30) 在前
+  assert.equal(alice.pals[0].characterId, "BOSS_Penguin");
+  assert.equal(alice.pals[0].isBoss, true);
+  assert.equal(alice.pals[0].gender, "female");
+  const sheep = alice.pals[1];
+  assert.equal(sheep.characterId, "SheepBall");
+  assert.equal(sheep.isLucky, true);
+  assert.deepEqual([sheep.talentHp, sheep.talentShot, sheep.talentDefense], [80, 90, 100]);
+  assert.deepEqual(sheep.passives, ["Rare", "PAL_ALLAttack_up2"]);
+  assert.equal(sheep.rank, 1);
+
+  const bob = r.players.find((p) => p.uid === "p2")!;
+  assert.equal(bob.palCount, 0);
+  assert.equal(bob.lastOnlineDaysAgo, 45);
+  // 野生帕魯不掛在任何玩家名下,但總數仍計 3
+  assert.equal(r.counts.pals, 3);
 });
 
 test("analyzeLevelJsonStream:離線天數以存檔內世界時鐘為準,mtime 只是 fallback", async () => {

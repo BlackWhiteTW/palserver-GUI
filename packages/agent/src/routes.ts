@@ -62,7 +62,7 @@ import {
   writeFileInPodBrowser,
 } from "./k8s-file-browser.js";
 import * as saves from "./saves.js";
-import { getHealthStatus, startHealthCheck } from "./save-tools.js";
+import { getHealthStatus, getPlayerProfile, getPlayersSummary, startHealthCheck } from "./save-tools.js";
 import { applyHostFix } from "./host-save-fix.js";
 import { getEngineSettings, writeEngineSettings } from "./engine-ini.js";
 import { getConfigHealth, regenerateConfig } from "./config-health.js";
@@ -1421,6 +1421,26 @@ export function registerRoutes(
     startHealthCheck(rec, ctxOf(rec), worldGuid);
     reply.code(202);
     return getHealthStatus(rec, ctxOf(rec), worldGuid);
+  });
+
+  // ── 玩家快照(存檔掃描產出;玩家詳情頁「從存檔刷新」讀這裡)──
+  // worldGuid 省略時用啟用中的世界。帶 uid 回單一玩家完整檔案(含帕魯明細)。
+  app.get("/api/instances/:id/saves/players-snapshot", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const q = z
+      .object({
+        worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法").optional(),
+        uid: z.string().regex(/^[0-9A-Fa-f-]{32,36}$/, "玩家 UID 格式不合法").optional(),
+      })
+      .parse(req.query);
+    const worldGuid = q.worldGuid ?? (await saves.activeWorldGuidAsync(rec, ctxOf(rec)));
+    if (!worldGuid) throw Object.assign(new Error("找不到啟用中的世界"), { statusCode: 404 });
+    if (q.uid) {
+      const profile = getPlayerProfile(ctxOf(rec), worldGuid, q.uid);
+      if (!profile) throw Object.assign(new Error("快照裡沒有這個玩家(可能需要重新掃描)"), { statusCode: 404 });
+      return { worldGuid, profile };
+    }
+    return getPlayersSummary(ctxOf(rec), worldGuid);
   });
 
   // ── 主機角色修復(內建 palworld-host-save-fix,共玩存檔搬上專用伺服器用)──

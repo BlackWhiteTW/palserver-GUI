@@ -102,7 +102,7 @@ export function CustomPalModal({
   const randomGender = () => setGender(Math.random() < 0.5 ? "Male" : "Female");
   const randomPassives = () => {
     if (!gameData?.passives?.length) return;
-    const n = Math.floor(Math.random() * 5); // 0 ~ 4
+    const n = Math.floor(Math.random() * 9); // 0 ~ 8,與詞條欄位上限一致
     const shuffled = [...gameData.passives].sort(() => Math.random() - 0.5);
     setPassives(shuffled.slice(0, n).map((p) => p.id));
   };

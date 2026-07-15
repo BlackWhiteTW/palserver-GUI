@@ -36,12 +36,16 @@ export function EntityPicker({
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const raw = query.trim();
+    // 四語都比對:en(name)/id 不分大小寫,zh(繁)/zhCN(簡)/ja 原樣包含
     const list = q
       ? catalog.filter(
           (e) =>
             e.name.toLowerCase().includes(q) ||
             e.id.toLowerCase().includes(q) ||
-            e.zh?.includes(query.trim()),
+            e.zh?.includes(raw) ||
+            e.zhCN?.includes(raw) ||
+            e.ja?.includes(raw),
         )
       : catalog;
     return list.slice(0, 60);

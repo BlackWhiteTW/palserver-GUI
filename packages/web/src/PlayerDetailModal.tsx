@@ -179,7 +179,7 @@ export function PlayerDetailModal({
             <DetailsToggle
               show={showDetails}
               onToggle={toggleDetails}
-              hint={t("個體值、詞條、離線物品、加點分配")}
+              hint={t("個體值、詞條、離線物品、加點分配、進度與科技")}
             />
             {canScan && (
               <button
@@ -343,8 +343,9 @@ function MergedBody({
         <StatusPointsPanel points={profile.statusPoints} unused={profile.unusedStatusPoints ?? null} />
       )}
 
-      {prog && <Progression prog={prog} />}
-      {detail?.available && detail.techs && (
+      {/* 進度(經驗值/科技點/擊敗頭目…)與已解鎖科技:贊助內容,收在詳細開關內 */}
+      {deep && prog && <Progression prog={prog} />}
+      {deep && detail?.available && detail.techs && (
         <div>
           <h3 className="mb-1 inline-flex items-center gap-1.5 text-sm font-extrabold text-ink-muted">
             <FiCpu className="size-4 text-pal" /> {t("已解鎖科技")}

@@ -1273,5 +1273,6 @@
  "個體值、詞條、離線物品、加點分配": "IVs, passives, offline items, stat points",
  "重灌會【刪除】遊戲本體檔案後全新下載(數 GB)。\n\n會保留:世界存檔與設定檔(整個 Pal/Saved,含 PalWorldSettings.ini / Engine.ini),並在開始前自動備份啟用中的世界。\n會刪除:已安裝的模組(UE4SS / PalDefender / pak),重灌後需重新安裝。\n\n確定要重灌嗎?": "Reinstalling DELETES the game files and downloads them fresh (several GB).\n\nKept: world saves and config files (the entire Pal/Saved, incl. PalWorldSettings.ini / Engine.ini), plus an automatic backup of the active world before starting.\nDeleted: installed mods (UE4SS / PalDefender / pak) — reinstall them afterwards.\n\nProceed with the reinstall?",
  "重灌伺服器": "Reinstall Server",
- "更新一直失敗時用:刪除遊戲本體後全新下載;存檔與設定檔(Pal/Saved)完整保留": "For when updates keep failing: deletes the game files and downloads fresh; saves & config (Pal/Saved) fully kept"
+ "更新一直失敗時用:刪除遊戲本體後全新下載;存檔與設定檔(Pal/Saved)完整保留": "For when updates keep failing: deletes the game files and downloads fresh; saves & config (Pal/Saved) fully kept",
+ "個體值、詞條、離線物品、加點分配、進度與科技": "IVs, passives, offline items, stat points, progression & tech"
 }

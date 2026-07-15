@@ -1,0 +1,150 @@
+name: palsav-tools
+
+# 存檔健檢(save-slim)用的外部工具:把上游 PalworldSaveTools 的 src/palsav
+# (palsav-flex,GPL-3.0,含原生 Oodle binding palooz)用 PyInstaller 凍結成
+# 獨立執行檔,發佈到本 repo 的 Release(tag 固定為 palsav-tools-v*)。
+#
+# GPL 隔離:這些執行檔「不隨 agent 發行」,agent 執行期才下載並以子行程呼叫
+# (packages/agent/src/save-tools.ts,比照 oodle.ts/ooz-wasm 的既有模式)。
+# 上游升版:改 upstream_ref 重跑,release_tag 升號,agent 的 PALSAV_TAG 常數同步 bump。
+#
+# 注意:tag 刻意不是 v* 格式 —— self-update 用 parseVersion 過濾 release,
+# palsav-tools-v1 不會被誤認成 agent 新版;make_latest: false 也不污染 /releases/latest。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "上游 deafdudecomputers/PalworldSaveTools 的 commit SHA(pin 值)"
+        required: true
+        default: "2c8c65c4a60b04e63eeb7f0c1857a5ba903a24d9"
+      release_tag:
+        description: "發佈的 release tag(agent 的 PALSAV_TAG 要跟這個一致)"
+        required: true
+        default: "palsav-tools-v1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: palsav-win-x64.exe
+          - os: ubuntu-latest
+            asset: palsav-linux-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: upstream/src/palsav
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: deafdudecomputers/PalworldSaveTools
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # palooz 的 extra_compile_args 是 GCC 風格(-O3 -flto …),MSVC 不吃;
+      # Windows 上直接清空(只是最佳化旗標,功能不受影響),用 MSVC 預設值編。
+      - name: Patch palooz compile flags for MSVC
+        if: runner.os == 'Windows'
+        run: |
+          python - <<'EOF'
+          from pathlib import Path
+          p = Path("palooz/setup.py")
+          src = p.read_text()
+          patched = src.replace(
+              "extra_compile_args = ['-O3', '-flto', '-fno-exceptions', '-fno-rtti', '-ffast-math', '-fno-strict-aliasing']",
+              "extra_compile_args = []",
+          )
+          assert patched != src, "palooz setup.py 的旗標列長相變了,請對照上游更新此 patch"
+          p.write_text(patched)
+          EOF
+
+      # palooz 是本地路徑相依的原生擴充,必須先正常安裝進 site-packages,
+      # PyInstaller 才會在分析 import 時把編譯好的 .pyd/.so 一起收進去。
+      - name: Install palsav (with native palooz)
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install ./palooz
+          pip install .
+          pip install pyinstaller
+
+      # cli.py 用字串 __import__ 載子命令,PyInstaller 靜態分析追不到,
+      # 全部子命令模組都要顯式 hidden-import。
+      - name: Freeze with PyInstaller
+        run: |
+          echo 'from palsav.cli import main; main()' > entry.py
+          pyinstaller --onefile --name "${{ matrix.asset }}" \
+            --hidden-import palsav.commands.convert \
+            --hidden-import palsav.commands.backup \
+            --hidden-import palsav.commands.diag \
+            --hidden-import palsav.commands.roundtrip_validation \
+            entry.py
+          # PyInstaller 在 Windows 會自動補 .exe;統一整理成固定檔名
+          ls dist/
+          mv "dist/${{ matrix.asset }}"* "dist/${{ matrix.asset }}"
+
+      - name: Smoke test
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          chmod +x "dist/${{ matrix.asset }}" || true
+          "./dist/${{ matrix.asset }}" --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: upstream/src/palsav/dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten, checksum, and write GPL source pointer
+        run: |
+          mkdir dist
+          find artifacts -type f -exec mv {} dist/ \;
+          cd dist
+          # GPL-3.0 散布要求:附上對應原始碼的取得方式(pin 到確切 commit)
+          cat > SOURCE.txt <<EOF
+          These binaries are PyInstaller-frozen builds of palsav-flex (GPL-3.0-or-later),
+          a subproject of deafdudecomputers/PalworldSaveTools, built unmodified from:
+
+            https://github.com/deafdudecomputers/PalworldSaveTools/tree/${{ inputs.upstream_ref }}/src/palsav
+
+          (On Windows the GCC-style optimization flags in palooz/setup.py are cleared
+          for MSVC compatibility; see the palsav-tools workflow in this repository.)
+
+          Complete corresponding source: the URL above, pinned to commit ${{ inputs.upstream_ref }}.
+          License: GNU GPL v3 or later — https://www.gnu.org/licenses/gpl-3.0.html
+
+          These tools are downloaded at runtime as separate programs and are not part of,
+          nor linked into, palserver-GUI itself.
+          EOF
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_tag }}(存檔健檢工具)
+          body: |
+            存檔健檢(save-slim)用的凍結版 palsav 執行檔 — agent 執行期自動下載,不需手動安裝。
+
+            上游:deafdudecomputers/PalworldSaveTools @ `${{ inputs.upstream_ref }}`(GPL-3.0,詳見 SOURCE.txt)
+          files: dist/*
+          make_latest: false

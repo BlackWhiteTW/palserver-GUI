@@ -615,6 +615,63 @@ export interface SavesStatus {
   schedule: BackupSchedule;
 }
 
+/* ── save health check (save-slim, stage 1: read-only) ── */
+
+export interface SaveHealthCounts {
+  players: number;
+  /** players last seen more than 30 days before the save's mtime */
+  playersInactive30d: number;
+  pals: number;
+  guilds: number;
+  guildsEmpty: number;
+  itemContainers: number;
+  /** containers whose every slot is empty — looted-chest residue */
+  itemContainersEmpty: number;
+  itemSlots: number;
+  charContainers: number;
+  mapObjects: number;
+  dropItems: number;
+  dynamicItems: number;
+}
+
+export interface SaveHealthPlayerRow {
+  name: string;
+  uid: string;
+  /** null when the timestamp is missing or implausible */
+  lastOnlineDaysAgo: number | null;
+  guildName: string;
+}
+
+export interface SaveHealthReport {
+  worldGuid: string;
+  generatedAt: string;
+  /** release tag of the palsav tool that produced the JSON */
+  toolTag: string;
+  levelSavBytes: number;
+  /** mtime of Level.sav at analysis time — the "now" that day counts are relative to */
+  levelSavMtime: string;
+  playersDirBytes: number;
+  playerSavCount: number;
+  worldDirBytes: number;
+  counts: SaveHealthCounts;
+  /** sorted by days offline, descending; capped at 100 */
+  inactivePlayers: SaveHealthPlayerRow[];
+  /** capped at 50 */
+  emptyGuildNames: string[];
+}
+
+export type SaveHealthPhase = "idle" | "download" | "convert" | "analyze";
+
+export interface SaveHealthStatus {
+  supported: boolean;
+  reason?: string;
+  phase: SaveHealthPhase;
+  /** null while progress is indeterminate (the convert phase) */
+  progressPct: number | null;
+  error: string | null;
+  report: SaveHealthReport | null;
+}
+
 /* ── automatic restarts ── */
 
 export type RestartReason = "scheduled" | "memory" | "crash" | "manual" | "startup-failure";

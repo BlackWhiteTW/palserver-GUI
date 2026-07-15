@@ -24,6 +24,7 @@
     "fastify": "^5.2.0",
     "pidusage": "^4.0.1",
     "selfsigned": "^5.5.0",
+    "stream-json": "^3.5.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

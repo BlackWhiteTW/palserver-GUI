@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  FiActivity,
   FiArchive,
   FiCheck,
   FiClock,
   FiDownload,
   FiFolder,
+  FiLock,
   FiPlay,
   FiRotateCcw,
   FiSave,
@@ -12,7 +14,15 @@ import {
   FiTrash2,
   FiUser,
 } from "react-icons/fi";
-import { COOP_HOST_UID, type BackupSchedule, type InstanceSummary, type SavesStatus, type WorldSave } from "@palserver/shared";
+import {
+  COOP_HOST_UID,
+  hasFeature,
+  type BackupSchedule,
+  type InstanceSummary,
+  type SaveHealthStatus,
+  type SavesStatus,
+  type WorldSave,
+} from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { FileBrowserDialog } from "./FileManager";
 import { HostFixModal } from "./HostFixModal";
@@ -136,6 +146,10 @@ export function SavesTab({
         onNotice={flash}
       />
 
+      {saves.worlds.length > 0 && (
+        <HealthCard client={client} instanceId={instanceId} worlds={saves.worlds} running={running} />
+      )}
+
       {saves.worlds.map((world) => (
         <WorldCard
           key={world.guid}
@@ -226,6 +240,220 @@ export function SavesTab({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** 存檔健檢(save-slim Stage 1,贊助者):唯讀分析世界存檔組成,不改動任何檔案。 */
+function HealthCard({
+  client,
+  instanceId,
+  worlds,
+  running,
+}: {
+  client: AgentClient;
+  instanceId: string;
+  worlds: WorldSave[];
+  running: boolean;
+}) {
+  useI18n();
+  const [entitled, setEntitled] = useState<boolean | null>(null);
+  const [worldGuid, setWorldGuid] = useState(() => (worlds.find((w) => w.active) ?? worlds[0]).guid);
+  const [status, setStatus] = useState<SaveHealthStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    client
+      .license()
+      .then((l) => setEntitled(hasFeature("save-slim", l)))
+      .catch(() => setEntitled(false));
+  }, [client, instanceId]);
+
+  // 選中的世界被刪掉時退回啟用世界
+  useEffect(() => {
+    if (!worlds.some((w) => w.guid === worldGuid)) {
+      setWorldGuid((worlds.find((w) => w.active) ?? worlds[0]).guid);
+    }
+  }, [worlds, worldGuid]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await client.saveHealth(instanceId, worldGuid));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [client, instanceId, worldGuid]);
+
+  useEffect(() => {
+    if (entitled) void refresh();
+  }, [entitled, refresh]);
+
+  const checking = status !== null && status.phase !== "idle";
+  useEffect(() => {
+    if (!checking) return;
+    const timer = setInterval(refresh, 2000);
+    return () => clearInterval(timer);
+  }, [checking, refresh]);
+
+  const start = async () => {
+    setError(null);
+    try {
+      setStatus(await client.startSaveHealth(instanceId, worldGuid));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const phaseLabel = (s: SaveHealthStatus): string => {
+    if (s.phase === "download") return t("下載健檢工具(首次使用需要下載一次)…");
+    if (s.phase === "convert") return t("轉換存檔中(大型存檔可能需要幾分鐘)…");
+    if (s.phase === "analyze") return t("分析存檔內容…");
+    return "";
+  };
+
+  const locked = entitled === false;
+  const report = status?.report ?? null;
+
+  return (
+    <div className={`${card} flex flex-col gap-3`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="inline-flex items-center gap-2 text-sm font-extrabold">
+          <FiActivity className="size-4 text-pal" /> {t("存檔健檢")}
+        </h3>
+        {!locked && status?.supported && (
+          <div className="flex items-center gap-2">
+            {worlds.length > 1 && (
+              <select
+                className={`${inputCls} w-auto py-1.5 text-xs`}
+                value={worldGuid}
+                onChange={(e) => setWorldGuid(e.target.value)}
+                disabled={checking}
+              >
+                {worlds.map((w) => (
+                  <option key={w.guid} value={w.guid}>
+                    {w.guid.slice(0, 8)}
+                    {w.active ? ` (${t("啟用中")})` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button className={`${btn} inline-flex items-center gap-1.5`} onClick={() => void start()} disabled={checking}>
+              <FiActivity className="size-3.5" /> {t("開始健檢")}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-ink-muted">
+        {t("唯讀分析世界存檔的組成:玩家、公會、容器殘留與掉落物,協助判斷存檔是否肥大。不會改動任何存檔。")}
+      </p>
+
+      {locked && (
+        <div className="inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
+          <FiLock className="size-4 shrink-0" />
+          {t("這是贊助者先行版功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}
+        </div>
+      )}
+
+      {!locked && status && !status.supported && (
+        <div className="rounded-cute border-2 border-dashed border-line px-6 py-6 text-center text-[13px] text-ink-muted">
+          {status.reason}
+        </div>
+      )}
+
+      {!locked && error && <p className={errorCls}>{error}</p>}
+      {!locked && status?.error && !checking && (
+        <p className={errorCls}>
+          {t("上次健檢失敗:{reason}", { reason: status.error })}
+        </p>
+      )}
+
+      {!locked && checking && status && (
+        <div>
+          <div className="flex items-center justify-between text-xs font-bold text-sun">
+            <span>{phaseLabel(status)}</span>
+            <span className="font-mono">{status.progressPct !== null ? `${status.progressPct}%` : "…"}</span>
+          </div>
+          <div className="mt-1 h-2 overflow-hidden rounded-full bg-line">
+            {status.progressPct !== null ? (
+              <div
+                className="h-full rounded-full bg-sun transition-[width] duration-700 ease-out"
+                style={{ width: `${Math.max(status.progressPct, 2)}%` }}
+              />
+            ) : (
+              <div className="h-full w-1/4 animate-pulse rounded-full bg-sun/60" />
+            )}
+          </div>
+          {running && (
+            <p className="mt-2 text-xs text-ink-muted">
+              {t("伺服器運作中:分析的是最近一次落盤的存檔內容。")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!locked && !checking && report && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-ink-muted">
+            {t("檢查時間 {when} · Level.sav {size} · 玩家檔 {players} 個({psize})· 世界目錄共 {total}", {
+              when: fmtWhen(report.generatedAt),
+              size: fmtSize(report.levelSavBytes),
+              players: report.playerSavCount,
+              psize: fmtSize(report.playersDirBytes),
+              total: fmtSize(report.worldDirBytes),
+            })}
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <HealthStat label={t("玩家")} value={report.counts.players} sub={t("{n} 人超過 30 天未上線", { n: report.counts.playersInactive30d })} warn={report.counts.playersInactive30d > 0} />
+            <HealthStat label={t("帕魯個體")} value={report.counts.pals} />
+            <HealthStat label={t("公會")} value={report.counts.guilds} sub={t("{n} 個空公會", { n: report.counts.guildsEmpty })} warn={report.counts.guildsEmpty > 0} />
+            <HealthStat label={t("物品容器")} value={report.counts.itemContainers} sub={t("{n} 個全空(已搜刮殘留)", { n: report.counts.itemContainersEmpty })} warn={report.counts.itemContainersEmpty > 0} />
+            <HealthStat label={t("世界掉落物")} value={report.counts.dropItems} sub={t("建築/物件共 {n}", { n: report.counts.mapObjects })} />
+            <HealthStat label={t("動態物品")} value={report.counts.dynamicItems} sub={t("角色容器 {n}", { n: report.counts.charContainers })} />
+          </div>
+
+          {(report.inactivePlayers.length > 0 || report.emptyGuildNames.length > 0) && (
+            <button className={`${btnGhost} self-start`} onClick={() => setShowDetails((v) => !v)}>
+              {showDetails ? t("收合明細") : t("展開明細(不活躍玩家與空公會)")}
+            </button>
+          )}
+          {showDetails && report.inactivePlayers.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-extrabold text-ink-muted">{t("超過 30 天未上線的玩家")}</p>
+              <div className="flex flex-col divide-y divide-line rounded-cute border-2 border-line">
+                {report.inactivePlayers.map((p) => (
+                  <div key={p.uid} className="flex flex-wrap items-center gap-x-3 px-3 py-1.5 text-[13px]">
+                    <span className="min-w-28 font-bold">{p.name}</span>
+                    <span className="flex-1 text-xs text-ink-muted">{p.guildName}</span>
+                    <span className="text-xs font-bold text-sun">{t("{n} 天前", { n: p.lastOnlineDaysAgo ?? "?" })}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {showDetails && report.emptyGuildNames.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-extrabold text-ink-muted">{t("空公會")}</p>
+              <p className="text-[13px] text-ink-muted">{report.emptyGuildNames.join("、")}</p>
+            </div>
+          )}
+          <p className="text-xs text-ink-muted">
+            {t("這些統計僅供判讀參考;清理(瘦身)功能將在後續版本提供,屆時會強制先備份。")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthStat({ label, value, sub, warn }: { label: string; value: number; sub?: string; warn?: boolean }) {
+  return (
+    <div className="rounded-cute border-2 border-line px-3 py-2">
+      <p className="text-xs font-bold text-ink-muted">{label}</p>
+      <p className="text-lg font-extrabold">{value.toLocaleString()}</p>
+      {sub && <p className={`text-xs ${warn ? "font-bold text-sun" : "text-ink-muted"}`}>{sub}</p>}
     </div>
   );
 }

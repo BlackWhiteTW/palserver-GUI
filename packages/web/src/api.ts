@@ -43,6 +43,7 @@ import type {
   RconCommandsResponse,
   RestartPolicy,
   RestartStatus,
+  SaveHealthStatus,
   SavesStatus,
   VersionStatus,
   WorldSettings,
@@ -605,6 +606,17 @@ export class AgentClient {
 
   createBackup(id: string, worldGuid: string): Promise<BackupInfo> {
     return this.request(`/api/instances/${id}/saves/backup`, {
+      method: "POST",
+      body: JSON.stringify({ worldGuid }),
+    });
+  }
+
+  saveHealth(id: string, worldGuid: string): Promise<SaveHealthStatus> {
+    return this.request(`/api/instances/${id}/saves/health?worldGuid=${encodeURIComponent(worldGuid)}`);
+  }
+
+  startSaveHealth(id: string, worldGuid: string): Promise<SaveHealthStatus> {
+    return this.request(`/api/instances/${id}/saves/health`, {
       method: "POST",
       body: JSON.stringify({ worldGuid }),
     });

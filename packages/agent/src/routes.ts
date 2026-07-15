@@ -62,6 +62,7 @@ import {
   writeFileInPodBrowser,
 } from "./k8s-file-browser.js";
 import * as saves from "./saves.js";
+import { getHealthStatus, startHealthCheck } from "./save-tools.js";
 import { applyHostFix } from "./host-save-fix.js";
 import { getEngineSettings, writeEngineSettings } from "./engine-ini.js";
 import { getConfigHealth, regenerateConfig } from "./config-health.js";
@@ -1401,6 +1402,25 @@ export function registerRoutes(
     const { worldGuid } = z.object({ worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法") }).parse(req.body);
     reply.code(201);
     return saves.createBackup(rec, ctxOf(rec), worldGuid);
+  });
+
+  // ── 存檔健檢(save-slim Stage 1,唯讀分析)──
+  app.get("/api/instances/:id/saves/health", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { worldGuid } = z
+      .object({ worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法") })
+      .parse(req.query);
+    return getHealthStatus(rec, ctxOf(rec), worldGuid);
+  });
+
+  app.post("/api/instances/:id/saves/health", async (req, reply) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { worldGuid } = z
+      .object({ worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法") })
+      .parse(req.body);
+    startHealthCheck(rec, ctxOf(rec), worldGuid);
+    reply.code(202);
+    return getHealthStatus(rec, ctxOf(rec), worldGuid);
   });
 
   // ── 主機角色修復(內建 palworld-host-save-fix,共玩存檔搬上專用伺服器用)──

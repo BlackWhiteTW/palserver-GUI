@@ -140,7 +140,7 @@ export function pruneBackups(ctx: DriverContext, worldGuid: string, keep: number
   return stale.map((b) => b.name);
 }
 
-function dirSize(dir: string): number {
+export function dirSize(dir: string): number {
   let total = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -476,7 +476,7 @@ function markNewSinceImport(worlds: WorldSave[], ctx: DriverContext): WorldSave[
 
 /** Ask the running server to flush the world first, so the archive isn't
  * a snapshot of half-written state. Silently skipped when REST is off. */
-async function flushWorld(rec: InstanceRecord): Promise<boolean> {
+export async function flushWorld(rec: InstanceRecord): Promise<boolean> {
   try {
     await rest.save(rec);
     return true;

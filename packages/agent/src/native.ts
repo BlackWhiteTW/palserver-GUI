@@ -284,6 +284,46 @@ function diskFullError(): Error & { code: "disk-full" } {
   return Object.assign(new Error("磁碟空間不足"), { code: "disk-full" as const });
 }
 
+/** DepotDownloader 撞到「檔案被其他程序鎖住」的字樣(.NET IOException)。 */
+const FILE_LOCKED_RE = /being used by another process/i;
+
+/** Windows:找出「執行檔位於 root 底下」的殘留行程並強制結束。
+ *  真實案例:伺服器崩潰循環後,UE 的 CrashReportClient.exe(或殭屍 PalServer)
+ *  殘留在背景鎖住 dbghelp.dll / steam_api64.dll —— 它不是我們追蹤的行程,
+ *  GUI 判定「已停止」,但 DepotDownloader 開檔會 IOException(exit 0xE0434352)、
+ *  重灌刪檔會 EPERM。更新/重灌前先清場,清掉的行程記進日誌。 */
+async function killLeftoverProcessesUnder(root: string, appendLog: (line: string) => void): Promise<void> {
+  if (!IS_WIN) return;
+  try {
+    const psRoot = root.replace(/'/g, "''");
+    const stdout = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-Command",
+          `Get-Process | Where-Object { $_.Path -like '${psRoot}\\*' } | Select-Object Id,ProcessName | ConvertTo-Json -Compress`,
+        ],
+        { windowsHide: true, timeout: 15000 },
+        (err, out) => (err ? reject(err) : resolve(out)),
+      );
+    });
+    const raw = stdout.trim();
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as { Id: number; ProcessName: string } | { Id: number; ProcessName: string }[];
+    const procs = Array.isArray(parsed) ? parsed : [parsed];
+    for (const p of procs) {
+      appendLog(`[palserver] 結束殘留行程 ${p.ProcessName} (PID ${p.Id}) — 它鎖住了伺服器檔案,擋住更新`);
+      await new Promise<void>((resolve) => {
+        execFile("taskkill", ["/F", "/T", "/PID", String(p.Id)], { windowsHide: true }, () => resolve());
+      });
+    }
+    if (procs.length > 0) await new Promise((r) => setTimeout(r, 1500)); // 等 OS 釋放檔案鎖
+  } catch {
+    /* 列舉失敗(權限/PowerShell 異常):不擋流程,真有鎖檔會由 FILE_LOCKED_RE 交代 */
+  }
+}
+
 /** DepotDownloader 每完成一個檔案吐一行「 12.34% 檔案路徑」(累計進度)。
  *  抓行首百分比;某些 locale 小數點是逗號,一併接受。 */
 const DD_PROGRESS_RE = /^\s*(\d{1,3}(?:[.,]\d+)?)%\s/;
@@ -298,6 +338,7 @@ function runDepotDownloader(
   const osFlag = IS_WIN ? "windows" : "linux";
   return new Promise<void>((resolve, reject) => {
     let sawDiskFull = false;
+    let sawLocked = false;
     let outputLines = 0;
     const handle = (b: Buffer) =>
       b
@@ -307,6 +348,7 @@ function runDepotDownloader(
         .forEach((line) => {
           outputLines += 1;
           if (DISK_FULL_RE.test(line)) sawDiskFull = true;
+          if (FILE_LOCKED_RE.test(line)) sawLocked = true;
           const m = DD_PROGRESS_RE.exec(line);
           if (m && onProgress) {
             const pct = Number(m[1].replace(",", "."));
@@ -325,6 +367,15 @@ function runDepotDownloader(
     child.on("exit", (code) => {
       if (code === 0) return resolve();
       if (sawDiskFull) return reject(diskFullError());
+      if (sawLocked) {
+        // 檔案被其他程序鎖住:通常是崩潰後殘留的 CrashReportClient / 殭屍 PalServer
+        // (更新前已嘗試自動清場,仍撞到就明講怎麼辦)
+        return reject(
+          new Error(
+            "伺服器檔案被其他程序鎖定 — 請開工作管理員結束 PalServer 與 CrashReportClient 程序(或重開機)後再試",
+          ),
+        );
+      }
       // 幾乎沒有輸出就非零退場 = 下載器本身掛了(工具檔損毀/被防毒攔截/
       // .NET 例外如 0xE0434352),不是 Steam 下載問題 —— 標記給呼叫端重置工具重試。
       const hex = code !== null && code >= 0 ? ` (0x${code.toString(16).toUpperCase()})` : "";
@@ -554,6 +605,9 @@ export function updateServer(rec: InstanceRecord, ctx: DriverContext, fresh = fa
     try {
       fs.mkdirSync(ctx.instanceDir, { recursive: true });
       appendLog(fresh ? "[palserver] 開始重灌伺服器(刪除本體後重新下載)…" : "[palserver] 開始更新伺服器…");
+      // 先清掉鎖住伺服器檔案的殘留行程(崩潰後的 CrashReportClient / 殭屍 PalServer),
+      // 否則 DepotDownloader 開檔 IOException、重灌刪檔 EPERM
+      await killLeftoverProcessesUnder(serverRoot(rec, ctx), appendLog);
       if (fresh) wipeGameFiles(serverRoot(rec, ctx), appendLog);
       await runDepotDownloaderWithRecovery(serverRoot(rec, ctx), appendLog, (pct) =>
         installProgress.set(rec.id, pct),

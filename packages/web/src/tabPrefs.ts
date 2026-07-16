@@ -49,13 +49,15 @@ export function defaultHiddenTabs(enhanced: boolean): Tab[] {
   return TABS.map((t) => t.id).filter((id) => !visible.has(id) && !LOCKED_TABS.includes(id));
 }
 
-const KEY_PREFIX = "palserver.hiddenTabs."; // 每實例一份
-const LEGACY_KEY = "palserver.hiddenTabs"; // 舊版全域偏好(升級相容:當作初始值)
+const KEY_PREFIX = "palserver.hiddenTabs."; // 每實例一份,完全獨立
 const EVENT = "palserver:tabprefs";
+// 注意:刻意「不」繼承舊版全域偏好(palserver.hiddenTabs)——否則升級後每台伺服器
+// 都吃到同一份舊清單,原味 5 頁/強化 10 頁的模式預設永遠不會生效。
+// 沒自訂過的實例一律用模式預設;要調整就到該實例的「設定 → 顯示的分頁」。
 
 export function getHiddenTabs(instanceId: string, enhanced: boolean): Tab[] {
   try {
-    const raw = localStorage.getItem(KEY_PREFIX + instanceId) ?? localStorage.getItem(LEGACY_KEY);
+    const raw = localStorage.getItem(KEY_PREFIX + instanceId);
     if (raw === null) return defaultHiddenTabs(enhanced);
     const v = JSON.parse(raw);
     return Array.isArray(v) ? (v.filter((x) => !LOCKED_TABS.includes(x)) as Tab[]) : defaultHiddenTabs(enhanced);

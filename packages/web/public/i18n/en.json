@@ -1332,11 +1332,12 @@
   "依成員數排序": "Sorted by member count",
   "每小時自動掃描(伺服器運作中才掃)": "Auto-scan hourly (only while the server is running)",
   "加權評分 = 等級 + IV總和×0.1 + 星級×10 + 詞條數×5;取每位玩家最強一隻": "Weighted score = level + total IVs ×0.1 + stars ×10 + passives ×5; each player's strongest Pal",
-  "評分 {score} · Lv.{lv} · IV {iv} · 主人 {name}": "Score {score} · Lv.{lv} · IV {iv} · Owner {name}",
   "練級最快:{list}": "Fastest levelers: {list}",
   "蓋了新據點:{list}": "New bases built: {list}",
   "全服金錢趨勢": "Server-wide money trend",
   "伺服器大事": "Server highlights",
   "自 {when} 起": "since {when}",
-  "全服金錢 {sign}{n}": "Server-wide money {sign}{n}"
+  "全服金錢 {sign}{n}": "Server-wide money {sign}{n}",
+  "評分 {score}": "Score {score}",
+  "Lv.{lv} · IV {iv} · 主人 {name}": "Lv.{lv} · IV {iv} · Owner {name}"
 }

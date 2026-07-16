@@ -169,7 +169,7 @@ export function InstanceDetailPage({
           <h2 className="text-xl font-extrabold">{detail.name}</h2>
           <StatusBadge status={detail.status} />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {detail.status !== "running" ? (
             <button
               className={`${btn} inline-flex items-center gap-1.5`}

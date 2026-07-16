@@ -176,13 +176,19 @@ export function LeaderboardTab({ client, instanceId }: { client: AgentClient; in
                 key: p.uid,
                 avatar: <PalFace p={p} gameData={gameData} />,
                 name: palLabel(p, gameData),
-                value: t("評分 {score} · Lv.{lv} · IV {iv} · 主人 {name}", {
-                  score: p.topPal ? Math.round(topPalScore(p.topPal) * 10) / 10 : 0,
-                  lv: p.topPal?.level ?? "—",
-                  iv: p.topPal?.ivTotal ?? 0,
-                  name: p.name,
-                }),
-                detail: <PassiveChips ids={p.topPal?.passives ?? []} gameData={gameData} />,
+                value: t("評分 {score}", { score: p.topPal ? Math.round(topPalScore(p.topPal) * 10) / 10 : 0 }),
+                detail: (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-[11px] font-bold text-ink-muted">
+                      {t("Lv.{lv} · IV {iv} · 主人 {name}", {
+                        lv: p.topPal?.level ?? "—",
+                        iv: p.topPal?.ivTotal ?? 0,
+                        name: p.name,
+                      })}
+                    </p>
+                    <PassiveChips ids={p.topPal?.passives ?? []} gameData={gameData} />
+                  </div>
+                ),
               }))}
             />
             <Board

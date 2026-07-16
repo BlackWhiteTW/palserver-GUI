@@ -1415,5 +1415,10 @@
   "公開 IP 直連": "Direct via public IP",
   "你的主機在路由器(NAT)後面:要在路由器把 UDP {port} 轉發到這台電腦,朋友才能用下面的位址連入。CGNAT(電信共享 IP)則開埠也沒用,請改用 playit.gg 或 VPN。": "Your host is behind a router (NAT): forward UDP {port} to this machine so friends can use the address below. Behind CGNAT (carrier-shared IP) port forwarding won't help — use playit.gg or a VPN instead.",
   "朋友直接輸入下面的位址即可(請確認防火牆放行 UDP {port})。": "Friends can just type the address below (make sure the firewall allows UDP {port}).",
-  "覺得麻煩?交給我們設定": "Sounds like a hassle? Let us set it up"
+  "覺得麻煩?交給我們設定": "Sounds like a hassle? Let us set it up",
+  "最簡單": "Easiest",
+  "朋友要怎麼連進來?選一種方式,建立後「邀請朋友加入」卡會帶你完成設定。": "How will friends connect? Pick one — after creation, the \"Invite friends\" card walks you through the setup.",
+  "免費隧道:不用動路由器、不怕 CGNAT,朋友什麼都不用裝,輸入位址就能玩。裝一個小程式、五分鐘搞定。": "Free tunnel: no router changes, works behind CGNAT, friends install nothing — they just type the address. One small program, five minutes.",
+  "你和朋友裝同一套免費 VPN(Radmin / Tailscale),像在同一個 WiFi 裡連線。適合固定班底的小圈子。": "You and your friends install the same free VPN (Radmin / Tailscale) and connect as if on the same WiFi. Great for a fixed group.",
+  "連線:{name}": "Connection: {name}"
 }

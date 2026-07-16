@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GiSheep, GiEggClutch } from "react-icons/gi";
-import { FiActivity, FiAlertTriangle, FiClock, FiCpu, FiDownload, FiHardDrive, FiHeart, FiHelpCircle, FiPlus, FiServer, FiSettings, FiStar, FiUsers, FiZap } from "react-icons/fi";
+import { FiActivity, FiAlertTriangle, FiClock, FiCpu, FiDownload, FiHardDrive, FiHeart, FiHelpCircle, FiPlus, FiServer, FiSettings, FiShield, FiStar, FiUsers, FiZap } from "react-icons/fi";
 import { hasFeature } from "@palserver/shared";
 import type { Backend, ExternalWorldCandidate, InstanceStats, InstanceSummary, LiveStatus } from "@palserver/shared";
 import {
@@ -550,6 +550,8 @@ function CreateDialog({
   const [step, setStep] = useState(0);
   const [preset, setPreset] = useState<WorldPreset["id"]>("official");
   const [enhanced, setEnhanced] = useState(false);
+  // 最後一步:連線方式二選一(playit 最簡單 / VPN);存進該實例的邀請卡偏好
+  const [connMethod, setConnMethod] = useState<"playit" | "vpn">("playit");
   // k8s 是把伺服器跑在叢集裡(agent 只是遙控),所以 agent 這台是不是 macOS 無所謂。
   const isMac = platform === "darwin" && backend !== "k8s";
   const k8sIncomplete = backend === "k8s" && (!k8sNamespace.trim() || !k8sStatefulSet.trim());
@@ -586,6 +588,7 @@ function CreateDialog({
         k8sServiceName: backend === "k8s" && k8sServiceName.trim() ? k8sServiceName.trim() : undefined,
         settings: { ...presetValues, ServerPlayerMaxNum: maxPlayers, ServerPassword: serverPassword },
       });
+      localStorage.setItem(`palserver.connMethod.${created.id}`, connMethod);
       if (importWorld) await client.importSave(created.id, importWorld.path, false);
       onCreated();
     } catch (err) {
@@ -595,7 +598,7 @@ function CreateDialog({
   };
 
   const enhanceAvailable = backend === "native" && platform === "win32";
-  const STEP_TITLES = [t("基本資料"), t("玩法"), t("模組")];
+  const STEP_TITLES = [t("基本資料"), t("玩法"), t("模組"), t("連線")];
   const canNext = step === 0 ? name.trim() !== "" && !k8sIncomplete : true;
   const selectedPreset = WORLD_PRESETS.find((x) => x.id === preset);
 
@@ -897,9 +900,46 @@ function CreateDialog({
                 </p>
               )}
             </button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <p className="text-[13px] text-ink-muted">
+              {t("朋友要怎麼連進來?選一種方式,建立後「邀請朋友加入」卡會帶你完成設定。")}
+            </p>
+            <button
+              type="button"
+              onClick={() => setConnMethod("playit")}
+              className={`rounded-xl border-2 px-3 py-2.5 text-left transition ${
+                connMethod === "playit" ? "border-pal bg-pal/5" : "border-line bg-card-soft/40 hover:border-pal/50"
+              }`}
+            >
+              <p className="inline-flex items-center gap-1.5 text-sm font-extrabold">
+                <FiZap className="size-4 text-pal" /> playit.gg
+                <span className="rounded-full bg-pal/10 px-2 py-0.5 text-[11px] font-bold text-pal">{t("最簡單")}</span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {t("免費隧道:不用動路由器、不怕 CGNAT,朋友什麼都不用裝,輸入位址就能玩。裝一個小程式、五分鐘搞定。")}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConnMethod("vpn")}
+              className={`rounded-xl border-2 px-3 py-2.5 text-left transition ${
+                connMethod === "vpn" ? "border-pal bg-pal/5" : "border-line bg-card-soft/40 hover:border-pal/50"
+              }`}
+            >
+              <p className="inline-flex items-center gap-1.5 text-sm font-extrabold">
+                <FiShield className="size-4 text-pal" /> VPN
+              </p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {t("你和朋友裝同一套免費 VPN(Radmin / Tailscale),像在同一個 WiFi 裡連線。適合固定班底的小圈子。")}
+              </p>
+            </button>
             {selectedPreset && (
               <p className="text-xs text-ink-muted">
-                {t("玩法:{name}", { name: t(selectedPreset.label) })} · {t("模式:{name}", { name: enhanced ? t("強化") : t("原生") })}
+                {t("玩法:{name}", { name: t(selectedPreset.label) })} · {t("模式:{name}", { name: enhanced ? t("強化") : t("原生") })} · {t("連線:{name}", { name: connMethod === "playit" ? "playit.gg" : "VPN" })}
               </p>
             )}
             {backend === "native" && (
@@ -924,7 +964,7 @@ function CreateDialog({
               {t("上一步")}
             </button>
           )}
-          {step < 2 ? (
+          {step < 3 ? (
             <button type="button" className={btn} onClick={() => setStep(step + 1)} disabled={!canNext}>
               {t("下一步")}
             </button>

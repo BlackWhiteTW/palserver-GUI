@@ -325,14 +325,20 @@ class Analyzer {
         if (e.isPlayer) {
           c.players += 1;
           if (e.keyPlayerUid && e.keyPlayerUid !== ZERO_UUID) {
+            // 同一 uid 可能有多個玩家實體(共玩匯入/host-fix 的殘影,實機踩過:
+            // 真身有 Level/Exp,殘影沒有;檔內順序不定)——欄位較全者優先,
+            // 新實體缺 Level 就保留已收到的等級/經驗,不讓殘影蓋掉真身。
+            const prev = this.playerChars.get(e.keyPlayerUid);
+            const stale = e.levelNum == null && prev !== undefined;
+            const points = [...(e.statusPoints ?? new Map()).entries()].map(([name, points]) => ({ name, points }));
             this.playerChars.set(e.keyPlayerUid, {
-              name: e.nickName || "?",
+              name: e.nickName || prev?.name || "?",
               // UE 序列化會省略預設值:等級 1/經驗 0 的角色根本沒有這兩個欄位,
               // 實體有解析到就補預設,不然新角色會顯示「無等級」(實機踩過)。
-              level: e.levelNum ?? 1,
-              exp: e.expNum ?? 0,
-              statusPoints: [...(e.statusPoints ?? new Map()).entries()].map(([name, points]) => ({ name, points })),
-              unusedStatusPoints: e.unusedStatusPoints ?? null,
+              level: stale ? prev.level : e.levelNum ?? 1,
+              exp: stale ? prev.exp : e.expNum ?? 0,
+              statusPoints: stale && points.length === 0 ? prev.statusPoints : points,
+              unusedStatusPoints: stale ? prev.unusedStatusPoints : e.unusedStatusPoints ?? null,
             });
           }
         }

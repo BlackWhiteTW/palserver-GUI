@@ -267,6 +267,33 @@ test("analyzeLevelJsonStream:玩家快照(檔案+帕魯明細)", async () => {
   assert.equal(r.counts.pals, 3);
 });
 
+test("analyzeLevelJsonStream:同 uid 重複玩家實體(殘影無 Level)不蓋掉真身", async () => {
+  // 實機案例(host-fix/共玩匯入殘留):同一 uid 有兩個 IsPlayer 實體,
+  // 真身有 Level/Exp、殘影沒有;檔內順序不定,兩種順序都不能讓殘影蓋掉真身。
+  const stale = () =>
+    charEntry("p1", {
+      IsPlayer: { value: true },
+      NickName: { value: "Alice" },
+    });
+  const mk = (entries: unknown[]) =>
+    JSON.stringify({
+      header: { save_game_class_name: "PalWorldSaveGame" },
+      properties: {
+        worldSaveData: { value: { CharacterSaveParameterMap: { value: entries } }, type: "StructProperty" },
+      },
+      trailer: "AAAA",
+    }).replace(/"__RAW_(-?\d+)__"/g, "$1");
+
+  const real = () => playerEntry("p1", "Alice", 36);
+  const r1 = await analyzeLevelJsonStream(Readable.from([mk([real(), stale()])]), MTIME_MS);
+  assert.equal(r1.players.find((p) => p.uid === "p1")!.level, 36);
+  const r2 = await analyzeLevelJsonStream(Readable.from([mk([stale(), real()])]), MTIME_MS);
+  assert.equal(r2.players.find((p) => p.uid === "p1")!.level, 36);
+  // 全新角色(單一實體,UE 省略預設值沒寫 Level 欄位)= 等級 1
+  const r3 = await analyzeLevelJsonStream(Readable.from([mk([stale()])]), MTIME_MS);
+  assert.equal(r3.players.find((p) => p.uid === "p1")!.level, 1);
+});
+
 test("analyzeLevelJsonStream:離線天數以存檔內世界時鐘為準,mtime 只是 fallback", async () => {
   // mtime 比世界時鐘晚 100 天:若誤用 mtime,Bob 會變 145 天;正確應仍是 45
   const skewedMtime = MTIME_MS + 100 * 24 * 3600 * 1000;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FiAward, FiDollarSign, FiHome, FiLock, FiRefreshCw, FiTrendingUp, FiZap } from "react-icons/fi";
+import { FiAward, FiDollarSign, FiHome, FiLock, FiRefreshCw, FiTrendingUp, FiUserPlus, FiUsers, FiZap } from "react-icons/fi";
 import type { AutoScanSetting, SaveScanStats, SaveScanPlayerStat } from "@palserver/shared";
 import { hasFeature, topPalScore } from "@palserver/shared";
 import type { AgentClient } from "./api";
@@ -323,48 +323,73 @@ function ServerDigest({ history }: { history: SaveScanStats[] }) {
     .slice(0, 3);
 
   const moneyNow = totalMoney(latest);
-  const moneyBefore = totalMoney(base);
-  const moneyDelta = moneyNow - moneyBefore;
+  const moneyDelta = moneyNow - totalMoney(base);
 
-  const items: string[] = [];
+  const events: { key: string; icon: React.ReactNode; text: string }[] = [];
   if (newPlayers.length > 0) {
-    items.push(t("新玩家 {n} 位:{names}", { n: newPlayers.length, names: newPlayers.map((p) => p.name).join("、") }));
+    events.push({
+      key: "players",
+      icon: <FiUserPlus className="size-3" />,
+      text: t("新玩家 {n} 位:{names}", { n: newPlayers.length, names: newPlayers.map((p) => p.name).join("、") }),
+    });
   }
   if (gains.length > 0) {
-    items.push(t("練級最快:{list}", { list: gains.map((g) => `${g.name}(+${g.delta})`).join("、") }));
+    events.push({
+      key: "gains",
+      icon: <FiTrendingUp className="size-3" />,
+      text: t("練級最快:{list}", { list: gains.map((g) => `${g.name}(+${g.delta})`).join("、") }),
+    });
   }
   if (newGuilds.length > 0) {
-    items.push(t("新公會:{names}", { names: newGuilds.map((g) => g.name).join("、") }));
+    events.push({
+      key: "guilds",
+      icon: <FiUsers className="size-3" />,
+      text: t("新公會:{names}", { names: newGuilds.map((g) => g.name).join("、") }),
+    });
   }
   if (newBases.length > 0) {
-    items.push(
-      t("蓋了新據點:{list}", { list: newBases.map((b) => `${b.name}(+${b.added})`).join("、") }),
-    );
+    events.push({
+      key: "bases",
+      icon: <FiHome className="size-3" />,
+      text: t("蓋了新據點:{list}", { list: newBases.map((b) => `${b.name}(+${b.added})`).join("、") }),
+    });
   }
   if (moneyDelta !== 0) {
-    items.push(
-      t("全服金錢 {sign}{n}(通膨曲線見右)", {
-        sign: moneyDelta > 0 ? "+" : "-",
-        n: Math.abs(moneyDelta).toLocaleString(),
-      }),
-    );
+    events.push({
+      key: "money",
+      icon: <FiDollarSign className="size-3" />,
+      text: t("全服金錢 {sign}{n}", { sign: moneyDelta > 0 ? "+" : "-", n: Math.abs(moneyDelta).toLocaleString() }),
+    });
   }
 
   return (
-    <div className={`${card} flex flex-col gap-3`}>
-      <p className="text-sm font-extrabold">
-        {t("伺服器大事(自 {when} 起)", { when: new Date(base.scannedAt).toLocaleString() })}
-      </p>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="min-w-56 flex-1">
-          {items.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-[13px]">
-              {items.map((line) => (
-                <li key={line}>{line}</li>
+    <div className={`${card} flex flex-col gap-3 p-4 sm:p-5`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-sun/15 text-sun">
+          <FiAward className="size-4" />
+        </span>
+        <p className="text-sm font-extrabold">{t("伺服器大事")}</p>
+        <span className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] font-bold text-ink-muted">
+          {t("自 {when} 起", { when: new Date(base.scannedAt).toLocaleString() })}
+        </span>
+      </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="min-w-0 flex-1">
+          {events.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {events.map((e) => (
+                <li key={e.key} className="flex items-start gap-2 text-[13px]">
+                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-pal/12 text-pal">
+                    {e.icon}
+                  </span>
+                  <span className="min-w-0 leading-snug">{e.text}</span>
+                </li>
               ))}
             </ul>
           ) : (
-            <p className="text-[13px] text-ink-muted">{t("這段期間伺服器沒有明顯變化。")}</p>
+            <p className="rounded-xl bg-card-soft/60 px-3 py-3 text-[13px] text-ink-muted">
+              {t("這段期間伺服器沒有明顯變化。")}
+            </p>
           )}
         </div>
         {win.length > 1 && <MoneySparkline series={win.map(totalMoney)} latestLabel={moneyNow.toLocaleString()} />}
@@ -373,21 +398,34 @@ function ServerDigest({ history }: { history: SaveScanStats[] }) {
   );
 }
 
-/** 全服金錢通膨曲線:窗口內每次掃描的全服金錢總和(頭尾標數字,曲線看趨勢)。 */
+/** 全服金錢通膨曲線:窗口內每次掃描的全服金錢總和(漸層面積+終點,看趨勢用)。 */
 function MoneySparkline({ series, latestLabel }: { series: number[]; latestLabel: string }) {
   const min = Math.min(...series);
   const max = Math.max(...series);
   const span = max - min || 1;
-  const pts = series
-    .map((v, i) => `${(i / (series.length - 1)) * 100},${26 - ((v - min) / span) * 24}`)
-    .join(" ");
+  const xy = series.map((v, i) => [
+    (i / (series.length - 1)) * 100,
+    28 - ((v - min) / span) * 22,
+  ]);
+  const pts = xy.map(([x, y]) => `${x},${y}`).join(" ");
+  const [endX, endY] = xy[xy.length - 1];
   return (
-    <div className="w-48 shrink-0">
-      <p className="mb-1 text-[11px] font-bold text-ink-muted">{t("全服金錢趨勢")}</p>
-      <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="h-10 w-full">
+    <div className="w-full shrink-0 rounded-xl bg-card-soft/60 p-3 sm:w-56">
+      <div className="flex items-baseline justify-between">
+        <p className="text-[11px] font-bold text-ink-muted">{t("全服金錢趨勢")}</p>
+        <p className="font-mono text-[11px] font-extrabold tabular-nums text-ink">{latestLabel}</p>
+      </div>
+      <svg viewBox="0 0 100 32" preserveAspectRatio="none" className="mt-1 h-12 w-full">
+        <defs>
+          <linearGradient id="lb-money-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-pal)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--color-pal)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={`0,32 ${pts} 100,32`} fill="url(#lb-money-fill)" stroke="none" />
         <polyline points={pts} fill="none" stroke="var(--color-pal)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <circle cx={endX} cy={endY} r="2.5" fill="var(--color-pal)" vectorEffect="non-scaling-stroke" />
       </svg>
-      <p className="text-right font-mono text-[11px] text-ink-muted">{latestLabel}</p>
     </div>
   );
 }

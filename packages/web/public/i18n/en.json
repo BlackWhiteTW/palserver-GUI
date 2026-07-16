@@ -1321,7 +1321,8 @@
   "評分 {score} · Lv.{lv} · IV {iv} · 主人 {name}": "Score {score} · Lv.{lv} · IV {iv} · Owner {name}",
   "練級最快:{list}": "Fastest levelers: {list}",
   "蓋了新據點:{list}": "New bases built: {list}",
-  "全服金錢 {sign}{n}(通膨曲線見右)": "Server-wide money {sign}{n} (inflation curve on the right)",
-  "伺服器大事(自 {when} 起)": "Server highlights (since {when})",
-  "全服金錢趨勢": "Server-wide money trend"
+  "全服金錢趨勢": "Server-wide money trend",
+  "伺服器大事": "Server highlights",
+  "自 {when} 起": "since {when}",
+  "全服金錢 {sign}{n}": "Server-wide money {sign}{n}"
 }

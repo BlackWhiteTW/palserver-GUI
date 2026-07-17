@@ -70,7 +70,6 @@ export default function App() {
     </>
   );
 }
-
 /** 全螢幕地圖獨立頁(/map?instance=<id>)。沿用主介面存下的連線,直接把某個實例的
  *  線上地圖鋪滿整個視窗;沒有連線或沒帶 instance 時提示回主介面開啟。 */
 function MapPage() {
@@ -541,6 +540,7 @@ function CreateDialog({
   const [k8sStatefulSet, setK8sStatefulSet] = useState("");
   const [k8sServiceName, setK8sServiceName] = useState("");
   const [dockerImage, setDockerImage] = useState("");
+  const [useWine, setUseWine] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [platform, setPlatform] = useState<string | null>(null);
@@ -579,6 +579,7 @@ function CreateDialog({
         // 強化 = 啟動安裝完伺服器檔案後,自動裝 UE4SS + PalDefender(agent 端 autoEnhance)
         flavor: enhanced ? "modded" : "vanilla",
         gamePort: gamePort.trim() === "" ? undefined : Number(gamePort),
+        runtime: useWine ? "wine" : undefined,
         serverDir: backend === "native" && serverDir.trim() ? serverDir.trim() : undefined,
         dockerImage: backend === "docker" && dockerImage.trim() ? dockerImage.trim() : undefined,
         k8sNamespace: backend === "k8s" ? k8sNamespace.trim() : undefined,
@@ -744,6 +745,26 @@ function CreateDialog({
                     <span className="text-xs text-ink-muted">
                       {t("沿用你已在 Docker 部署的其他帕魯鏡像。鏡像需已存在於本機(先 docker pull)。")}
                     </span>
+                  </label>
+                )}
+                {backend === "docker" && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={useWine}
+                      onChange={(e) => setUseWine(e.target.checked)}
+                    />
+                    {t("Wine 模式(Windows binary,支援 PalDefender)")}
+                  </label>
+                )}
+                {backend === "k8s" && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={useWine}
+                      onChange={(e) => setUseWine(e.target.checked)}
+                    />
+                    {t("Wine 模式(Windows binary,支援 PalDefender)")}
                   </label>
                 )}
                 {backend === "k8s" && (

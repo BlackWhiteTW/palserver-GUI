@@ -4,6 +4,7 @@ import { type EngineSettings, type EngineSettingsStatus } from "@palserver/share
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
 import { serverRoot } from "./native.js";
+import { configPlatformDir } from "./platform.js";
 import { readFileInPod, writeFileInPod } from "./k8s.js";
 import { mergeEnginePatch, parseEngineValues } from "./engine-ini-merge.js";
 
@@ -15,30 +16,28 @@ import { mergeEnginePatch, parseEngineValues } from "./engine-ini-merge.js";
  * we rewrite only the keys we manage, keep every other line byte-for-byte,
  * and append sections only when they're missing.
  *
- * On k8s the file lives in the game-server Pod under /palworld/, reached via
- * `kubectl exec`; the Pod filesystem is always Linux, so its path uses
- * LinuxServer regardless of the agent host's platform.
+ * The config sub-directory (WindowsServer vs LinuxServer) is determined by
+ * the server binary's target platform via configPlatformDir(rec), not the
+ * agent host's OS.
  */
 
-const CONFIG_PLATFORM_DIR = process.platform === "win32" ? "WindowsServer" : "LinuxServer";
-const REL_PATH = `Pal/Saved/Config/${CONFIG_PLATFORM_DIR}/Engine.ini`;
-const K8S_REL_PATH = "Pal/Saved/Config/LinuxServer/Engine.ini";
+const engineRel = (rec: InstanceRecord) => `Pal/Saved/Config/${configPlatformDir(rec)}/Engine.ini`;
+const nativeRel = (rec: InstanceRecord) => `Saved/Config/${configPlatformDir(rec)}/Engine.ini`;
+const dockerRel = (rec: InstanceRecord) => `Saved/Config/${configPlatformDir(rec)}/Engine.ini`;
 
-const enginePath = (root: string) => path.join(root, ...REL_PATH.split("/"));
+const enginePath = (root: string, rec: InstanceRecord) => path.join(root, ...engineRel(rec).split("/"));
 
 /** Backend-aware Engine.ini read: native/docker hit the host FS (docker via
  * bind-mount), k8s reaches the Pod over exec. Returns null when absent. */
 async function readEngineIni(rec: InstanceRecord, ctx: DriverContext): Promise<string | null> {
   if (rec.backend === "k8s") {
-    return readFileInPod(rec, K8S_REL_PATH).catch(() => null);
+    return readFileInPod(rec, engineRel(rec)).catch(() => null);
   }
   // docker: bind-mount saved = Pal/Saved, so config is under saved/Config/...
   const base = rec.backend === "docker"
     ? path.join(ctx.instanceDir, "saved")
     : serverRoot(rec, ctx);
-  const rel = rec.backend === "docker"
-    ? `Saved/Config/${CONFIG_PLATFORM_DIR}/Engine.ini`
-    : REL_PATH;
+  const rel = rec.backend === "docker" ? dockerRel(rec) : engineRel(rec);
   const file = path.join(base, ...rel.split("/"));
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
 }
@@ -47,15 +46,13 @@ async function readEngineIni(rec: InstanceRecord, ctx: DriverContext): Promise<s
  * k8s writes into the running Pod. */
 async function writeEngineIni(rec: InstanceRecord, ctx: DriverContext, content: string): Promise<void> {
   if (rec.backend === "k8s") {
-    await writeFileInPod(rec, K8S_REL_PATH, content);
+    await writeFileInPod(rec, engineRel(rec), content);
     return;
   }
   const base = rec.backend === "docker"
     ? path.join(ctx.instanceDir, "saved")
     : serverRoot(rec, ctx);
-  const rel = rec.backend === "docker"
-    ? `Saved/Config/${CONFIG_PLATFORM_DIR}/Engine.ini`
-    : REL_PATH;
+  const rel = rec.backend === "docker" ? dockerRel(rec) : engineRel(rec);
   const file = path.join(base, ...rel.split("/"));
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content);
@@ -65,7 +62,7 @@ export async function getEngineSettings(
   rec: InstanceRecord,
   ctx: DriverContext,
 ): Promise<EngineSettingsStatus> {
-  const displayPath = rec.backend === "k8s" ? K8S_REL_PATH : REL_PATH;
+  const displayPath = engineRel(rec);
   const raw = await readEngineIni(rec, ctx);
   // 顯示以 store 為準:伺服器每次關機都會把 Engine.ini 重寫回它自己的預設,
   // 若直接讀檔,使用者剛存的微調在 start→stop 一輪後就「看起來被重置」了。

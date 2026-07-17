@@ -43,6 +43,7 @@ import {
 } from "./auth.js";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import type { DriverContext, ServerDriver } from "./driver.js";
+import { configPlatformDir, serverPlatform } from "./platform.js";
 import * as dockerOps from "./docker.js";
 
 import { k8sDriver } from "./k8s.js";
@@ -51,6 +52,7 @@ import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
 import { getModsStatus, installComponent, installedEnhancements, removeComponent, setLuaModEnabled } from "./mods.js";
 import { checkPorts, udpPortFree } from "./port-check.js";
+import { runtimePortFree } from "./runtime-port-check.js";
 import * as pakMods from "./pak-mods.js";
 import { clearPalStats, getPalSchemaStatus, getPalStats, installPalSchema, removePalSchema, writePalStats } from "./palschema.js";
 import { getModerationLists, moderation } from "./moderation.js";
@@ -91,6 +93,8 @@ import { setTelemetryEnabled, telemetryStatus, track } from "./telemetry.js";
 import { licenseStatus, setLicenseKey, clearLicenseKey, featureEnabled } from "./license.js";
 import { giveCustomPal } from "./pals.js";
 import { applyUpdate, getUpdateStatus, setUpdatePrefs, type UpdateOps } from "./self-update.js";
+import { readFileInPod } from "./k8s-files.js";
+import { diffIniTextAgainstSnapshot } from "./settings-ini.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -158,13 +162,20 @@ export function registerRoutes(
     const { status } = await driverOf(rec).status(rec, ctxOf(rec));
     // Cached only — listing instances must never wait on Steam or the server.
     const { gameVersion, updateAvailable } = cachedVersionSummary(rec, ctxOf(rec));
-    const enhancements =
-      rec.backend === "native" ? installedEnhancements(saves.serverRootOf(rec, ctxOf(rec))) : [];
+    const enhancements = rec.backend === "native"
+      ? installedEnhancements(saves.serverRootOf(rec, ctxOf(rec)))
+      : await getModsStatus(rec, ctxOf(rec))
+        .then((mods) => [
+          ...(mods.paldefender.installed ? ["PalDefender"] : []),
+          ...(mods.ue4ss.installed ? ["UE4SS"] : []),
+        ])
+        .catch(() => [] as string[]);
     return {
       id: rec.id,
       name: rec.name,
       backend: rec.backend,
       flavor: rec.flavor,
+      runtime: rec.runtime,
       gamePort: rec.gamePort,
       status,
       createdAt: rec.createdAt,
@@ -492,7 +503,7 @@ export function registerRoutes(
           k8sStatefulSet: input.k8sStatefulSet,
           k8sServiceName: input.k8sServiceName,
         } as InstanceRecord;
-        const ini = await readFileInPod(tempRec, "Pal/Saved/Config/LinuxServer/PalWorldSettings.ini");
+        const ini = await readFileInPod(tempRec, `Pal/Saved/Config/${configPlatformDir(tempRec)}/PalWorldSettings.ini`);
         const synced = parsePalWorldSettingsIni(ini);
         Object.assign(settings, synced);
       } catch {
@@ -510,6 +521,7 @@ export function registerRoutes(
       gamePort,
       queryPort: store.nextQueryPort([gamePort]),
       dockerImage: input.backend === "docker" ? input.dockerImage?.trim() || undefined : undefined,
+      runtime: input.runtime,
       serverDir,
       serverDirManaged,
       settings,
@@ -686,14 +698,20 @@ export function registerRoutes(
   });
 
   // 把使用者對 PalWorldSettings.ini 的手動編輯併回 store,否則會被下次重寫蓋掉。
-  // 掛在啟動/重啟前,也由 /settings/sync-ini 端點供面板主動觸發。k8s 不支援(讀 Pod 成本高)。
-  const worldIniPatch = (rec: InstanceRecord): Partial<WorldSettings> => {
+  // 掛在啟動/重啟前,也由 /settings/sync-ini 端點供面板主動觸發。各後端
+  // 都比對同一份 agent snapshot；k8s 只多一次 Pod 讀取。
+  const worldIniPatch = async (rec: InstanceRecord): Promise<Partial<WorldSettings>> => {
     if (rec.backend === "native") return detectManualIniEdits(rec, ctxOf(rec));
     if (rec.backend === "docker") return dockerOps.detectManualIniEdits(store.instanceDir(rec.id));
-    return {};
+    const ctx = ctxOf(rec);
+    const ini = await readFileInPod(rec, `Pal/Saved/Config/${configPlatformDir(rec)}/PalWorldSettings.ini`).catch(() => null);
+    if (ini === null) return {};
+    const snapshotPath = path.join(ctx.instanceDir, "world-applied.json");
+    const snapshot = fs.existsSync(snapshotPath) ? fs.readFileSync(snapshotPath, "utf8") : null;
+    return diffIniTextAgainstSnapshot(ini, snapshot);
   };
-  const reconcileWorldIni = (rec: InstanceRecord): InstanceRecord => {
-    const patch = worldIniPatch(rec);
+  const reconcileWorldIni = async (rec: InstanceRecord): Promise<InstanceRecord> => {
+    const patch = await worldIniPatch(rec);
     if (Object.keys(patch).length === 0) return rec;
     return mirrorIdentityFromSettings(
       store.update(rec.id, {
@@ -702,10 +720,48 @@ export function registerRoutes(
     );
   };
 
+  /** Repair legacy PalDefender records that were persisted with the old
+   * RCON=false default. Detection is runtime-backed so vanilla instances are
+   * not silently changed; when repaired, the caller restarts once to apply
+   * the rendered PalWorldSettings.ini. */
+  const ensurePalDefenderRcon = async (rec: InstanceRecord): Promise<InstanceRecord> => {
+    if (rec.settings.RCONEnabled) return rec;
+    try {
+      const mods = await getModsStatus(rec, ctxOf(rec));
+      if (!mods.paldefender.installed) return rec;
+    } catch {
+      return rec;
+    }
+    const usedTcp = store.usedTcpPorts(rec.id);
+    let rconPort = typeof rec.settings.RCONPort === "number" ? rec.settings.RCONPort : 25575;
+    while (
+      usedTcp.has(rconPort) ||
+      (rec.settings.RESTAPIEnabled && rconPort === rec.settings.RESTAPIPort)
+    ) {
+      rconPort++;
+    }
+    return store.update(rec.id, {
+      settings: WorldSettingsSchema.parse({
+        ...rec.settings,
+        RCONEnabled: true,
+        RCONPort: rconPort,
+      }),
+    });
+  };
+
+  const startWithPalDefenderDefaults = async (initial: InstanceRecord): Promise<{ rec: InstanceRecord; started: boolean }> => {
+    const started = await driverOf(initial).start(initial, ctxOf(initial));
+    const repaired = await ensurePalDefenderRcon(initial);
+    if (repaired === initial) return { rec: initial, started };
+    await driverOf(repaired).stop(repaired, ctxOf(repaired));
+    await driverOf(repaired).start(repaired, ctxOf(repaired));
+    return { rec: repaired, started: true };
+  };
+
   /** 面板主動同步:把 ini 的外部改動併回 store 並回傳(編輯原始檔存檔後、開啟世界設定時呼叫)。 */
   app.post("/api/instances/:id/settings/sync-ini", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    const patch = worldIniPatch(rec);
+    const patch = await worldIniPatch(rec);
     const changedKeys = Object.keys(patch);
     const updated =
       changedKeys.length > 0
@@ -720,9 +776,6 @@ export function registerRoutes(
   // 檢查五種埠是否被「其他程式」占走(OS 層試綁),被占的附建議替代埠。
   app.get("/api/instances/:id/ports/check", async (req, reply) => {
     const rec = getOr404((req.params as { id: string }).id);
-    if (rec.backend !== "native") {
-      return { supported: false as const, reason: "埠檢查僅支援原生模式", ports: [], anyConflict: false };
-    }
     const { status } = await driverOf(rec).status(rec, ctxOf(rec));
     if (status === "running" || status === "restarting") {
       // 運作中自己就占著埠,檢查沒有意義
@@ -739,7 +792,7 @@ export function registerRoutes(
       entries.push({ key: "rcon", port: rec.settings.RCONPort, protocol: "tcp" });
     }
     try {
-      const pd = getPdRestStatus(rec, ctxOf(rec));
+      const pd = await getPdRestStatus(rec, ctxOf(rec));
       if (pd.installed && pd.enabled) entries.push({ key: "paldefender", port: pd.port, protocol: "tcp" });
     } catch {
       /* PalDefender 狀態讀不到就不檢查它 */
@@ -748,14 +801,13 @@ export function registerRoutes(
     const ports = await checkPorts(entries, {
       udp: store.usedUdpPorts(rec.id),
       tcp: store.usedTcpPorts(rec.id),
-    });
+    }, { probe: (entry) => runtimePortFree(rec, entry) });
     return { supported: true as const, ports, anyConflict: ports.some((p) => !p.free) };
   });
 
   // 套用埠修改(啟動前面板):一次改多種埠,各走既有的安全路徑。
   app.put("/api/instances/:id/ports", async (req, reply) => {
     const rec = getOr404((req.params as { id: string }).id);
-    if (rec.backend !== "native") return reply.code(400).send({ error: "埠修改面板僅支援原生模式" });
     const { status } = await driverOf(rec).status(rec, ctxOf(rec));
     if (status === "running" || status === "restarting") {
       return reply.code(409).send({ error: "請先停止伺服器再修改埠" });
@@ -813,7 +865,16 @@ export function registerRoutes(
       }
     }
     if (body.query !== undefined) updated = store.update(rec.id, { queryPort: body.query });
-    if (body.paldefender !== undefined) setPdRestPort(updated, ctxOf(updated), body.paldefender);
+    if (body.paldefender !== undefined) await setPdRestPort(updated, ctxOf(updated), body.paldefender);
+    if (updated.backend === "docker" && (body.game !== undefined || body.query !== undefined || body.rest !== undefined)) {
+      // Docker port bindings are materialized when the container is created;
+      // remove only the stopped runtime so the next start recreates mappings.
+      await dockerOps.removeInstanceContainer(updated);
+    }
+    if (updated.backend === "k8s" && (body.game !== undefined || body.query !== undefined || body.rest !== undefined || body.rcon !== undefined || body.paldefender !== undefined)) {
+      const { ensureServicePorts } = await import("./k8s.js");
+      await ensureServicePorts(updated).catch(() => {});
+    }
     return {
       gamePort: updated.gamePort,
       queryPort: updated.queryPort ?? null,
@@ -823,15 +884,14 @@ export function registerRoutes(
   });
 
   app.post("/api/instances/:id/start", async (req) => {
-    const rec = reconcileWorldIni(getOr404((req.params as { id: string }).id));
-    const started = await driverOf(rec).start(rec, ctxOf(rec));
-    // no-op(本來就在跑)不得重設 lastStartAt —— 否則會重開一個 120 秒的
-    // 「啟動失敗」誤判窗口,窗口內的一般當機會被誤判成 PalDefender 啟動失敗。
-    if (started) {
-      supervisor.noteManualState(rec.id, true);
+    const result = await startWithPalDefenderDefaults(
+      await reconcileWorldIni(getOr404((req.params as { id: string }).id)),
+    );
+    if (result.started) {
+      supervisor.noteManualState(result.rec.id, true);
       track("server_started");
     }
-    return toSummary(rec);
+    return toSummary(result.rec);
   });
 
   /** 停止/重啟前若帶了 announceTemplate 且伺服器在跑,依該實例的 announceSeconds 設定
@@ -860,13 +920,13 @@ export function registerRoutes(
     await announceBeforeDowntime(rec, req.body);
     await driverOf(rec).stop(rec, ctxOf(rec));
     presence.markAllOffline(rec.id);
-    rec = reconcileWorldIni(rec);
-    const started = await driverOf(rec).start(rec, ctxOf(rec));
-    if (started) {
-      supervisor.noteManualState(rec.id, true);
+    rec = await reconcileWorldIni(rec);
+    const result = await startWithPalDefenderDefaults(rec);
+    if (result.started) {
+      supervisor.noteManualState(result.rec.id, true);
       track("server_started");
     }
-    return toSummary(rec);
+    return toSummary(result.rec);
   });
 
   app.delete("/api/instances/:id", async (req, reply) => {
@@ -938,6 +998,7 @@ export function registerRoutes(
       name,
       backend: rec.backend,
       flavor: rec.flavor,
+      runtime: rec.runtime,
       gamePort,
       queryPort: store.nextQueryPort([gamePort]),
       settings,
@@ -963,7 +1024,7 @@ export function registerRoutes(
 
   app.get("/api/instances/:id/mods", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getModsStatus(rec, ctxOf(rec));
+    return await getModsStatus(rec, ctxOf(rec));
   });
 
   app.post("/api/instances/:id/mods/:component/install", async (req, reply) => {
@@ -974,12 +1035,52 @@ export function registerRoutes(
     const { channel } = z
       .object({ channel: z.enum(["stable", "beta"]).default("stable") })
       .parse(req.body ?? {});
-    // The mod DLLs are loaded by the running server; Windows locks them, so an
-    // in-place overwrite fails. Require a stopped server for install/update.
-    if (await isRunning(rec)) {
+    // native: DLLs are locked by the running Windows process — must stop first.
+    // docker/k8s: exec into container needs the Pod running; Linux doesn't lock
+    // the file (inode survives unlink), so install while running is OK.
+    if (rec.backend === "native" && await isRunning(rec)) {
       return reply.code(409).send({ error: "請先停止伺服器再安裝或更新模組(執行中時檔案被鎖定無法覆寫)" });
     }
+    if ((rec.backend === "docker" || rec.backend === "k8s") && !await isRunning(rec)) {
+      return reply.code(409).send({ error: "伺服器未運行 — docker/k8s 安裝需要容器在運行中才能傳輸檔案" });
+    }
     const { version } = await installComponent(rec, ctxOf(rec), component, channel);
+    // PalDefender's admin/moderation surface depends on RCON. Older records
+    // may still carry the historical false default, so installing PD repairs
+    // that state and picks a free TCP port before the next restart.
+    if (component === "paldefender" && !rec.settings.RCONEnabled) {
+      const usedTcp = store.usedTcpPorts(rec.id);
+      let rconPort = typeof rec.settings.RCONPort === "number" ? rec.settings.RCONPort : 25575;
+      while (
+        usedTcp.has(rconPort) ||
+        (rec.settings.RESTAPIEnabled && rconPort === rec.settings.RESTAPIPort)
+      ) {
+        rconPort++;
+      }
+      store.update(rec.id, {
+        settings: WorldSettingsSchema.parse({
+          ...rec.settings,
+          RCONEnabled: true,
+          RCONPort: rconPort,
+        }),
+      });
+    }
+    // After installing PalDefender, pre-configure REST API so it works on next boot
+    // without any manual steps: assign unique port, enable REST, create token.
+    // RESTConfig.json may not exist yet (PD generates it on first boot) — create it ourselves.
+    if (component === "paldefender") {
+      try {
+        const pd = await import("./paldefender-rest.js");
+        const dir = await pd.getPdDir(rec, ctxOf(rec));
+        if (dir) {
+          const newPort = await pd.nextPdRestPort(store, ctxOf);
+          // Create RESTConfig.json with our settings (PD will read it on boot).
+          await pd.preConfigureRestApi(rec, ctxOf(rec), newPort).catch(() => {});
+          // Create token file (PD reads Tokens/ dir on boot).
+          await pd.provisionPdToken(rec, ctxOf(rec), false).catch(() => {});
+        }
+      } catch { /* PD config is best-effort */ }
+    }
     return { installed: component, version, applied: "on-next-restart" };
   });
 
@@ -1000,7 +1101,7 @@ export function registerRoutes(
     const rec = getOr404((req.params as { id: string }).id);
     const body = z.object({ name: z.string(), enabled: z.boolean() }).parse(req.body);
     setLuaModEnabled(rec, ctxOf(rec), body.name, body.enabled);
-    return getModsStatus(rec, ctxOf(rec));
+    return await getModsStatus(rec, ctxOf(rec));
   });
 
   // ── pak mods (跨平台：native/docker/k8s 皆可，UE 引擎原生載入) ──
@@ -1032,7 +1133,7 @@ export function registerRoutes(
 
   app.get("/api/instances/:id/paldefender-rest", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getPdRestStatus(rec, ctxOf(rec));
+    return await getPdRestStatus(rec, ctxOf(rec));
   });
 
   app.get("/api/instances/:id/paldefender-players", async (req) => {
@@ -1055,25 +1156,60 @@ export function registerRoutes(
     return getPdGuild(rec, ctxOf(rec), guildId);
   });
 
-  app.put("/api/instances/:id/paldefender-rest/enabled", async (req) => {
+  app.put("/api/instances/:id/paldefender-rest/enabled", async (req, reply) => {
     const rec = getOr404((req.params as { id: string }).id);
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
-    setPdRestEnabled(rec, ctxOf(rec), enabled);
-    return { ...getPdRestStatus(rec, ctxOf(rec)), applied: "on-next-restart" };
+    // Conflict check: when enabling, verify PD port doesn't collide with other instances.
+    if (enabled) {
+      const { readPdPort } = await import("./paldefender-rest.js");
+      const myPort = await readPdPort(rec, ctxOf(rec));
+      if (myPort) {
+        for (const other of store.list()) {
+          if (other.id === rec.id) continue;
+          const otherPort = await readPdPort(other, ctxOf(other)).catch(() => null);
+          if (otherPort === myPort) {
+            return reply.code(409).send({ error: `PalDefender REST port ${myPort} 與實例「${other.name}」衝突` });
+          }
+        }
+      }
+    }
+    await setPdRestEnabled(rec, ctxOf(rec), enabled);
+    // Enabling PalDefender also enables its RCON-backed admin surface. Do
+    // not disable RCON when PD REST is turned off; that is an independent
+    // server setting and may still be used by the frontend.
+    if (enabled && !rec.settings.RCONEnabled) {
+      const usedTcp = store.usedTcpPorts(rec.id);
+      let rconPort = typeof rec.settings.RCONPort === "number" ? rec.settings.RCONPort : 25575;
+      while (
+        usedTcp.has(rconPort) ||
+        (rec.settings.RESTAPIEnabled && rconPort === rec.settings.RESTAPIPort)
+      ) {
+        rconPort++;
+      }
+      store.update(rec.id, {
+        settings: WorldSettingsSchema.parse({
+          ...rec.settings,
+          RCONEnabled: true,
+          RCONPort: rconPort,
+        }),
+      });
+    }
+    const updated = store.get(rec.id) ?? rec;
+    return { ...(await getPdRestStatus(updated, ctxOf(updated))), applied: "on-next-restart" };
   });
 
   app.put("/api/instances/:id/paldefender-rest/port", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
     const { port } = z.object({ port: z.number().int().min(1024).max(65535) }).parse(req.body);
-    setPdRestPort(rec, ctxOf(rec), port);
-    return { ...getPdRestStatus(rec, ctxOf(rec)), applied: "on-next-restart" };
+    await setPdRestPort(rec, ctxOf(rec), port);
+    return { ...(await getPdRestStatus(rec, ctxOf(rec))), applied: "on-next-restart" };
   });
 
   app.post("/api/instances/:id/paldefender-rest/token", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
     const { regenerate } = z.object({ regenerate: z.boolean().default(false) }).parse(req.body ?? {});
     const ok = await provisionPdToken(rec, ctxOf(rec), regenerate);
-    return { ...getPdRestStatus(rec, ctxOf(rec)), hasToken: ok };
+    return { ...(await getPdRestStatus(rec, ctxOf(rec))), hasToken: ok };
   });
 
   app.get("/api/instances/:id/players/:identifier/detail", async (req) => {
@@ -1121,7 +1257,7 @@ export function registerRoutes(
   // ── PalDefender whitelist & banlist ──
   app.get("/api/instances/:id/moderation", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getModerationLists(rec, ctxOf(rec));
+    return await getModerationLists(rec, ctxOf(rec));
   });
 
   app.post("/api/instances/:id/moderation/:action", async (req) => {
@@ -1194,7 +1330,7 @@ export function registerRoutes(
         commands: [],
       };
     }
-    const hasPalDefender = getModsStatus(rec, ctxOf(rec)).paldefender.installed;
+    const hasPalDefender = (await getModsStatus(rec, ctxOf(rec))).paldefender.installed;
     // PalDefender knows exactly which commands this build accepts; prefer it
     // over our static list so plugin updates don't strand the UI.
     const live = hasPalDefender ? await fetchServerCommands(rec) : null;
@@ -1221,10 +1357,10 @@ export function registerRoutes(
         .send({ error: "此功能為贊助者先行版,請在設定頁輸入贊助者識別碼解鎖。" });
     }
     const rec = getOr404((req.params as { id: string }).id);
-    if (rec.backend !== "native") {
-      return reply.code(409).send({ error: "自訂帕魯目前僅支援原生模式的實例" });
+    if (serverPlatform(rec) !== "windows") {
+      return reply.code(409).send({ error: "自訂帕魯目前僅支援 Windows 伺服器" });
     }
-    if (!getModsStatus(rec, ctxOf(rec)).paldefender.installed) {
+    if (!(await getModsStatus(rec, ctxOf(rec))).paldefender.installed) {
       return reply.code(409).send({ error: "需要先安裝 PalDefender 才能發帕魯" });
     }
     requireRcon(rec);
@@ -1241,10 +1377,10 @@ export function registerRoutes(
         .send({ error: "此功能為贊助者先行版,請在設定頁輸入贊助者識別碼解鎖。" });
     }
     const rec = getOr404((req.params as { id: string }).id);
-    if (rec.backend !== "native") {
-      return reply.code(409).send({ error: "批量給予道具目前僅支援原生模式的實例" });
+    if (serverPlatform(rec) !== "windows") {
+      return reply.code(409).send({ error: "批量給予道具目前僅支援 Windows 伺服器" });
     }
-    if (!getModsStatus(rec, ctxOf(rec)).paldefender.installed) {
+    if (!(await getModsStatus(rec, ctxOf(rec))).paldefender.installed) {
       return reply.code(409).send({ error: "需要先安裝 PalDefender 才能發道具" });
     }
     requireRcon(rec);
@@ -1276,10 +1412,10 @@ export function registerRoutes(
         .send({ error: "此功能為贊助者先行版,請在設定頁輸入贊助者識別碼解鎖。" });
     }
     const rec = getOr404((req.params as { id: string }).id);
-    if (rec.backend !== "native") {
-      return reply.code(409).send({ error: "傳送玩家目前僅支援原生模式的實例" });
+    if (serverPlatform(rec) !== "windows") {
+      return reply.code(409).send({ error: "傳送玩家目前僅支援 Windows 伺服器" });
     }
-    if (!getModsStatus(rec, ctxOf(rec)).paldefender.installed) {
+    if (!(await getModsStatus(rec, ctxOf(rec))).paldefender.installed) {
       return reply.code(409).send({ error: "需要先安裝 PalDefender 才能使用傳送" });
     }
     requireRcon(rec);
@@ -1297,7 +1433,7 @@ export function registerRoutes(
   // ── PalDefender Config.json ──
   app.get("/api/instances/:id/paldefender-config", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getPalDefenderConfig(rec, ctxOf(rec));
+    return await getPalDefenderConfig(rec, ctxOf(rec));
   });
 
   app.put("/api/instances/:id/paldefender-config", async (req) => {
@@ -1316,7 +1452,7 @@ export function registerRoutes(
       })
       .strict()
       .parse(req.body);
-    const status = writePalDefenderConfig(rec, ctxOf(rec), patch as PalDefenderConfigPatch);
+    const status = await writePalDefenderConfig(rec, ctxOf(rec), patch as PalDefenderConfigPatch);
     // Try to hot-apply without a restart; harmless if RCON is off.
     await rconExec(rec, "reloadcfg").catch(() => {});
     return { ...status, applied: "reloaded" };
@@ -1325,7 +1461,7 @@ export function registerRoutes(
   // ── PalSchema:物種數值編輯器(贊助者先行版 pal-stats)──
   app.get("/api/instances/:id/palschema", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getPalSchemaStatus(rec, ctxOf(rec));
+    return await getPalSchemaStatus(rec, ctxOf(rec));
   });
 
   app.post("/api/instances/:id/palschema/install", async (req, reply) => {
@@ -1349,13 +1485,13 @@ export function registerRoutes(
     if (await isRunning(rec)) {
       return reply.code(409).send({ error: "請先停止伺服器再移除 PalSchema(執行中時檔案被鎖定)" });
     }
-    removePalSchema(rec, ctxOf(rec));
+    await removePalSchema(rec, ctxOf(rec));
     return { removed: "palschema" };
   });
 
   app.get("/api/instances/:id/pal-stats", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return getPalStats(rec, ctxOf(rec));
+    return await getPalStats(rec, ctxOf(rec));
   });
 
   app.put("/api/instances/:id/pal-stats", async (req, reply) => {
@@ -1374,13 +1510,13 @@ export function registerRoutes(
       .object({ row: z.string().regex(/^[A-Za-z0-9_]{1,80}$/), values: z.object(valueShape).strict() })
       .parse(req.body);
     // 改動寫進 PalSchema mod 檔,伺服器重啟後生效(不即時)。
-    return writePalStats(rec, ctxOf(rec), body.row, body.values as PalStatValues);
+    return await writePalStats(rec, ctxOf(rec), body.row, body.values as PalStatValues);
   });
 
   // 清空所有物種數值調整。刻意「不」做贊助者 gate:贊助到期的使用者也要能改回原設定。
   app.delete("/api/instances/:id/pal-stats", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    return clearPalStats(rec, ctxOf(rec));
+    return await clearPalStats(rec, ctxOf(rec));
   });
 
   // ── config-file health & regeneration ──
@@ -1516,7 +1652,7 @@ export function registerRoutes(
   // ── game version & updates ──
   app.get("/api/instances/:id/connection", async (req) => {
     const rec = getOr404((req.params as { id: string }).id);
-    const info = await getConnectionInfo(rec.gamePort);
+    const info = await getConnectionInfo(rec.gamePort, rec);
     return { ...info, externalAddress: rec.externalAddress ?? null };
   });
 
@@ -1578,6 +1714,11 @@ export function registerRoutes(
     }
 
     if (rec.backend === "k8s") {
+      if (fresh) {
+        return reply.code(409).send({
+          error: "k8s fresh 重灌目前不支援：為避免誤刪 PVC，只能執行保留 PVC 的滾動重啟",
+        });
+      }
       const { rolloutRestart } = await import("./k8s.js");
       try {
         await rolloutRestart(rec);
@@ -1640,8 +1781,7 @@ export function registerRoutes(
       })
       .parse(req.body);
     // 「每天固定時間」單一時刻人人可用;「多個時刻」為贊助者功能。只擋
-    // 「新啟用多時刻」—— 閘門上線前就這樣用的既有設定不破壞(軟性閘門,
-    // 見 shared/features.ts 的定位說明)。
+    // 「新啟用多時刻」——閘門上線前就這樣用的既有設定不破壞。
     const prev = supervisor.readPolicy(rec.id);
     const multi = (p: { scheduled: { enabled: boolean; mode: string; dailyTimes: string[] } }) =>
       p.scheduled.enabled && p.scheduled.mode === "daily" && p.scheduled.dailyTimes.length > 1;

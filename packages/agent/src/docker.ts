@@ -4,9 +4,10 @@ import { PassThrough } from "node:stream";
 import Docker from "dockerode";
 import type { InstanceStatus, InstanceStats, WorldSettings } from "@palserver/shared";
 import { buildLaunchArgs } from "@palserver/shared";
-import { CONTAINER_PREFIX, IMAGES, INSTANCE_LABEL } from "./env.js";
+import { CONTAINER_PREFIX, IMAGES, IMAGES_WINE, INSTANCE_LABEL } from "./env.js";
 import { mergeEnginePatch } from "./engine-ini-merge.js";
 import type { InstanceRecord } from "./store.js";
+import { configPlatformDir } from "./platform.js";
 import { diffIniAgainstSnapshot, renderPalWorldSettingsIni } from "./settings-ini.js";
 
 export const docker = new Docker(); // default: /var/run/docker.sock
@@ -78,7 +79,7 @@ export function detectManualIniEdits(instanceDir: string): Partial<WorldSettings
  *  writeIni(), we re-apply from the store on every start. */
 function applyEngineIniDocker(rec: InstanceRecord, instanceDir: string): void {
   if (!rec.engineSettings || Object.keys(rec.engineSettings).length === 0) return;
-  const file = path.join(instanceDir, "saved", "Config", "LinuxServer", "Engine.ini");
+  const file = path.join(instanceDir, "saved", "Config", configPlatformDir(rec), "Engine.ini");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   fs.writeFileSync(file, mergeEnginePatch(existing, rec.engineSettings));
@@ -110,7 +111,8 @@ export async function createContainer(
     ...buildLaunchArgs(rec.launchOptions),
   ];
 
-  const image = rec.dockerImage?.trim() || IMAGES[rec.flavor];
+  const image = rec.dockerImage?.trim()
+    || (rec.runtime === "wine" ? IMAGES_WINE[rec.flavor] : IMAGES[rec.flavor]);
   const imageExists = await docker
     .getImage(image)
     .inspect()
@@ -251,13 +253,63 @@ export async function execInContainer(
   await new Promise<void>((resolve, reject) => {
     exec.start({ hijack: true, stdin: false }, (err, stream) => {
       if (err) return reject(err);
-      if (!stream) return reject(new Error("exec stream is null"));
-      docker.modem.demuxStream(stream, stdout, stderr);
-      stream.on("end", resolve);
-      stream.on("error", reject);
+      if (stream) {
+        container.modem.demuxStream(stream, stdout, stderr);
+      }
+      stream?.on("end", resolve);
+      stream?.on("error", reject);
     });
   });
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks).toString("utf8").trim();
+}
+
+/** Run a command and preserve stderr/exit status for tool runners. */
+export async function execInContainerChecked(
+  rec: InstanceRecord,
+  command: string[],
+  user?: string,
+): Promise<string> {
+  const container = await findContainer(rec);
+  if (!container) throw Object.assign(new Error("找不到容器"), { statusCode: 409 });
+  const exec = await container.exec({
+    Cmd: command,
+    ...(user ? { User: user } : {}),
+    AttachStdout: true,
+    AttachStderr: true,
+  });
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const outChunks: Buffer[] = [];
+  const errChunks: Buffer[] = [];
+  stdout.on("data", (c) => outChunks.push(Buffer.from(c)));
+  stderr.on("data", (c) => errChunks.push(Buffer.from(c)));
+  await new Promise<void>((resolve, reject) => {
+    exec.start({ hijack: true, stdin: false }, (err, stream) => {
+      if (err) return reject(err);
+      if (stream) container.modem.demuxStream(stream, stdout, stderr);
+      stream?.on("end", resolve);
+      stream?.on("error", reject);
+    });
+  });
+  const info = await exec.inspect();
+  const stderrText = Buffer.concat(errChunks).toString("utf8").trim();
+  if (info.ExitCode !== 0) {
+    throw new Error(
+      `容器內命令失敗(exit ${info.ExitCode}):${stderrText || command.join(" ")}`,
+    );
+  }
+  return Buffer.concat(outChunks).toString("utf8");
+}
+
+/** Upload a tar archive into the container at the given path (like docker cp). */
+export async function putArchiveToContainer(
+  rec: InstanceRecord,
+  tarStream: NodeJS.ReadableStream | Buffer,
+  containerPath: string,
+): Promise<void> {
+  const container = await findContainer(rec);
+  if (!container) throw Object.assign(new Error("找不到容器"), { statusCode: 409 });
+  await container.putArchive(tarStream, { path: containerPath });
 }
 
 /** List files in a directory inside the container. */
@@ -270,7 +322,8 @@ export async function listInContainer(
 
 /** Pull latest image and recreate container. */
 export async function updateImage(rec: InstanceRecord, instanceDir: string): Promise<string> {
-  const image = rec.dockerImage?.trim() || IMAGES[rec.flavor];
+  const image = rec.dockerImage?.trim()
+    || (rec.runtime === "wine" ? IMAGES_WINE[rec.flavor] : IMAGES[rec.flavor]);
   const stream = await docker.pull(image);
   await new Promise<void>((resolve, reject) => {
     docker.modem.followProgress(stream, (err: Error | null) => (err ? reject(err) : resolve()));
@@ -286,13 +339,7 @@ export async function updateImage(rec: InstanceRecord, instanceDir: string): Pro
 
 export const dockerDriver: ServerDriver = {
   status: (rec) => getStatus(rec),
-  start: async (rec, ctx) => {
-    // Same no-op contract as the native driver: a container that is still
-    // running must not be reported as freshly (re)started.
-    if ((await getStatus(rec)).status === "running") return false;
-    await startInstance(rec, ctx.instanceDir);
-    return true;
-  },
+  start: async (rec, ctx) => { await startInstance(rec, ctx.instanceDir); return true; },
   stop: (rec) => stopInstance(rec),
   remove: (rec) => removeInstanceContainer(rec),
   stats: (rec) => getStats(rec),

@@ -14,8 +14,17 @@ import {
 } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
+import { serverPlatform } from "./platform.js";
 import { serverRoot } from "./native.js";
-import { activeWorldGuid, createBackup } from "./saves.js";
+import { activeWorldGuid, activeWorldGuidAsync, createBackup } from "./saves.js";
+import {
+  runtimeExists,
+  runtimeMkdir,
+  runtimeReadText,
+  runtimeRemove,
+  runtimeWriteText,
+} from "./runtime-files.js";
+import { makeDirInPod, writeFileBytesInPod } from "./k8s-files.js";
 
 /**
  * PalSchema 整合(贊助者先行版 pal-stats):
@@ -56,6 +65,14 @@ const statsFile = (root: string) => path.join(rawDir(root), "pal-stats.json");
 const ue4ssSettingsFile = (root: string) => path.join(ue4ssDir(root), "UE4SS-settings.ini");
 const modsTxtFile = (root: string) => path.join(ue4ssModsDir(root), "mods.txt");
 const markerFile = (root: string) => path.join(win64Dir(root), ".palserver-palschema.json");
+const WIN64_REL = "Pal/Binaries/Win64";
+const UE4SS_UPPER_REL = `${WIN64_REL}/UE4SS`;
+const UE4SS_LOWER_REL = `${WIN64_REL}/ue4ss`;
+const PALSCHEMA_REL = (ue4ss: string) => `${ue4ss}/Mods/PalSchema`;
+const OUR_MOD_REL = (ue4ss: string) => `${PALSCHEMA_REL(ue4ss)}/mods/${OUR_MOD_NAME}`;
+const RAW_REL = (ue4ss: string) => `${OUR_MOD_REL(ue4ss)}/raw`;
+const STATS_REL = (ue4ss: string) => `${RAW_REL(ue4ss)}/pal-stats.json`;
+const MARKER_REL = `${WIN64_REL}/.palserver-palschema.json`;
 
 /** UE4SS 是否已安裝(不區分 fork/標準;安裝流程會補上 fork)。 */
 function ue4ssInstalled(root: string): boolean {
@@ -81,9 +98,22 @@ function writeMarker(root: string, patch: PalSchemaMarker): void {
   fs.writeFileSync(markerFile(root), JSON.stringify({ ...readMarker(root), ...patch }, null, 2));
 }
 
-export function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext): PalSchemaStatus {
-  if (rec.backend !== "native") {
-    return { supported: false, reason: "PalSchema 僅支援原生模式的實例", ue4ss: false, installed: false, version: null };
+export async function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext): Promise<PalSchemaStatus> {
+  if (serverPlatform(rec) !== "windows") {
+    return { supported: false, reason: "PalSchema 僅支援 Windows 伺服器", ue4ss: false, installed: false, version: null };
+  }
+  if (rec.backend === "k8s") {
+    if (!(await runtimeExists(rec, ctx, WIN64_REL, "d"))) {
+      return { supported: false, reason: "伺服器尚未安裝完成 — 先啟動一次讓 agent 下載伺服器", ue4ss: false, installed: false, version: null };
+    }
+    const ue4ss = await k8sUe4ssRel(rec, ctx);
+    const marker = await readMarkerRuntime(rec, ctx);
+    return {
+      supported: true,
+      ue4ss: await runtimeExists(rec, ctx, `${ue4ss}/UE4SS.dll`, "f") || await runtimeExists(rec, ctx, `${WIN64_REL}/UE4SS.dll`, "f"),
+      installed: await runtimeExists(rec, ctx, PALSCHEMA_REL(ue4ss), "d"),
+      version: marker.palschema ?? null,
+    };
   }
   const root = serverRoot(rec, ctx);
   if (!fs.existsSync(win64Dir(root))) {
@@ -96,6 +126,28 @@ export function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext): Pal
     installed: fs.existsSync(palSchemaDir(root)),
     version: marker.palschema ?? null,
   };
+}
+
+async function k8sUe4ssRel(rec: InstanceRecord, ctx: DriverContext): Promise<string> {
+  if (await runtimeExists(rec, ctx, UE4SS_UPPER_REL, "d")) return UE4SS_UPPER_REL;
+  return UE4SS_LOWER_REL;
+}
+
+async function readMarkerRuntime(rec: InstanceRecord, ctx: DriverContext): Promise<PalSchemaMarker> {
+  if (rec.backend !== "k8s") return readMarker(serverRoot(rec, ctx));
+  try {
+    return JSON.parse(await runtimeReadText(rec, ctx, MARKER_REL)) as PalSchemaMarker;
+  } catch {
+    return {};
+  }
+}
+
+async function writeMarkerRuntime(rec: InstanceRecord, ctx: DriverContext, patch: PalSchemaMarker): Promise<void> {
+  if (rec.backend !== "k8s") {
+    writeMarker(serverRoot(rec, ctx), patch);
+    return;
+  }
+  await runtimeWriteText(rec, ctx, MARKER_REL, JSON.stringify({ ...(await readMarkerRuntime(rec, ctx)), ...patch }, null, 2));
 }
 
 /* ── 純函式(單元測試用),不碰 fs ── */
@@ -188,8 +240,9 @@ async function downloadZip(url: string, dest: string): Promise<void> {
  * 呼叫端需確保伺服器已停止(DLL 執行中會被鎖)。
  */
 export async function installPalSchema(rec: InstanceRecord, ctx: DriverContext): Promise<{ version: string }> {
-  const status = getPalSchemaStatus(rec, ctx);
+  const status = await getPalSchemaStatus(rec, ctx);
   if (!status.supported) throw Object.assign(new Error(status.reason ?? "unsupported"), { statusCode: 409 });
+  if (rec.backend === "k8s") return installPalSchemaK8s(rec, ctx);
   const root = serverRoot(rec, ctx);
 
   // 風險轉變時點:best-effort 先備份當前世界(伺服器已停也能 tar;失敗不阻擋)。
@@ -254,6 +307,91 @@ export async function installPalSchema(rec: InstanceRecord, ctx: DriverContext):
   }
 }
 
+/** k8s: stage the releases on the agent, then copy the same Win64 layout into the PVC. */
+async function installPalSchemaK8s(rec: InstanceRecord, ctx: DriverContext): Promise<{ version: string }> {
+  const guid = await activeWorldGuidAsync(rec, ctx);
+  if (guid) await createBackup(rec, ctx, guid).catch(() => {});
+
+  fs.mkdirSync(ctx.instanceDir, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "palschema-k8s-"));
+  try {
+    const ue4ss = await resolveRelease(
+      "Okaetsu/RE-UE4SS",
+      "experimental-palworld",
+      (n) => /^UE4SS-Palworld\.zip$/i.test(n),
+      "PALSERVER_UE4SS_PALWORLD_URL",
+    );
+    const ue4ssZip = path.join(tmp, "ue4ss.zip");
+    const win64Stage = path.join(tmp, "win64");
+    fs.mkdirSync(win64Stage, { recursive: true });
+    await downloadZip(ue4ss.url, ue4ssZip);
+    await extractZip(ue4ssZip, { dir: win64Stage });
+    const stagedUe4ss = fs.existsSync(path.join(win64Stage, "UE4SS"))
+      ? "UE4SS"
+      : fs.existsSync(path.join(win64Stage, "ue4ss")) ? "ue4ss" : null;
+    if (!stagedUe4ss) {
+      throw new Error("UE4SS 解壓後找不到 UE4SS 目錄,佈局可能有變;可設 PALSERVER_UE4SS_PALWORLD_URL");
+    }
+    await copyTreeToPod(rec, win64Stage, WIN64_REL);
+    const ue4ssRel = `${WIN64_REL}/${stagedUe4ss}`;
+
+    const settingsRel = `${ue4ssRel}/UE4SS-settings.ini`;
+    if (await runtimeExists(rec, ctx, settingsRel, "f")) {
+      await runtimeWriteText(
+        rec,
+        ctx,
+        settingsRel,
+        patchIniKeys(await runtimeReadText(rec, ctx, settingsRel), {
+          GraphicsAPI: "dx11",
+          bUseUObjectArrayCache: "false",
+        }),
+      );
+    }
+
+    const modsRel = `${ue4ssRel}/Mods`;
+    await runtimeMkdir(rec, ctx, modsRel);
+    const modsTxtRel = `${modsRel}/mods.txt`;
+    const modsTxt = await runtimeExists(rec, ctx, modsTxtRel, "f")
+      ? await runtimeReadText(rec, ctx, modsTxtRel)
+      : "";
+    await runtimeWriteText(rec, ctx, modsTxtRel, enableModsTxt(modsTxt, REQUIRED_UE4SS_MODS));
+
+    const ps = await resolveRelease(
+      "Okaetsu/PalSchema",
+      "latest",
+      (n) => /\.zip$/i.test(n) && !/source/i.test(n),
+      "PALSERVER_PALSCHEMA_URL",
+    );
+    const psZip = path.join(tmp, "palschema.zip");
+    const psStage = path.join(tmp, "palschema");
+    fs.mkdirSync(psStage, { recursive: true });
+    await downloadZip(ps.url, psZip);
+    await extractZip(psZip, { dir: psStage });
+    if (!fs.existsSync(path.join(psStage, "PalSchema"))) {
+      throw new Error("PalSchema 解壓後找不到 PalSchema 目錄,佈局可能有變;可設 PALSERVER_PALSCHEMA_URL");
+    }
+    await copyTreeToPod(rec, psStage, modsRel);
+    await scaffoldOurModK8s(rec, ctx, ue4ssRel);
+    await writeMarkerRuntime(rec, ctx, { ue4ss: ue4ss.version, palschema: ps.version });
+    return { version: ps.version };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+async function copyTreeToPod(rec: InstanceRecord, localDir: string, remoteRel: string): Promise<void> {
+  await makeDirInPod(rec, remoteRel);
+  for (const entry of fs.readdirSync(localDir, { withFileTypes: true })) {
+    const localPath = path.join(localDir, entry.name);
+    const remotePath = `${remoteRel}/${entry.name}`;
+    if (entry.isDirectory()) {
+      await copyTreeToPod(rec, localPath, remotePath);
+    } else {
+      await writeFileBytesInPod(rec, remotePath, fs.readFileSync(localPath));
+    }
+  }
+}
+
 function scaffoldOurMod(root: string): void {
   fs.mkdirSync(rawDir(root), { recursive: true });
   const meta = path.join(ourModDir(root), "metadata.json");
@@ -269,8 +407,34 @@ function scaffoldOurMod(root: string): void {
   }
 }
 
+async function scaffoldOurModK8s(rec: InstanceRecord, ctx: DriverContext, ue4ssRel: string): Promise<void> {
+  const modRel = OUR_MOD_REL(ue4ssRel);
+  await runtimeMkdir(rec, ctx, RAW_REL(ue4ssRel));
+  const metadataRel = `${modRel}/metadata.json`;
+  if (!(await runtimeExists(rec, ctx, metadataRel, "f"))) {
+    await runtimeWriteText(
+      rec,
+      ctx,
+      metadataRel,
+      JSON.stringify(
+        { name: OUR_MOD_NAME, authors: ["palserver-gui"], description: "GUI 管理的物種數值調整", version: "1.0.0" },
+        null,
+        2,
+      ),
+    );
+  }
+}
+
 /** 移除 PalSchema 本體與我們的子 mod;保留 UE4SS(其他 mod 可能還要用)。 */
-export function removePalSchema(rec: InstanceRecord, ctx: DriverContext): void {
+export async function removePalSchema(rec: InstanceRecord, ctx: DriverContext): Promise<void> {
+  if (rec.backend === "k8s") {
+    const ue4ss = await k8sUe4ssRel(rec, ctx);
+    await runtimeRemove(rec, ctx, PALSCHEMA_REL(ue4ss));
+    const marker = await readMarkerRuntime(rec, ctx);
+    delete marker.palschema;
+    await runtimeWriteText(rec, ctx, MARKER_REL, JSON.stringify(marker, null, 2));
+    return;
+  }
   const root = serverRoot(rec, ctx);
   fs.rmSync(palSchemaDir(root), { recursive: true, force: true });
   const marker = readMarker(root);
@@ -283,6 +447,18 @@ export function removePalSchema(rec: InstanceRecord, ctx: DriverContext): void {
 function readStatsRaw(root: string): Record<string, unknown> {
   try {
     return JSON.parse(fs.readFileSync(statsFile(root), "utf8")) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+async function readStatsRawRuntime(
+  rec: InstanceRecord,
+  ctx: DriverContext,
+  ue4ss: string,
+): Promise<Record<string, unknown>> {
+  try {
+    return JSON.parse(await runtimeReadText(rec, ctx, STATS_REL(ue4ss))) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -305,28 +481,39 @@ function rowsFromRaw(raw: Record<string, unknown>): PalStatsRow[] {
   return out;
 }
 
-export function getPalStats(rec: InstanceRecord, ctx: DriverContext): PalStatsStatus {
-  const schema = getPalSchemaStatus(rec, ctx);
+export async function getPalStats(rec: InstanceRecord, ctx: DriverContext): Promise<PalStatsStatus> {
+  const schema = await getPalSchemaStatus(rec, ctx);
   if (!schema.supported) return { supported: false, reason: schema.reason, schema, rows: [] };
   if (!schema.installed) {
     return { supported: false, reason: "尚未安裝 PalSchema", schema, rows: [] };
+  }
+  if (rec.backend === "k8s") {
+    const ue4ss = await k8sUe4ssRel(rec, ctx);
+    return { supported: true, schema, rows: rowsFromRaw(await readStatsRawRuntime(rec, ctx, ue4ss)) };
   }
   const root = serverRoot(rec, ctx);
   return { supported: true, schema, rows: rowsFromRaw(readStatsRaw(root)) };
 }
 
 /** 寫入(合併)一列物種數值。row 必須是 DataTable 的 RowName(如 Anubis / Boss_Anubis)。 */
-export function writePalStats(
+export async function writePalStats(
   rec: InstanceRecord,
   ctx: DriverContext,
   row: string,
   patch: PalStatValues,
-): PalStatsStatus {
-  const schema = getPalSchemaStatus(rec, ctx);
+): Promise<PalStatsStatus> {
+  const schema = await getPalSchemaStatus(rec, ctx);
   if (!schema.supported) throw Object.assign(new Error(schema.reason ?? "unsupported"), { statusCode: 409 });
   if (!schema.installed) throw Object.assign(new Error("尚未安裝 PalSchema"), { statusCode: 409 });
   if (!ROW_RE.test(row)) throw Object.assign(new Error("無效的帕魯 row 名"), { statusCode: 400 });
 
+  if (rec.backend === "k8s") {
+    const ue4ss = await k8sUe4ssRel(rec, ctx);
+    await scaffoldOurModK8s(rec, ctx, ue4ss);
+    const merged = mergeStatsPatch(await readStatsRawRuntime(rec, ctx, ue4ss), PAL_STATS_TABLE, row, patch);
+    await runtimeWriteText(rec, ctx, STATS_REL(ue4ss), JSON.stringify(merged, null, 4));
+    return { supported: true, schema, rows: rowsFromRaw(merged) };
+  }
   const root = serverRoot(rec, ctx);
   scaffoldOurMod(root); // 確保 raw/ 目錄存在(安裝後理應已在)
   const merged = mergeStatsPatch(readStatsRaw(root), PAL_STATS_TABLE, row, patch);
@@ -336,10 +523,18 @@ export function writePalStats(
 
 /** 清空所有已寫入的物種數值調整(移除受管 table),PalSchema 本體保留。
  *  刻意不做贊助者 gate:讓「贊助→取消贊助」的使用者也能把數值改回原本設定。 */
-export function clearPalStats(rec: InstanceRecord, ctx: DriverContext): PalStatsStatus {
-  const schema = getPalSchemaStatus(rec, ctx);
+export async function clearPalStats(rec: InstanceRecord, ctx: DriverContext): Promise<PalStatsStatus> {
+  const schema = await getPalSchemaStatus(rec, ctx);
   if (!schema.supported) throw Object.assign(new Error(schema.reason ?? "unsupported"), { statusCode: 409 });
   if (!schema.installed) throw Object.assign(new Error("尚未安裝 PalSchema"), { statusCode: 409 });
+  if (rec.backend === "k8s") {
+    const ue4ss = await k8sUe4ssRel(rec, ctx);
+    await scaffoldOurModK8s(rec, ctx, ue4ss);
+    const raw = await readStatsRawRuntime(rec, ctx, ue4ss);
+    delete raw[PAL_STATS_TABLE];
+    await runtimeWriteText(rec, ctx, STATS_REL(ue4ss), JSON.stringify(raw, null, 4));
+    return { supported: true, schema, rows: rowsFromRaw(raw) };
+  }
   const root = serverRoot(rec, ctx);
   scaffoldOurMod(root);
   const raw = readStatsRaw(root);

@@ -7,6 +7,7 @@ import type { DriverContext } from "./driver.js";
 import { serverRoot } from "./native.js";
 import { rconExec } from "./rcon.js";
 import { givePalEgg } from "./paldefender-rest.js";
+import { runtimeRemove, runtimeWriteText } from "./runtime-files.js";
 
 /**
  * 自訂帕魯:把表單轉成 PalDefender 的 PalTemplate.json,寫進它讀取的資料夾,再發給玩家。
@@ -15,8 +16,8 @@ import { givePalEgg } from "./paldefender-rest.js";
  *  - egg 模式:PalDefender REST `/give/paleggs/{UserId}`,因為 RCON 的 giveegg_j 沒有玩家參數。
  */
 
-const templatesDir = (root: string) =>
-  path.join(root, "Pal", "Binaries", "Win64", "PalDefender", "Pals", "Templates");
+const templatesRel = "Pal/Binaries/Win64/PalDefender/Pals/Templates";
+const templatesDir = (root: string) => path.join(root, ...templatesRel.split("/"));
 
 /** 表單 -> PalTemplate 欄位(省略的就不寫,交給 PalDefender 預設)。 */
 function buildTemplate(input: CustomPalInput): Record<string, unknown> {
@@ -52,11 +53,15 @@ export async function giveCustomPal(
   ctx: DriverContext,
   input: CustomPalInput,
 ): Promise<string> {
-  const dir = templatesDir(serverRoot(rec, ctx));
-  fs.mkdirSync(dir, { recursive: true });
   const name = `gui_${crypto.randomBytes(6).toString("hex")}`;
-  const file = path.join(dir, `${name}.json`);
-  fs.writeFileSync(file, JSON.stringify(buildTemplate(input), null, 2));
+  const relFile = `${templatesRel}/${name}.json`;
+  if (rec.backend === "k8s") {
+    await runtimeWriteText(rec, ctx, relFile, JSON.stringify(buildTemplate(input), null, 2));
+  } else {
+    const dir = templatesDir(serverRoot(rec, ctx));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(buildTemplate(input), null, 2));
+  }
 
   try {
     if (!input.userId) throw Object.assign(new Error("缺少目標玩家"), { statusCode: 400 });
@@ -69,6 +74,10 @@ export async function giveCustomPal(
     // /givepal_j <UserID> <PalTemplate>
     return await rconExec(rec, `givepal_j ${input.userId} ${name}`);
   } finally {
-    fs.rmSync(file, { force: true });
+    if (rec.backend === "k8s") {
+      await runtimeRemove(rec, ctx, relFile).catch(() => {});
+    } else {
+      fs.rmSync(path.join(templatesDir(serverRoot(rec, ctx)), `${name}.json`), { force: true });
+    }
   }
 }

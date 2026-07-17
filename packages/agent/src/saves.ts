@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { BackupInfo, ExternalWorldCandidate, SavesStatus, WorldSave } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
+import { configPlatformDir } from "./platform.js";
 import { serverRoot } from "./native.js";
 import { rest } from "./restapi.js";
 import { execInPod, listDirInPod, readFileInPod, tarDirInPod, untarIntoPod, writeFileInPod } from "./k8s.js";
@@ -75,7 +76,8 @@ const CONFIG_PLATFORM_DIR = process.platform === "win32" ? "WindowsServer" : "Li
  * palworld-server image mounts data under /palworld/ regardless of the host.
  */
 const K8S_SAVEGAMES_REL = "Pal/Saved/SaveGames/0";
-const K8S_GAME_USER_SETTINGS_REL = `Pal/Saved/Config/LinuxServer/GameUserSettings.ini`;
+const k8sGameUserSettingsRel = (rec: InstanceRecord) =>
+  `Pal/Saved/Config/${configPlatformDir(rec)}/GameUserSettings.ini`;
 
 function fail(message: string, statusCode = 400): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
@@ -207,7 +209,7 @@ export async function setActiveWorldGuidBackend(
   if (rec.backend === "k8s") {
     let ini: string;
     try {
-      ini = await readFileInPod(rec, K8S_GAME_USER_SETTINGS_REL);
+      ini = await readFileInPod(rec, k8sGameUserSettingsRel(rec));
     } catch {
       throw fail("找不到 GameUserSettings.ini — 請先啟動一次伺服器讓它生成", 409);
     }
@@ -216,7 +218,7 @@ export async function setActiveWorldGuidBackend(
       .then(() => true)
       .catch(() => false);
     if (!exists) throw fail(`找不到世界存檔 ${guid}`, 404);
-    await writeFileInPod(rec, K8S_GAME_USER_SETTINGS_REL, applyDedicatedServerName(ini, guid));
+    await writeFileInPod(rec, k8sGameUserSettingsRel(rec), applyDedicatedServerName(ini, guid));
     return;
   }
   setActiveWorldGuid(savedRoot(rec, ctx), guid);
@@ -264,7 +266,7 @@ function listWorlds(root: string): WorldSave[] {
 /** Read DedicatedServerName from the Pod's GameUserSettings.ini. */
 async function activeWorldGuidK8s(rec: InstanceRecord): Promise<string | null> {
   try {
-    const ini = await readFileInPod(rec, K8S_GAME_USER_SETTINGS_REL);
+    const ini = await readFileInPod(rec, k8sGameUserSettingsRel(rec));
     const match = /^DedicatedServerName\s*=\s*(.*)$/m.exec(ini);
     const value = match?.[1]?.trim();
     return value ? value : null;
@@ -672,8 +674,9 @@ export async function mirrorWorld(
     }
 
     // 改 DedicatedServerName
-    const gus = await readFileInPod(dstRec, K8S_GAME_USER_SETTINGS_REL);
-    await writeFileInPod(dstRec, K8S_GAME_USER_SETTINGS_REL, applyDedicatedServerName(gus, srcGuid));
+    const gusRel = k8sGameUserSettingsRel(dstRec);
+    const gus = await readFileInPod(dstRec, gusRel);
+    await writeFileInPod(dstRec, gusRel, applyDedicatedServerName(gus, srcGuid));
   } else {
     throw fail(
       `鏡像遷移目前不支援 ${srcRec.backend} → ${dstRec.backend}（僅支援同類 backend）`,

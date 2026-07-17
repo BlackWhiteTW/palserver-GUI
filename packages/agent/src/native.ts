@@ -795,7 +795,7 @@ async function autoEnhance(
   const mods = await import("./mods.js");
   for (const component of ["ue4ss", "paldefender"] as const) {
     try {
-      const status = mods.getModsStatus(rec, ctx);
+      const status = await mods.getModsStatus(rec, ctx);
       if (!status.supported) {
         log(`[palserver] 強化模組跳過:${status.reason}`);
         return;

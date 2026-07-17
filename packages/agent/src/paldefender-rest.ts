@@ -15,9 +15,14 @@ import type {
   PlayerTechs,
 } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
-import type { InstanceRecord } from "./store.js";
+import type { InstanceRecord, InstanceStore } from "./store.js";
+import { serverPlatform } from "./platform.js";
 import { serverRoot } from "./native.js";
 import { rconExec } from "./rcon.js";
+import * as dockerOps from "./docker.js";
+import { execInPod, readFileInPod, writeFileBytesInPod } from "./k8s-files.js";
+
+const PD_PORT_BASE = 17993;
 
 /**
  * Proxy to PalDefender's own REST API (v1/pdapi on port 17993), which exposes
@@ -31,19 +36,105 @@ import { rconExec } from "./rcon.js";
  */
 
 const TOKEN_FILE = "palserver-gui.json";
+const PD_DIR_NAMES = ["PalDefender", "palguard"];
+/** Container/Pod 內的 PD 目錄相對路徑（resolvePodPath 會加 /palworld 前綴）。 */
+const PD_REL_DIR = "Pal/Binaries/Win64";
+const REST_CONFIG_REL = "RESTAPI/RESTConfig.json";
 
-function pdDir(rec: InstanceRecord, ctx: DriverContext): string | null {
-  const win64 = path.join(serverRoot(rec, ctx), "Pal", "Binaries", "Win64");
-  for (const name of ["PalDefender", "palguard"]) {
-    const dir = path.join(win64, name);
-    if (fs.existsSync(dir)) return dir;
+// ── Container/Pod file helpers (docker = execInContainer, k8s = execInPod) ──
+
+async function readFileInRuntime(rec: InstanceRecord, absPath: string): Promise<string | null> {
+  if (rec.backend === "native") {
+    try { return fs.readFileSync(absPath, "utf8"); } catch { return null; }
+  }
+  if (rec.backend === "docker") {
+    try { return await dockerOps.execInContainer(rec, ["cat", absPath]); } catch { return null; }
+  }
+  // k8s: resolvePodPath 限制 /palworld 前綴，用 execInPod 繞過
+  try { return await execInPod(rec, ["cat", absPath]); } catch { return null; }
+}
+
+async function writeFileInRuntime(rec: InstanceRecord, absPath: string, content: string): Promise<void> {
+  if (rec.backend === "native") {
+    fs.writeFileSync(absPath, content);
+    return;
+  }
+  if (rec.backend === "docker") {
+    const b64 = Buffer.from(content, "utf8").toString("base64");
+    await dockerOps.execInContainer(rec, ["sh", "-c", `echo '${b64}' | base64 -d > '${absPath}'`]);
+    return;
+  }
+  // k8s: writeFileBytesInPod 走 resolvePodPath（/palworld 前綴）
+  if (absPath.startsWith("/palworld/")) {
+    await writeFileBytesInPod(rec, absPath.replace(/^\/palworld\//, ""), Buffer.from(content, "utf8"));
+  } else {
+    const b64 = Buffer.from(content, "utf8").toString("base64");
+    await execInPod(rec, ["sh", "-c", `echo '${b64}' | base64 -d > '${absPath}'`]);
+  }
+}
+
+async function existsInRuntime(rec: InstanceRecord, absPath: string): Promise<boolean> {
+  if (rec.backend === "native") return fs.existsSync(absPath);
+  if (rec.backend === "docker") {
+    try { await dockerOps.execInContainer(rec, ["test", "-e", absPath]); return true; } catch { return false; }
+  }
+  try { await execInPod(rec, ["test", "-e", absPath]); return true; } catch { return false; }
+}
+
+async function mkdirInRuntime(rec: InstanceRecord, absPath: string): Promise<void> {
+  if (rec.backend === "native") { fs.mkdirSync(absPath, { recursive: true }); return; }
+  if (rec.backend === "docker") { await dockerOps.execInContainer(rec, ["mkdir", "-p", absPath]); return; }
+  await execInPod(rec, ["mkdir", "-p", absPath]);
+}
+
+/** PD 目錄的絕對路徑（native = host fs, docker/k8s = /palworld/...）。 */
+function pdDirPath(rec: InstanceRecord, ctx: DriverContext): string {
+  if (rec.backend === "native") {
+    return path.join(serverRoot(rec, ctx), "Pal", "Binaries", "Win64");
+  }
+  return "/palworld/Pal/Binaries/Win64";
+}
+
+/** 偵測 PD 是否已安裝，回傳 PD 目錄絕對路徑（或 null）。 */
+export async function getPdDir(rec: InstanceRecord, ctx: DriverContext): Promise<string | null> {
+  const base = pdDirPath(rec, ctx);
+  for (const name of PD_DIR_NAMES) {
+    if (await existsInRuntime(rec, `${base}/${name}/RESTAPI/RESTConfig.json`)) return `${base}/${name}`;
+    if (await existsInRuntime(rec, `${base}/${name}`)) return `${base}/${name}`;
   }
   return null;
 }
 
-function restConfig(dir: string): { enabled: boolean; port: number } {
+/** 讀取單一實例的 PD REST port（從 RESTConfig.json）。 */
+export async function readPdPort(rec: InstanceRecord, ctx: DriverContext): Promise<number | null> {
+  const dir = await getPdDir(rec, ctx);
+  if (!dir) return null;
+  const { port } = await restConfig(rec, dir);
+  return port;
+}
+
+/** 分配一個未佔用的 PD REST port。比對所有實例的 PD port + TCP port（REST/RCON）。 */
+export async function nextPdRestPort(
+  store: InstanceStore,
+  ctxOf: (rec: InstanceRecord) => DriverContext,
+): Promise<number> {
+  const tcpUsed = store.usedTcpPorts();
+  const pdUsed = new Set<number>();
+  for (const rec of store.list()) {
+    const port = await readPdPort(rec, ctxOf(rec)).catch(() => null);
+    if (port) pdUsed.add(port);
+  }
+  let port = PD_PORT_BASE;
+  while (tcpUsed.has(port) || pdUsed.has(port)) port++;
+  return port;
+}
+
+async function restConfig(rec: InstanceRecord, dir: string): Promise<{ enabled: boolean; port: number }> {
+  const file = `${dir}/RESTAPI/RESTConfig.json`;
+  const raw = await readFileInRuntime(rec, file);
+  if (!raw) return { enabled: false, port: 17993 };
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(dir, "RESTAPI", "RESTConfig.json"), "utf8"));
+    const cfg = JSON.parse(raw);
     return { enabled: cfg.Enabled === true, port: Number(cfg.Port) || 17993 };
   } catch {
     return { enabled: false, port: 17993 };
@@ -52,34 +143,34 @@ function restConfig(dir: string): { enabled: boolean; port: number } {
 
 /** Read our token, creating it (and reloading PalDefender) if absent. */
 async function ensureToken(rec: InstanceRecord, dir: string): Promise<string> {
-  const tokensDir = path.join(dir, "RESTAPI", "Tokens");
-  const file = path.join(tokensDir, TOKEN_FILE);
-  if (fs.existsSync(file)) {
-    const token = JSON.parse(fs.readFileSync(file, "utf8")).Token;
-    if (typeof token === "string" && token.length > 0) return token;
+  const tokensDir = `${dir}/RESTAPI/Tokens`;
+  const file = `${tokensDir}/${TOKEN_FILE}`;
+  const existing = await readFileInRuntime(rec, file);
+  if (existing) {
+    try {
+      const token = JSON.parse(existing).Token;
+      if (typeof token === "string" && token.length > 0) return token;
+    } catch { /* corrupt, recreate */ }
   }
-  fs.mkdirSync(tokensDir, { recursive: true });
+  await mkdirInRuntime(rec, tokensDir);
   const token = crypto.randomBytes(32).toString("base64url");
-  fs.writeFileSync(
-    file,
-    JSON.stringify({ Name: "palserver GUI", Token: token, Permissions: ["REST.*"] }, null, 4),
-  );
-  // Tell PalDefender to reload so the new token is accepted without a restart.
+  await writeFileInRuntime(rec, file,
+    JSON.stringify({ Name: "palserver GUI", Token: token, Permissions: ["REST.*"] }, null, 4));
   await rconExec(rec, "reloadcfg").catch(() => {});
   return token;
 }
 
-export function getPdRestStatus(rec: InstanceRecord, ctx: DriverContext): PdRestStatus {
-  if (rec.backend !== "native") {
-    return { installed: false, configExists: false, enabled: false, hasToken: false, port: 17993, reason: "玩家細節僅支援原生模式的實例" };
+export async function getPdRestStatus(rec: InstanceRecord, ctx: DriverContext): Promise<PdRestStatus> {
+  if (serverPlatform(rec) !== "windows") {
+    return { installed: false, configExists: false, enabled: false, hasToken: false, port: 17993, reason: "玩家細節僅支援 Windows 伺服器" };
   }
-  const dir = pdDir(rec, ctx);
+  const dir = await getPdDir(rec, ctx);
   if (!dir) {
     return { installed: false, configExists: false, enabled: false, hasToken: false, port: 17993, reason: "尚未安裝 PalDefender" };
   }
-  const configFile = path.join(dir, "RESTAPI", "RESTConfig.json");
-  const configExists = fs.existsSync(configFile);
-  const { enabled, port } = restConfig(dir);
+  const configFile = `${dir}/RESTAPI/RESTConfig.json`;
+  const configExists = await existsInRuntime(rec, configFile);
+  const { enabled, port } = await restConfig(rec, dir);
   if (!configExists) {
     return {
       installed: true, configExists: false, enabled: false, hasToken: false, port,
@@ -92,44 +183,58 @@ export function getPdRestStatus(rec: InstanceRecord, ctx: DriverContext): PdRest
       reason: "PalDefender REST API 未啟用 — 啟用後即可查看玩家的帕魯與背包",
     };
   }
-  const hasToken = fs.existsSync(path.join(dir, "RESTAPI", "Tokens", TOKEN_FILE));
+  const hasToken = await existsInRuntime(rec, `${dir}/RESTAPI/Tokens/${TOKEN_FILE}`);
   return { installed: true, configExists: true, enabled: true, hasToken, port };
 }
 
-/** Set Port in RESTConfig.json (preserving the rest of the file). */
-export function setPdRestPort(rec: InstanceRecord, ctx: DriverContext, port: number): void {
-  const dir = pdDir(rec, ctx);
+/** Pre-configure REST API: create/overwrite RESTConfig.json with Enabled=true
+ * and a unique port. Called right after installComponent so PD boots fully
+ * configured on the next start — no manual enable/port/token steps needed. */
+export async function preConfigureRestApi(rec: InstanceRecord, ctx: DriverContext, port: number): Promise<void> {
+  const dir = await getPdDir(rec, ctx);
   if (!dir) throw Object.assign(new Error("尚未安裝 PalDefender"), { statusCode: 409 });
-  const file = path.join(dir, "RESTAPI", "RESTConfig.json");
-  if (!fs.existsSync(file)) {
-    throw Object.assign(new Error("找不到 RESTConfig.json — 請先啟動一次伺服器"), { statusCode: 409 });
-  }
+  const restApiDir = `${dir}/RESTAPI`;
+  // Read existing config if present (PD may have generated defaults on a previous boot).
+  const configFile = `${restApiDir}/RESTConfig.json`;
+  const existing = await readFileInRuntime(rec, configFile);
   let cfg: Record<string, unknown>;
-  try {
-    cfg = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    throw Object.assign(new Error("RESTConfig.json 格式損壞"), { statusCode: 409 });
+  if (existing) {
+    try { cfg = JSON.parse(existing); } catch { cfg = {}; }
+  } else {
+    cfg = {};
   }
+  cfg.Enabled = true;
   cfg.Port = port;
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 4));
+  cfg.Address = cfg.Address ?? "0.0.0.0";
+  // Ensure directory exists, then write.
+  await mkdirInRuntime(rec, restApiDir);
+  await writeFileInRuntime(rec, configFile, JSON.stringify(cfg, null, 4));
+}
+
+/** Set Port in RESTConfig.json (preserving the rest of the file). */
+export async function setPdRestPort(rec: InstanceRecord, ctx: DriverContext, port: number): Promise<void> {
+  const dir = await getPdDir(rec, ctx);
+  if (!dir) throw Object.assign(new Error("尚未安裝 PalDefender"), { statusCode: 409 });
+  const file = `${dir}/RESTAPI/RESTConfig.json`;
+  const raw = await readFileInRuntime(rec, file);
+  if (!raw) throw Object.assign(new Error("找不到 RESTConfig.json — 請先啟動一次伺服器"), { statusCode: 409 });
+  let cfg: Record<string, unknown>;
+  try { cfg = JSON.parse(raw); } catch { throw Object.assign(new Error("RESTConfig.json 格式損壞"), { statusCode: 409 }); }
+  cfg.Port = port;
+  await writeFileInRuntime(rec, file, JSON.stringify(cfg, null, 4));
 }
 
 /** Set Enabled in RESTConfig.json (preserving the rest of the file). */
-export function setPdRestEnabled(rec: InstanceRecord, ctx: DriverContext, enabled: boolean): void {
-  const dir = pdDir(rec, ctx);
+export async function setPdRestEnabled(rec: InstanceRecord, ctx: DriverContext, enabled: boolean): Promise<void> {
+  const dir = await getPdDir(rec, ctx);
   if (!dir) throw Object.assign(new Error("尚未安裝 PalDefender"), { statusCode: 409 });
-  const file = path.join(dir, "RESTAPI", "RESTConfig.json");
-  if (!fs.existsSync(file)) {
-    throw Object.assign(new Error("找不到 RESTConfig.json — 請先啟動一次伺服器"), { statusCode: 409 });
-  }
+  const file = `${dir}/RESTAPI/RESTConfig.json`;
+  const raw = await readFileInRuntime(rec, file);
+  if (!raw) throw Object.assign(new Error("找不到 RESTConfig.json — 請先啟動一次伺服器"), { statusCode: 409 });
   let cfg: Record<string, unknown>;
-  try {
-    cfg = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    throw Object.assign(new Error("RESTConfig.json 格式損壞"), { statusCode: 409 });
-  }
+  try { cfg = JSON.parse(raw); } catch { throw Object.assign(new Error("RESTConfig.json 格式損壞"), { statusCode: 409 }); }
   cfg.Enabled = enabled;
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 4));
+  await writeFileInRuntime(rec, file, JSON.stringify(cfg, null, 4));
 }
 
 /** Create the agent's bearer token file if missing (and reloadcfg). Returns
@@ -140,20 +245,22 @@ export async function provisionPdToken(
   ctx: DriverContext,
   regenerate: boolean,
 ): Promise<boolean> {
-  const dir = pdDir(rec, ctx);
+  const dir = await getPdDir(rec, ctx);
   if (!dir) throw Object.assign(new Error("尚未安裝 PalDefender"), { statusCode: 409 });
-  const file = path.join(dir, "RESTAPI", "Tokens", TOKEN_FILE);
-  if (regenerate) fs.rmSync(file, { force: true });
+  const file = `${dir}/RESTAPI/Tokens/${TOKEN_FILE}`;
+  if (regenerate) {
+    if (rec.backend === "native") { fs.rmSync(file, { force: true }); }
+    else if (rec.backend === "docker") { await dockerOps.execInContainer(rec, ["rm", "-f", file]); }
+    else { await execInPod(rec, ["rm", "-f", file]); }
+  }
   await ensureToken(rec, dir);
-  return fs.existsSync(file);
+  return existsInRuntime(rec, file);
 }
 
 /** Map PalDefender's error codes to something a manager can act on. */
 const PD_ERROR_MESSAGES: Record<string, string> = {
   INVALID_TOKEN: "存取權杖尚未生效 — 請重啟伺服器一次(或確認 RCON 已啟用,讓 agent 能自動載入權杖)",
   MISSING_PERMISSION: "存取權杖權限不足",
-  // PalDefender 1.8.0 起 /player、/pals、/items 都支援離線玩家,所以查不到通常代表這個
-  // 玩家從未加入過,或 PalDefender 版本過舊(1.8 之前只能查在線)。
   PLAYER_NOT_FOUND: "找不到這個玩家 —— 可能從未加入過此伺服器,或你的 PalDefender 版本過舊(需 1.8.0 以上才能查詢離線玩家,請更新 PalDefender)。",
   PLAYER_ACCOUNT_NOT_FOUND: "找到玩家但無法載入其存檔資料",
   REQUEST_TIMEOUT: "PalDefender 回應逾時,請稍後再試",
@@ -162,17 +269,25 @@ const PD_ERROR_MESSAGES: Record<string, string> = {
 
 class PdRestError extends Error {}
 
+/** Resolve the PD REST host: k8s uses Service DNS, docker/native use localhost. */
+function pdHost(rec: InstanceRecord): string {
+  if (rec.backend === "k8s" && rec.k8sServiceName && rec.k8sNamespace) {
+    return `${rec.k8sServiceName}.${rec.k8sNamespace}`;
+  }
+  return "127.0.0.1";
+}
+
 async function pdFetch<T>(
   rec: InstanceRecord,
   dir: string,
   endpoint: string,
   body?: unknown,
 ): Promise<T> {
-  const { port } = restConfig(dir);
+  const { port } = await restConfig(rec, dir);
   const token = await ensureToken(rec, dir);
   let res: Response;
   try {
-    res = await fetch(`http://127.0.0.1:${port}/v1/pdapi${endpoint}`, {
+    res = await fetch(`http://${pdHost(rec)}:${port}/v1/pdapi${endpoint}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -185,9 +300,6 @@ async function pdFetch<T>(
     throw new PdRestError("無法連線到 PalDefender REST API — 伺服器可能未在運作中");
   }
   if (!res.ok) {
-    // A PalDefender error body carries Error.Code; a bare 404 (no such body)
-    // means the pdapi route itself is missing — likely this PalDefender
-    // version predates the player-detail API, or the token isn't loaded yet.
     const body = await res.json().catch(() => null);
     const code = (body as { Error?: { Code?: string } })?.Error?.Code;
     if (code) throw new PdRestError(PD_ERROR_MESSAGES[code] ?? `PalDefender 回應錯誤(${code})`);
@@ -235,11 +347,11 @@ function collectItems(inventory: Record<string, unknown> | undefined): PdItemSlo
 
 /** 統一玩家名冊(PalDefender 1.8+ /players,含離線玩家)。 */
 export async function getPdPlayers(rec: InstanceRecord, ctx: DriverContext): Promise<PdPlayerList> {
-  const status = getPdRestStatus(rec, ctx);
+  const status = await getPdRestStatus(rec, ctx);
   if (!status.enabled) {
     return { available: false, reason: status.reason, onlineCount: 0, totalCount: 0, players: [] };
   }
-  const dir = pdDir(rec, ctx)!;
+  const dir = (await getPdDir(rec, ctx))!;
   try {
     const res = await pdFetch<{ Meta?: Record<string, unknown>; Players?: Record<string, unknown>[] }>(
       rec,
@@ -287,11 +399,11 @@ export async function getPdGuilds(
   detailed: boolean,
 ): Promise<PdGuildList> {
   if (!detailed) return { available: true, detailed: false, guilds: [] };
-  const status = getPdRestStatus(rec, ctx);
+  const status = await getPdRestStatus(rec, ctx);
   if (!status.enabled) {
     return { available: false, detailed: true, reason: status.reason, guilds: [] };
   }
-  const dir = pdDir(rec, ctx)!;
+  const dir = (await getPdDir(rec, ctx))!;
   try {
     const res = await pdFetch<{ Guilds?: Record<string, Record<string, unknown>> }>(rec, dir, "/guilds");
     const guilds: PdGuild[] = Object.entries(res.Guilds ?? {}).map(([id, raw]) => {
@@ -336,9 +448,9 @@ export async function getPdGuild(
     members: [],
     camps: [],
   });
-  const status = getPdRestStatus(rec, ctx);
+  const status = await getPdRestStatus(rec, ctx);
   if (!status.enabled) return empty(status.reason);
-  const dir = pdDir(rec, ctx)!;
+  const dir = (await getPdDir(rec, ctx))!;
   try {
     const res = await pdFetch<{ Guild?: Record<string, unknown> }>(
       rec,
@@ -440,13 +552,13 @@ export async function givePalEgg(
   templateFile: string,
   level?: number,
 ): Promise<number> {
-  const status = getPdRestStatus(rec, ctx);
+  const status = await getPdRestStatus(rec, ctx);
   if (!status.enabled) {
     throw Object.assign(new Error(`帕魯蛋需要 PalDefender REST API:${status.reason}`), {
       statusCode: 409,
     });
   }
-  const dir = pdDir(rec, ctx)!;
+  const dir = (await getPdDir(rec, ctx))!;
   const egg: Record<string, unknown> = { EggID: eggId, PalTemplate: templateFile };
   if (level != null) egg.Level = level;
   const res = await pdFetch<{ Granted?: { PalEggs?: number } }>(
@@ -463,7 +575,7 @@ export async function getPlayerDetail(
   ctx: DriverContext,
   identifier: string,
 ): Promise<PlayerDetail> {
-  const status = getPdRestStatus(rec, ctx);
+  const status = await getPdRestStatus(rec, ctx);
   if (!status.enabled) {
     return {
       available: false,
@@ -480,20 +592,15 @@ export async function getPlayerDetail(
       progression: null,
     };
   }
-  const dir = pdDir(rec, ctx)!;
+  const dir = (await getPdDir(rec, ctx))!;
 
   try {
-    // /player 是門檻呼叫:查不到玩家(或版本過舊/離線不支援)才算真的失敗,由此決定 available。
     const player = await pdFetch<{ Player?: Record<string, unknown> }>(
       rec,
       dir,
       `/player/${encodeURIComponent(identifier)}`,
     );
 
-    // /pals、/items、/techs、/progression 都是加分項,一律 best-effort:
-    // PalDefender 的 changelog 只把 /player、/players 標為「支援離線玩家」,/pals 與 /items
-    // 並未標註 —— 對離線玩家這兩個端點常回 404。若讓它們的失敗拖垮整個 Promise.all,
-    // 連 /player 已成功拿到的基本資料都會被判為「無法讀取」。故各自吞掉錯誤、記錄是否失敗。
     let palsFailed = false;
     let itemsFailed = false;
     const [palsRes, itemsRes, techs, progression] = await Promise.all([
@@ -524,7 +631,6 @@ export async function getPlayerDetail(
       teamCount: Number(palsRes.Meta?.TeamCount ?? 0),
       palboxCount: Number(palsRes.Meta?.PalboxCount ?? 0),
       items: collectItems(itemsRes.Inventory as Record<string, unknown>),
-      // 只有在「玩家存在但這兩個端點抓不到」時標記 —— 讓前端能明講這是離線限制,而非玩家真的空。
       palsUnavailable: palsFailed,
       itemsUnavailable: itemsFailed,
       techs,

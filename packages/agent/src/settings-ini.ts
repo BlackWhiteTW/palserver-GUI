@@ -89,10 +89,24 @@ export function diffIniAgainstSnapshot(
   } catch {
     return {};
   }
+  let snapshotRaw: string | null = null;
+  try {
+    snapshotRaw = readFileSync(snapshotPath);
+  } catch {
+    /* 沒有快照 */
+  }
+  return diffIniTextAgainstSnapshot(iniRaw, snapshotRaw);
+}
+
+/** Same reconciliation for remote runtimes whose files are not host paths. */
+export function diffIniTextAgainstSnapshot(
+  iniRaw: string,
+  snapshotRaw: string | null,
+): Partial<WorldSettings> {
   const fileSettings = parsePalWorldSettingsIni(iniRaw);
   let last: Record<string, unknown> | null = null;
   try {
-    const j = JSON.parse(readFileSync(snapshotPath)) as unknown;
+    const j = snapshotRaw === null ? null : JSON.parse(snapshotRaw) as unknown;
     if (j && typeof j === "object") last = j as Record<string, unknown>;
   } catch {
     /* 沒有快照 */

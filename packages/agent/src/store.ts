@@ -16,6 +16,8 @@ export interface InstanceRecord {
   queryPort?: number;
   /** docker only: 自訂容器鏡像;undefined = 用內建 IMAGES[flavor]。 */
   dockerImage?: string;
+  /** docker/k8s: 執行環境。"wine" = 跑 Windows binary via Wine; undefined = 原生。 */
+  runtime?: "native" | "wine";
   /** native only: custom server root; undefined = agent-managed install
    * under instanceDir/server. */
   serverDir?: string;

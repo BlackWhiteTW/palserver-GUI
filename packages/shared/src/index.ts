@@ -79,6 +79,9 @@ export const CreateInstanceSchema = z.object({
   /** docker only: 自訂容器鏡像(如 ghcr.io/…/palworld:tag);省略則用內建的
    * vanilla/modded 映像。方便沿用已在 Docker 部署的其他帕魯鏡像。 */
   dockerImage: z.string().trim().max(200).optional(),
+  /** docker/k8s: 執行環境。"wine" = 跑 Windows binary via Wine(支援 PalDefender)。
+   *  undefined 或 "native" = 原生 Linux binary。 */
+  runtime: z.enum(["native", "wine"]).optional(),
   /** UDP port the server listens on (host port for docker)。
    *  省略 = 由 agent 自動分配(從 8211 起找沒被登記且 OS 綁得起來的埠)。 */
   gamePort: z.number().int().min(1024).max(65535).optional(),
@@ -157,6 +160,8 @@ export interface InstanceSummary {
   name: string;
   backend: Backend;
   flavor: "vanilla" | "modded";
+  /** docker/k8s: "wine" = Windows binary via Wine; undefined = native. */
+  runtime?: "native" | "wine";
   gamePort: number;
   status: InstanceStatus;
   createdAt: string;

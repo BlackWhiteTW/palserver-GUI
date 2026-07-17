@@ -1,0 +1,11 @@
+.git
+.agents
+.claude
+.codex
+.godot
+node_modules
+**/node_modules
+**/dist
+logs
+release
+website

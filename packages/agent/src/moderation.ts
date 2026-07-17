@@ -1,9 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { BanEntry, ModerationLists, WhitelistEntry } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
-import { serverRoot } from "./native.js";
+import { serverPlatform } from "./platform.js";
+import { getPdDir } from "./paldefender-rest.js";
+import * as dockerOps from "./docker.js";
+import { execInPod } from "./k8s-files.js";
 import { rconExec } from "./rcon.js";
 
 /**
@@ -14,30 +15,28 @@ import { rconExec } from "./rcon.js";
  * PalDefender's docs say not to hand-edit Banlist.json, and RCON keeps the
  * plugin's in-memory state in sync. So this module reads; the routes issue
  * the whitelist_add / ban / banip / unban commands.
+ *
+ * All reads go through exec for docker/k8s (container/Pod filesystem).
  */
 
 const looksLikeIp = (s: string) => /^\d{1,3}(\.\d{1,3}){3}(\/\d+)?$/.test(s.trim());
 
-function palDefenderDir(rec: InstanceRecord, ctx: DriverContext): string | null {
-  const win64 = path.join(serverRoot(rec, ctx), "Pal", "Binaries", "Win64");
-  for (const name of ["PalDefender", "palguard"]) {
-    const dir = path.join(win64, name);
-    if (fs.existsSync(dir)) return dir;
+async function readJsonInRuntime<T>(rec: InstanceRecord, file: string): Promise<T | null> {
+  let raw: string | null;
+  if (rec.backend === "native") {
+    const fs = await import("node:fs");
+    try { raw = fs.readFileSync(file, "utf8"); } catch { return null; }
+  } else if (rec.backend === "docker") {
+    try { raw = await dockerOps.execInContainer(rec, ["cat", file]); } catch { return null; }
+  } else {
+    try { raw = await execInPod(rec, ["cat", file]); } catch { return null; }
   }
-  return null;
-}
-
-function readJson<T>(file: string): T | null {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
-  } catch {
-    return null;
-  }
+  if (!raw) return null;
+  try { return JSON.parse(raw) as T; } catch { return null; }
 }
 
 /** WhiteList.json is an array of strings (UserIds and/or IPs). */
-function parseWhitelist(dir: string): WhitelistEntry[] {
-  const raw = readJson<unknown>(path.join(dir, "WhiteList.json"));
+function parseWhitelist(raw: unknown): WhitelistEntry[] {
   const values: string[] = Array.isArray(raw)
     ? raw.filter((v): v is string => typeof v === "string")
     : Array.isArray((raw as { whitelist?: string[] })?.whitelist)
@@ -47,8 +46,7 @@ function parseWhitelist(dir: string): WhitelistEntry[] {
 }
 
 /** Banlist.json shape varies by version; accept the common forms. */
-function parseBanlist(dir: string): BanEntry[] {
-  const raw = readJson<unknown>(path.join(dir, "Banlist.json"));
+function parseBanlist(raw: unknown): BanEntry[] {
   const list: unknown[] = Array.isArray(raw)
     ? raw
     : Array.isArray((raw as { bans?: unknown[] })?.bans)
@@ -68,16 +66,11 @@ function parseBanlist(dir: string): BanEntry[] {
   });
 }
 
-function whitelistEnabled(dir: string): boolean {
-  const config = readJson<{ useWhitelist?: boolean }>(path.join(dir, "Config.json"));
-  return config?.useWhitelist === true;
-}
-
-export function getModerationLists(rec: InstanceRecord, ctx: DriverContext): ModerationLists {
-  if (rec.backend !== "native") {
-    return { supported: false, reason: "名單管理僅支援原生模式的實例", whitelistEnabled: false, whitelist: [], bans: [] };
+export async function getModerationLists(rec: InstanceRecord, ctx: DriverContext): Promise<ModerationLists> {
+  if (serverPlatform(rec) !== "windows") {
+    return { supported: false, reason: "名單管理僅支援 Windows 伺服器", whitelistEnabled: false, whitelist: [], bans: [] };
   }
-  const dir = palDefenderDir(rec, ctx);
+  const dir = await getPdDir(rec, ctx);
   if (!dir) {
     return {
       supported: false,
@@ -87,11 +80,16 @@ export function getModerationLists(rec: InstanceRecord, ctx: DriverContext): Mod
       bans: [],
     };
   }
+  const [wlRaw, blRaw, cfgRaw] = await Promise.all([
+    readJsonInRuntime<unknown>(rec, `${dir}/WhiteList.json`),
+    readJsonInRuntime<unknown>(rec, `${dir}/Banlist.json`),
+    readJsonInRuntime<{ useWhitelist?: boolean }>(rec, `${dir}/Config.json`),
+  ]);
   return {
     supported: true,
-    whitelistEnabled: whitelistEnabled(dir),
-    whitelist: parseWhitelist(dir),
-    bans: parseBanlist(dir),
+    whitelistEnabled: cfgRaw?.useWhitelist === true,
+    whitelist: parseWhitelist(wlRaw),
+    bans: parseBanlist(blRaw),
   };
 }
 

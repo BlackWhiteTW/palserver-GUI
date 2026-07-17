@@ -58,7 +58,9 @@ export const WORLD_OPTIONS = {
   bIsShowJoinLeftMessage: { type: "bool", default: true, category: "server" },
   RESTAPIEnabled: { type: "bool", default: true, category: "server" },
   RESTAPIPort: { type: "int", default: 8212, min: 1024, max: 65535, category: "server" },
-  RCONEnabled: { type: "bool", default: false, category: "server" },
+  // PalDefender's moderation and admin UI use RCON. Keep it enabled by
+  // default so a PalDefender-backed instance exposes its supported controls.
+  RCONEnabled: { type: "bool", default: true, category: "server" },
   RCONPort: { type: "int", default: 25575, min: 1024, max: 65535, category: "server" },
   ChatPostLimitPerMinute: { type: "int", default: 10, min: 1, max: 120, category: "server" },
   LogFormatType: { type: "enum", default: "Text", choices: ["Text", "Json"], category: "server" },

@@ -69,6 +69,14 @@ export function requireRcon(rec: InstanceRecord): void {
   }
 }
 
+/** Resolve the RCON host: k8s uses Service DNS, docker/native use localhost. */
+function rconHost(rec: InstanceRecord): string {
+  if (rec.backend === "k8s" && rec.k8sServiceName && rec.k8sNamespace) {
+    return `${rec.k8sServiceName}.${rec.k8sNamespace}`;
+  }
+  return "127.0.0.1";
+}
+
 /** `async` so a disabled-RCON instance rejects instead of throwing
  * synchronously — callers attach .catch() and would otherwise be bypassed. */
 export async function rconExec(rec: InstanceRecord, command: string): Promise<string> {
@@ -77,7 +85,7 @@ export async function rconExec(rec: InstanceRecord, command: string): Promise<st
   const password = String(rec.settings.AdminPassword);
 
   return new Promise<string>((resolve, reject) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const socket = net.createConnection({ host: rconHost(rec), port });
     socket.setTimeout(CONNECT_TIMEOUT_MS);
 
     let tail: Buffer<ArrayBufferLike> = Buffer.alloc(0);

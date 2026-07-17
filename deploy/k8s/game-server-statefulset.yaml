@@ -89,10 +89,11 @@ spec:
           resources:
             requests:
               memory: "8Gi"
-              cpu: "2000m"
+              cpu: "6000m"
             limits:
-              memory: "16Gi"
-              cpu: "4000m"
+              # Do not cap CPU: Palworld and in-container save health checks
+              # may use every core available on the node.
+              memory: "32Gi"
   volumeClaimTemplates:
     - metadata:
         name: palworld-data

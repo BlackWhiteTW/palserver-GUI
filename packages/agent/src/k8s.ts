@@ -1,8 +1,12 @@
 import * as k8s from "@kubernetes/client-node";
+import fs from "node:fs";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 import type { InstanceStats, InstanceStatus, LogSource, LogSourceId } from "@palserver/shared";
+import { buildLaunchArgs } from "@palserver/shared";
 import type { ServerDriver, DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
+import { configPlatformDir } from "./platform.js";
 import { execInPod, findPodName, loadKubeConfig, readFileInPod, writeFileInPod } from "./k8s-files.js";
 import { mergeEnginePatch } from "./engine-ini-merge.js";
 
@@ -17,7 +21,7 @@ import { mergeEnginePatch } from "./engine-ini-merge.js";
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function strategicMergeMiddleware(): any {
+function strategicMergeMiddleware(contentType = "application/strategic-merge-patch+json"): any {
   // Strategic-merge-patch content-type is required for scale subresource patches
   // so the API server merges `spec.replicas` instead of replacing the whole scale
   // object. Ported from PalworldManager k8s-controller.ts.
@@ -29,7 +33,7 @@ function strategicMergeMiddleware(): any {
   const of = (value: unknown) => ({ toPromise: () => Promise.resolve(value) });
   return {
     pre: (ctx: { setHeaderParam: (k: string, v: string) => void }) => {
-      ctx.setHeaderParam("Content-Type", "application/strategic-merge-patch+json");
+      ctx.setHeaderParam("Content-Type", contentType);
       return of(ctx);
     },
     post: (ctx: unknown) => of(ctx),
@@ -80,27 +84,119 @@ export const k8sDriver: ServerDriver = {
     }
   },
 
-  async start(rec, _ctx): Promise<boolean> {
+  async start(rec, ctx): Promise<boolean> {
     const namespace = rec.k8sNamespace!;
     const statefulSet = rec.k8sStatefulSet!;
     const kc = loadKubeConfig();
     const appsApi = kc.makeApiClient(k8s.AppsV1Api);
+    const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    let wineRestartRequired = false;
 
-    // Sync store settings to STS env before scaling up — this is where
-    // settings changes (PUT /settings) take effect, on manual restart.
-    const { applyEnvPatchK8s } = await import("./k8s-env-patch.js");
-    await applyEnvPatchK8s(rec, rec.settings).catch(() => {});
+    // Ensure Service exposes all ports the agent needs (game, query, REST, RCON).
+    await ensureServicePorts(rec).catch(() => {});
 
-    const patch = { spec: { replicas: 1 } };
-    await appsApi.patchNamespacedStatefulSetScale(
-      { name: statefulSet, namespace, body: patch },
-      { middleware: [strategicMergeMiddleware()] } as unknown as k8s.Configuration,
-    );
+    // Wine does not consume the Linux image's PORT/QUERY_PORT environment
+    // variables. Keep its process arguments aligned with the instance record,
+    // otherwise the UI can advertise one game port while PalServer listens on
+    // another one.
+    if (rec.runtime === "wine") {
+      await ensureWineLaunchArgs(rec).catch(() => {});
+    }
+
+    // Sync store settings before scaling up. Wine image reads PalWorldSettings.ini
+    // directly (not env vars). PVC = /palworld (entire install persisted).
+    // DepotDownloader runs first in entrypoint, then we write ini over the default.
+    if (rec.runtime === "wine") {
+      const { renderPalWorldSettingsIni } = await import("./settings-ini.js");
+      const { writeFileInPod, makeDirInPod } = await import("./k8s-files.js");
+      const iniContent = renderPalWorldSettingsIni(rec.settings);
+      const iniDir = `Pal/Saved/Config/${configPlatformDir(rec)}`;
+      const iniRelPath = `${iniDir}/PalWorldSettings.ini`;
+      const podWasRunning = await statefulSetHasRunningPod(appsApi, coreApi, namespace, statefulSet);
+      const scalePatch = { spec: { replicas: 1 } };
+      await appsApi.patchNamespacedStatefulSetScale(
+        { name: statefulSet, namespace, body: scalePatch },
+        { middleware: [strategicMergeMiddleware()] } as unknown as k8s.Configuration,
+      );
+      // Wait for Pod to exist, then write ini. On first boot DepotDownloader
+      // creates the dir; on subsequent boots it validates (fast). Retry until exec works.
+      let settingsSynced = false;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        try {
+          await makeDirInPod(rec, iniDir);
+          await writeFileInPod(rec, iniRelPath, iniContent);
+          settingsSynced = true;
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+      if (!settingsSynced) {
+        throw new Error("Wine 設定同步失敗：無法寫入 PalWorldSettings.ini");
+      }
+      // Keep the same manual-edit reconciliation contract as native/docker.
+      // The file lives in the Pod, while the managed snapshot belongs to the
+      // agent instance state.
+      fs.mkdirSync(ctx.instanceDir, { recursive: true });
+      fs.writeFileSync(path.join(ctx.instanceDir, "world-applied.json"), JSON.stringify(rec.settings));
+      wineRestartRequired = !podWasRunning;
+    } else {
+      const { applyEnvPatchK8s } = await import("./k8s-env-patch.js");
+      await applyEnvPatchK8s(rec, rec.settings).catch(() => {});
+      const scalePatch = { spec: { replicas: 1 } };
+      await appsApi.patchNamespacedStatefulSetScale(
+        { name: statefulSet, namespace, body: scalePatch },
+        { middleware: [strategicMergeMiddleware()] } as unknown as k8s.Configuration,
+      );
+    }
+
     if (rec.engineSettings && Object.keys(rec.engineSettings).length > 0) {
       await new Promise((r) => setTimeout(r, 3000));
-      await applyEngineIniK8s(rec).catch(() => {});
+      // A first Wine boot also needs one restart after PalWorldSettings.ini is
+      // written. Let that restart apply Engine.ini as well instead of killing
+      // PID 1 twice; already-running Pods retain the existing Engine.ini flow.
+      await applyEngineIniK8s(rec, !wineRestartRequired).catch(() => {});
     }
-    // Scaling replicas to 1 is idempotent; treat it as an initiated start.
+    if (wineRestartRequired) {
+      // The Wine image does not ship a standalone `kill` binary; use the
+      // POSIX shell builtin so the first boot can restart after ini sync.
+      await execInPod(rec, ["sh", "-c", "kill 1"]);
+    }
+
+    // Auto-configure PalDefender REST if PD is installed but not yet enabled.
+    // This runs AFTER Palworld boots (PD generates RESTConfig.json on first boot).
+    if (rec.runtime === "wine") {
+      try {
+        const pd = await import("./paldefender-rest.js");
+        // Wait for PD to generate RESTConfig.json (retry for up to 5 min).
+        for (let i = 0; i < 30; i++) {
+          const status = await pd.getPdRestStatus(rec, { instanceDir: "" } as DriverContext);
+          if (status.configExists) {
+            let pdRestartRequired = false;
+            if (!status.enabled) {
+              // PD generated defaults (Enabled=false). Override with our config.
+              // Port was already assigned during install (in RESTConfig.json by preConfigureRestApi);
+              // just enable + provision token. Keep the port PD already chose.
+              await pd.setPdRestEnabled(rec, { instanceDir: "" } as DriverContext, true).catch(() => {});
+              pdRestartRequired = true;
+            }
+            if (!status.hasToken) {
+              await pd.provisionPdToken(rec, { instanceDir: "" } as DriverContext, false).catch(() => {});
+              pdRestartRequired = true;
+            }
+            if (pdRestartRequired) {
+              // Restart PID 1 to apply the new config.
+              await execInPod(rec, ["sh", "-c", "kill 1"]).catch(() => {});
+            }
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+      } catch { /* PD not installed — skip */ }
+      // Re-patch Service now that PD port may have changed during auto-config.
+      await ensureServicePorts(rec).catch(() => {});
+    }
+
     return true;
   },
 
@@ -174,11 +270,23 @@ export const k8sDriver: ServerDriver = {
         );
       } catch { /* best-effort */ }
 
+      let processCount: number | undefined;
+      try {
+        const processOut = await execInPod(rec, [
+          "sh",
+          "-c",
+          'n=0; for d in /proc/[0-9]*; do [ -r "$d/stat" ] && n=$((n+1)); done; echo "$n"',
+        ]);
+        const count = Number(processOut.trim());
+        if (Number.isFinite(count) && count >= 0) processCount = count;
+      } catch { /* best-effort */ }
+
       return {
         cpuPercent,
         cpuCores,
         memoryBytes,
         memoryLimitBytes,
+        processCount,
         uptimeSeconds,
       } satisfies InstanceStats;
     } catch {
@@ -325,19 +433,35 @@ export function computeCpuPercent(
   return Math.max(0, (usageMicros - previous.usageMicros) / wallMicros * 100);
 }
 
-const K8S_ENGINE_INI = "Pal/Saved/Config/LinuxServer/Engine.ini";
+async function statefulSetHasRunningPod(
+  appsApi: k8s.AppsV1Api,
+  coreApi: k8s.CoreV1Api,
+  namespace: string,
+  statefulSet: string,
+): Promise<boolean> {
+  const sts = await appsApi.readNamespacedStatefulSet({ name: statefulSet, namespace });
+  if ((sts.spec?.replicas ?? 0) < 1) return false;
+  const pods = await coreApi.listNamespacedPod({
+    namespace,
+    labelSelector: `app=${statefulSet}`,
+  });
+  return pods.items.some((pod) => pod.status?.phase === "Running");
+}
+
+const k8sEngineIni = (rec: InstanceRecord): string =>
+  `Pal/Saved/Config/${configPlatformDir(rec)}/Engine.ini`;
 
 /** Re-apply managed Engine.ini into the running Pod, then kill PID 1 to restart. */
-export async function applyEngineIniK8s(rec: InstanceRecord): Promise<void> {
+export async function applyEngineIniK8s(rec: InstanceRecord, restart = true): Promise<void> {
   if (!rec.engineSettings || Object.keys(rec.engineSettings).length === 0) return;
   const kc = loadKubeConfig();
   const coreApi = kc.makeApiClient(k8s.CoreV1Api);
   const podName = await findPodName(coreApi, rec.k8sNamespace!, rec.k8sStatefulSet!).catch(() => null);
   if (!podName) return;
-  const existing = await readFileInPod(rec, K8S_ENGINE_INI).catch(() => "");
+  const existing = await readFileInPod(rec, k8sEngineIni(rec)).catch(() => "");
   const merged = mergeEnginePatch(existing, rec.engineSettings!);
-  await writeFileInPod(rec, K8S_ENGINE_INI, merged);
-  await execInPod(rec, ["kill", "1"]).catch(() => {});
+  await writeFileInPod(rec, k8sEngineIni(rec), merged);
+  if (restart) await execInPod(rec, ["sh", "-c", "kill 1"]).catch(() => {});
 }
 
 /** k8s rolling restart via annotation patch. */
@@ -350,6 +474,131 @@ export async function rolloutRestart(rec: InstanceRecord): Promise<void> {
   await appsApi.patchNamespacedStatefulSet(
     { name: rec.k8sStatefulSet!, namespace: rec.k8sNamespace!, body: patch },
     { middleware: [strategicMergeMiddleware()] } as unknown as k8s.Configuration,
+  );
+}
+
+/**
+ * Ensure the game-server Service exposes all ports the agent needs to reach:
+ * game (UDP), query (UDP), REST API (TCP), RCON (TCP), and PalDefender REST (TCP).
+ * Missing ports are added via a strategic merge patch. Called on start so the
+ * agent never depends on the user having pre-configured every Service port.
+ */
+export async function ensureServicePorts(rec: InstanceRecord): Promise<void> {
+  if (!rec.k8sServiceName || !rec.k8sNamespace) return;
+  const kc = loadKubeConfig();
+  const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+
+  // Read current Service to see which ports are already exposed.
+  let svc: k8s.V1Service;
+  try {
+    const resp = await coreApi.readNamespacedService({ name: rec.k8sServiceName, namespace: rec.k8sNamespace });
+    svc = resp;
+  } catch {
+    return; // Service doesn't exist — nothing to patch.
+  }
+
+  const existingPorts = new Set(
+    (svc.spec?.ports ?? []).map((p: k8s.V1ServicePort) => `${p.port}/${p.protocol ?? "TCP"}`),
+  );
+  const desiredPorts: { name: string; port: number; protocol: string }[] = [
+    { name: "game", port: rec.gamePort, protocol: "UDP" },
+  ];
+  if (rec.queryPort) desiredPorts.push({ name: "steam", port: rec.queryPort, protocol: "UDP" });
+  if (rec.settings.RESTAPIEnabled) {
+    desiredPorts.push({ name: "rest-api", port: Number(rec.settings.RESTAPIPort), protocol: "TCP" });
+  }
+  if (rec.settings.RCONEnabled) {
+    desiredPorts.push({ name: "rcon", port: Number(rec.settings.RCONPort), protocol: "TCP" });
+  }
+  // PalDefender REST port (dynamic, read from RESTConfig.json if PD installed).
+  if (rec.runtime === "wine") {
+    try {
+      const { readPdPort } = await import("./paldefender-rest.js");
+      const pdPort = await readPdPort(rec, { instanceDir: "" } as DriverContext).catch(() => null);
+      if (pdPort) desiredPorts.push({ name: "pd-rest", port: pdPort, protocol: "TCP" });
+    } catch { /* PD not installed yet */ }
+  }
+
+  // Build the desired port list and reconcile: add missing ports, update changed ones.
+  const current = (svc.spec?.ports ?? []).map((p: k8s.V1ServicePort) => ({
+    name: p.name ?? "", port: p.port ?? 0, targetPort: p.targetPort ?? p.port ?? 0, protocol: p.protocol ?? "TCP",
+  }));
+  const desiredMap = new Map(desiredPorts.map((p) => [p.name, p]));
+  let changed = false;
+  const result: typeof current = [...current];
+  for (const [name, desired] of desiredMap) {
+    const idx = result.findIndex((p) => p.name === name);
+    if (idx === -1) {
+      result.push({ name, port: desired.port, targetPort: desired.port, protocol: desired.protocol });
+      changed = true;
+    } else if (result[idx].port !== desired.port) {
+      result[idx] = { name, port: desired.port, targetPort: desired.port, protocol: desired.protocol };
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  await coreApi.patchNamespacedService(
+    {
+      name: rec.k8sServiceName,
+      namespace: rec.k8sNamespace,
+      body: { spec: { ports: result } },
+    },
+    // A JSON merge patch replaces the complete port list. Strategic merge
+    // uses Service port as its list key on this cluster and can collapse a
+    // TCP/UDP pair that happens to share a numeric port.
+    { middleware: [strategicMergeMiddleware("application/merge-patch+json")] } as unknown as k8s.Configuration,
+  );
+}
+
+// RFC 6902 patches are used for list fields whose merge key varies by
+// Kubernetes resource/version (for example StatefulSet container args).
+// Keep the Observable-like wrapper compatible with @kubernetes/client-node 1.x.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function jsonPatchMiddleware(): any {
+  const of = (value: unknown) => ({ toPromise: () => Promise.resolve(value) });
+  return {
+    pre: (ctx: { setHeaderParam: (k: string, v: string) => void }) => {
+      ctx.setHeaderParam("Content-Type", "application/json-patch+json");
+      return of(ctx);
+    },
+    post: (ctx: unknown) => of(ctx),
+  };
+}
+
+/** Keep the Wine container's explicit listener arguments in sync with the record. */
+async function ensureWineLaunchArgs(rec: InstanceRecord): Promise<void> {
+  if (!rec.k8sStatefulSet || !rec.k8sNamespace) return;
+  const kc = loadKubeConfig();
+  const appsApi = kc.makeApiClient(k8s.AppsV1Api);
+  const sts = await appsApi.readNamespacedStatefulSet({
+    name: rec.k8sStatefulSet,
+    namespace: rec.k8sNamespace,
+  });
+  const containers = sts.spec?.template?.spec?.containers ?? [];
+  const containerIndex = Math.max(0, containers.findIndex((item) => item.name === "palworld-server"));
+  const container = containers[containerIndex];
+  if (!container) throw new Error("找不到 game-server 容器定義");
+
+  const desired = [
+    ...buildLaunchArgs(rec.launchOptions),
+    `-port=${rec.gamePort}`,
+    ...(rec.queryPort ? [`-queryport=${rec.queryPort}`] : []),
+  ];
+  const current = container.args ?? [];
+  if (current.length === desired.length && current.every((arg, index) => arg === desired[index])) return;
+
+  await appsApi.patchNamespacedStatefulSet(
+    {
+      name: rec.k8sStatefulSet,
+      namespace: rec.k8sNamespace,
+      body: [{
+        op: container.args ? "replace" : "add",
+        path: `/spec/template/spec/containers/${containerIndex}/args`,
+        value: desired,
+      }],
+    },
+    { middleware: [jsonPatchMiddleware()] } as unknown as k8s.Configuration,
   );
 }
 

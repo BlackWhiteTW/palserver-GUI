@@ -96,7 +96,7 @@ export function InstanceDetailPage({
   const act = async (action: "start" | "stop" | "restart", skipPortCheck = false) => {
     // 啟動前先檢查五種埠(遊戲/查詢/REST/RCON/PalDefender)有沒有被其他程式占走;
     // 有衝突就開修改面板,而不是讓伺服器啟動失敗留下天書錯誤。
-    if (action === "start" && !skipPortCheck && detail?.backend === "native" && detail.status !== "running") {
+    if (action === "start" && !skipPortCheck && detail && detail.status !== "running") {
       const chk = await client.portsCheck(instanceId).catch(() => null);
       if (chk?.supported && chk.anyConflict) {
         setPortConflict(chk);

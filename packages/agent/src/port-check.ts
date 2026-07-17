@@ -45,23 +45,38 @@ export interface PortCheckEntry {
   suggestion?: number;
 }
 
+export type PortProbe = (entry: { key: PortCheckEntry["key"]; port: number; protocol: "udp" | "tcp" }) => Promise<boolean>;
+
 /** 對一組埠做占用檢查;occupied 額外視為已占用(其他實例的登記埠等)。 */
 export async function checkPorts(
   entries: { key: PortCheckEntry["key"]; port: number; protocol: "udp" | "tcp" }[],
   occupied: { udp: Set<number>; tcp: Set<number> },
+  options: { probe?: PortProbe } = {},
 ): Promise<PortCheckEntry[]> {
   const out: PortCheckEntry[] = [];
   // 本次檢查/建議中已用掉的埠,建議值彼此不互撞
   const taken = { udp: new Set(occupied.udp), tcp: new Set(occupied.tcp) };
+  const seen = { udp: new Set<number>(), tcp: new Set<number>() };
   for (const e of entries) taken[e.protocol].add(e.port);
 
   for (const e of entries) {
-    const osFree = e.protocol === "udp" ? await udpPortFree(e.port) : await tcpPortFree(e.port);
-    const entry: PortCheckEntry = { ...e, free: osFree };
-    if (!osFree) {
+    const duplicate = seen[e.protocol].has(e.port);
+    seen[e.protocol].add(e.port);
+    const externallyFree = options.probe
+      ? await options.probe(e)
+      : e.protocol === "udp"
+        ? await udpPortFree(e.port)
+        : await tcpPortFree(e.port);
+    const free = externallyFree && !occupied[e.protocol].has(e.port) && !duplicate;
+    const entry: PortCheckEntry = { ...e, free };
+    if (!free) {
       for (let cand = e.port + 1; cand < e.port + 200 && cand <= 65535; cand++) {
         if (taken[e.protocol].has(cand)) continue;
-        const ok = e.protocol === "udp" ? await udpPortFree(cand) : await tcpPortFree(cand);
+        const ok = options.probe
+          ? await options.probe({ ...e, port: cand })
+          : e.protocol === "udp"
+            ? await udpPortFree(cand)
+            : await tcpPortFree(cand);
         if (ok) {
           entry.suggestion = cand;
           taken[e.protocol].add(cand);

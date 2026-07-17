@@ -1591,5 +1591,11 @@
   "快速傳送全開": "Unlock all fast travel",
   "解鎖中…": "Unlocking…",
   "把全部快速傳送點解鎖給所有玩家(寫入玩家存檔;需伺服器停止,會先自動備份)": "Unlock every fast travel point for all players (writes player saves; server must be stopped, auto-backup first)",
-  "存檔解鎖(全體玩家快速傳送全開)": "Save unlocks (all fast travel for every player)"
+  "存檔解鎖(全體玩家快速傳送全開)": "Save unlocks (all fast travel for every player)",
+  "鎏金曜石": "Gilded Obsidian",
+  "象牙鎏金晝 / 曜石鎏金夜": "Ivory gold day / obsidian gold night",
+  "深海霓虹": "Deep-Sea Neon",
+  "晴空海晝 / 深海呼吸霓虹夜": "Clear-sky day / breathing neon deep-sea night",
+  "駭客終端": "Hacker Terminal",
+  "琥珀紙帶晝 / 磷光綠夜": "Amber paper day / phosphor green night"
 }

@@ -89,6 +89,36 @@ const THEMES: ThemeDef[] = [
       dark: { bg: "#241a11", card: "#322416", accent: "#ff9d4d", ink: "#fbeedd", accentText: "#2a1808" },
     },
   },
+  {
+    family: "gold",
+    name: "鎏金曜石",
+    blurb: "象牙鎏金晝 / 曜石鎏金夜",
+    free: false,
+    preview: {
+      light: { bg: "#faf6ec", card: "#ffffff", accent: "#b8933a", ink: "#2c2618", accentText: "#ffffff" },
+      dark: { bg: "#16130d", card: "#201b12", accent: "#d9b45c", ink: "#f7f1e3", accentText: "#201a0a" },
+    },
+  },
+  {
+    family: "ocean",
+    name: "深海霓虹",
+    blurb: "晴空海晝 / 深海呼吸霓虹夜",
+    free: false,
+    preview: {
+      light: { bg: "#eef6fc", card: "#ffffff", accent: "#0ea5e9", ink: "#12283c", accentText: "#ffffff" },
+      dark: { bg: "#0a0e14", card: "#121a24", accent: "#00e5ff", ink: "#cdd6e0", accentText: "#012730" },
+    },
+  },
+  {
+    family: "terminal",
+    name: "駭客終端",
+    blurb: "琥珀紙帶晝 / 磷光綠夜",
+    free: false,
+    preview: {
+      light: { bg: "#f6f1e2", card: "#fffdf4", accent: "#cf8a00", ink: "#33301f", accentText: "#fffbe8" },
+      dark: { bg: "#050d06", card: "#0a160b", accent: "#35e65c", ink: "#baffb0", accentText: "#03210c" },
+    },
+  },
 ];
 
 /** 主題的迷你即時預覽:用該主題真實色渲染的小卡(底 + 卡片 + 按鈕 + 文字列)。 */

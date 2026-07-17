@@ -565,3 +565,243 @@ body {
   border: 1.5px solid var(--color-card);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
 }
+
+/* ── 鎏金曜石 · 淺色:象牙紙底 + 香檳金主色,低調貴氣 ── */
+:root[data-theme="gold-light"] {
+  color-scheme: light;
+  --color-sky-soft: #faf6ec;
+  --color-card: #ffffff;
+  --color-card-soft: #f3ead2;
+  --color-ink: #2c2618;
+  --color-ink-muted: #857a5c;
+  --color-pal: #b8933a; /* 香檳金 */
+  --color-pal-strong: #96752b;
+  --color-line: #e6dbbb;
+  --shadow-cute: 0 6px 18px rgb(184 147 58 / 0.16);
+  --shadow-cute-hover: 0 12px 28px rgb(184 147 58 / 0.26);
+}
+:root[data-theme="gold-light"] body {
+  background-color: #faf6ec;
+  background-image:
+    radial-gradient(1200px 560px at 8% -10%, rgb(214 178 92 / 0.18), transparent 60%),
+    radial-gradient(1000px 520px at 100% 2%, rgb(184 147 58 / 0.12), transparent 58%),
+    radial-gradient(1100px 620px at 52% 122%, rgb(150 117 43 / 0.10), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="gold-light"] .bg-pal {
+  background-image: linear-gradient(120deg, #e3c87d 0%, #c6a04a 48%, #a4832f 100%);
+}
+:root[data-theme="gold-light"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #eed592 0%, #d2ac57 48%, #b3903c 100%);
+}
+:root[data-theme="gold-light"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(184 147 58 / 0.07), rgb(214 178 92 / 0.04) 45%, transparent 82%);
+}
+
+/* ── 鎏金曜石 · 深色:霧面曜石底 + 鎏金主色,黑金質感 ── */
+:root[data-theme="gold-dark"] {
+  color-scheme: dark;
+  --color-sky-soft: #16130d;
+  --color-card: #201b12;
+  --color-card-soft: #2b2415;
+  --color-ink: #f7f1e3;
+  --color-ink-muted: #b3a686;
+  --color-pal: #d9b45c; /* 鎏金 */
+  --color-pal-strong: #b8933a;
+  --color-line: #3a3222;
+  --shadow-cute: 0 6px 18px rgb(217 180 92 / 0.14);
+  --shadow-cute-hover: 0 12px 28px rgb(217 180 92 / 0.24);
+}
+:root[data-theme="gold-dark"] body {
+  background-color: #16130d;
+  background-image:
+    radial-gradient(1200px 560px at 8% -10%, rgb(217 180 92 / 0.13), transparent 60%),
+    radial-gradient(1000px 520px at 100% 2%, rgb(166 128 47 / 0.10), transparent 58%),
+    radial-gradient(1100px 620px at 52% 122%, rgb(120 92 32 / 0.10), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="gold-dark"] .bg-pal {
+  background-image: linear-gradient(120deg, #eccf85 0%, #d9b45c 48%, #a8852f 100%);
+}
+:root[data-theme="gold-dark"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #f5dc97 0%, #e3c069 48%, #b8933a 100%);
+}
+:root[data-theme="gold-dark"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(217 180 92 / 0.08), rgb(166 128 47 / 0.05) 45%, transparent 82%);
+}
+
+/* ── 深海霓虹 · 淺色:晴空海,乾淨的天藍 ── */
+:root[data-theme="ocean-light"] {
+  color-scheme: light;
+  --color-sky-soft: #eef6fc;
+  --color-card: #ffffff;
+  --color-card-soft: #d9edfa;
+  --color-ink: #12283c;
+  --color-ink-muted: #52738f;
+  --color-pal: #0ea5e9; /* 晴空藍 */
+  --color-pal-strong: #0378b6;
+  --color-line: #bcdcf0;
+  --shadow-cute: 0 6px 18px rgb(14 165 233 / 0.16);
+  --shadow-cute-hover: 0 12px 28px rgb(14 165 233 / 0.26);
+}
+:root[data-theme="ocean-light"] body {
+  background-color: #eef6fc;
+  background-image:
+    radial-gradient(1200px 560px at 8% -10%, rgb(14 165 233 / 0.16), transparent 60%),
+    radial-gradient(1000px 520px at 100% 2%, rgb(34 211 238 / 0.12), transparent 58%),
+    radial-gradient(1100px 620px at 52% 122%, rgb(59 130 246 / 0.10), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="ocean-light"] .bg-pal {
+  background-image: linear-gradient(120deg, #4ac9f5 0%, #0ea5e9 48%, #2563eb 100%);
+}
+:root[data-theme="ocean-light"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #5fd4fb 0%, #1fb2f2 48%, #3b74f0 100%);
+}
+:root[data-theme="ocean-light"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(14 165 233 / 0.07), rgb(34 211 238 / 0.04) 45%, transparent 82%);
+}
+
+/* ── 深海霓虹 · 深色:深靛黑底 + 青色霓虹,極光呼吸背景 + 掃描線 + 按鈕呼吸光。
+     動畫層走 body::before/::after(fixed、z-index:-1、pointer-events:none),
+     只作用在本主題;prefers-reduced-motion 時全部靜止。 ── */
+:root[data-theme="ocean-dark"] {
+  color-scheme: dark;
+  --color-sky-soft: #0a0e14;
+  --color-card: #121a24;
+  --color-card-soft: #1a2634;
+  --color-ink: #cdd6e0;
+  --color-ink-muted: #8899aa;
+  --color-pal: #00e5ff; /* 霓虹青 */
+  --color-pal-strong: #00b8d4;
+  --color-line: #1f3242;
+  --shadow-cute: 0 6px 18px rgb(0 229 255 / 0.14);
+  --shadow-cute-hover: 0 12px 28px rgb(0 229 255 / 0.24);
+}
+:root[data-theme="ocean-dark"] body {
+  background-color: #0a0e14;
+}
+:root[data-theme="ocean-dark"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 30%, rgb(0 80 100 / 0.35) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 80% 70%, rgb(0 60 90 / 0.25) 0%, transparent 50%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #0d1218 0%, #0a0e14 45%);
+  animation: pal-ocean-aurora 18s ease-in-out infinite alternate;
+}
+:root[data-theme="ocean-dark"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgb(0 0 0 / 0.03) 2px, rgb(0 0 0 / 0.03) 4px);
+  animation: pal-scan-flicker 6s ease-in-out infinite;
+}
+@keyframes pal-ocean-aurora {
+  0%   { filter: hue-rotate(0deg); transform: scale(1); }
+  100% { filter: hue-rotate(12deg); transform: scale(1.03); }
+}
+@keyframes pal-scan-flicker {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.55; }
+}
+:root[data-theme="ocean-dark"] .bg-pal {
+  background-image: linear-gradient(120deg, #33eaff 0%, #00e5ff 48%, #0090c0 100%);
+  animation: pal-ocean-breath 4.5s ease-in-out infinite; /* 呼吸燈 */
+}
+:root[data-theme="ocean-dark"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #5defff 0%, #21e9ff 48%, #00a5d8 100%);
+}
+@keyframes pal-ocean-breath {
+  0%, 100% { box-shadow: 0 0 12px rgb(0 229 255 / 0.15); }
+  50%      { box-shadow: 0 0 28px rgb(0 229 255 / 0.4); }
+}
+:root[data-theme="ocean-dark"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(0 229 255 / 0.06), rgb(0 144 192 / 0.04) 45%, transparent 82%);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="ocean-dark"] body::before,
+  :root[data-theme="ocean-dark"] body::after,
+  :root[data-theme="ocean-dark"] .bg-pal {
+    animation: none !important;
+  }
+}
+
+/* ── 駭客終端 · 淺色:琥珀紙帶,舊列印終端的暖紙感 ── */
+:root[data-theme="terminal-light"] {
+  color-scheme: light;
+  --color-sky-soft: #f6f1e2;
+  --color-card: #fffdf4;
+  --color-card-soft: #efe6c8;
+  --color-ink: #33301f;
+  --color-ink-muted: #7d7654;
+  --color-pal: #cf8a00; /* 琥珀 */
+  --color-pal-strong: #a86e00;
+  --color-line: #ddd2ac;
+  --shadow-cute: 0 6px 18px rgb(207 138 0 / 0.14);
+  --shadow-cute-hover: 0 12px 28px rgb(207 138 0 / 0.24);
+}
+:root[data-theme="terminal-light"] body {
+  background-color: #f6f1e2;
+  background-image:
+    radial-gradient(1200px 560px at 8% -10%, rgb(207 138 0 / 0.12), transparent 60%),
+    radial-gradient(1100px 620px at 52% 122%, rgb(168 110 0 / 0.08), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="terminal-light"] .bg-pal {
+  background-image: linear-gradient(120deg, #e8ae2e 0%, #cf8a00 48%, #a86e00 100%);
+}
+:root[data-theme="terminal-light"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #f2bc44 0%, #dd9812 48%, #b87c0c 100%);
+}
+:root[data-theme="terminal-light"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(207 138 0 / 0.06), transparent 82%);
+}
+
+/* ── 駭客終端 · 深色:CRT 磷光綠 + 掃描線,復古機房 ── */
+:root[data-theme="terminal-dark"] {
+  color-scheme: dark;
+  --color-sky-soft: #050d06;
+  --color-card: #0a160b;
+  --color-card-soft: #112411;
+  --color-ink: #baffb0;
+  --color-ink-muted: #55a04e;
+  --color-pal: #35e65c; /* 磷光綠 */
+  --color-pal-strong: #17b33b;
+  --color-line: #1d3a1c;
+  --shadow-cute: 0 6px 18px rgb(53 230 92 / 0.12);
+  --shadow-cute-hover: 0 12px 28px rgb(53 230 92 / 0.22);
+}
+:root[data-theme="terminal-dark"] body {
+  background-color: #050d06;
+  background-image: radial-gradient(1100px 620px at 50% 40%, rgb(53 230 92 / 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+:root[data-theme="terminal-dark"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgb(0 0 0 / 0.05) 2px, rgb(0 0 0 / 0.05) 4px);
+  animation: pal-scan-flicker 6s ease-in-out infinite;
+}
+:root[data-theme="terminal-dark"] .bg-pal {
+  background-image: linear-gradient(120deg, #64f284 0%, #35e65c 48%, #14963a 100%);
+}
+:root[data-theme="terminal-dark"] .bg-pal:hover {
+  background-image: linear-gradient(120deg, #7cf796 0%, #4aeb6d 48%, #1cb046 100%);
+}
+:root[data-theme="terminal-dark"] .bg-card {
+  background-image: linear-gradient(120deg, rgb(53 230 92 / 0.06), transparent 82%);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="terminal-dark"] body::after {
+    animation: none !important;
+  }
+}

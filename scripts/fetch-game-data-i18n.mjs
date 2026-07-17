@@ -149,6 +149,7 @@ async function updateTechnologies() {
         icon = `technologies/${basename}`;
         referencedTechnologyIcons.add(basename);
         downloadedTechnologyIcons++;
+        await sleep(150); // 禮貌節流,比照 fetch-human-npcs.mjs(維護者與 paldb.cc 的約定)
       }
     } else {
       // PalDB 偶爾會讓科技卡片暫時缺圖;同 ID 道具的 PalDB 圖示可安全後備。

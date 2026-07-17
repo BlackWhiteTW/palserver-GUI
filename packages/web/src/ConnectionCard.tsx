@@ -194,6 +194,8 @@ export function ConnectionCard({
       )}
 
       <p className="text-xs text-ink-muted">
+        {t("朋友這樣加入:開啟 Palworld → 加入多人遊戲 → 在畫面底部的輸入欄貼上位址 → 連線。")}
+        <br />
         {t("提示:朋友連線用的是「遊戲埠 UDP {port}」。若朋友連不進來,先確認伺服器正在運作中、且防火牆有放行。", { port })}
       </p>
     </div>

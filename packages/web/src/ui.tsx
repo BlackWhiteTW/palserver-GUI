@@ -51,7 +51,7 @@ export function EmptyState({
       {icon && <div className={`mx-auto mb-2 w-fit ${compact ? "[&_svg]:size-8" : "[&_svg]:size-11"}`}>{icon}</div>}
       {title && <p className="font-bold">{title}</p>}
       {children != null && children !== "" && (
-        <p className={`text-[13px]${title || icon ? " mt-1" : ""}`}>{children}</p>
+        <div className={`text-[13px]${title || icon ? " mt-1" : ""}`}>{children}</div>
       )}
     </div>
   );

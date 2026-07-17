@@ -1507,5 +1507,9 @@
   "(不刪檔,Lua 模組與設定都保留)再開服。": " (nothing is deleted — Lua mods and configs are kept) and then start the server.",
   "注意:這台裝了模組({list})。遊戲更新後模組常暫時不相容 — 若更新完啟動異常,到「模組」分頁把模組「更新到最新版」或先「停用」。": "Note: mods are installed ({list}). After game updates mods are often temporarily incompatible — if the server misbehaves after updating, go to the Mods tab and update the mods to latest, or disable them first.",
   "更新會重新下載伺服器檔案(數 GB),期間伺服器無法啟動。": "Updating re-downloads the server files (several GB); the server can't start during the update.",
-  "確定要更新嗎?": "Update now?"
+  "確定要更新嗎?": "Update now?",
+  "這條設定連結已失效(配對碼過期或已重新產生)。請伺服器主人在 GUI 的「設定」重新產生一條設定連結給你;如果這是你自己的 agent,配對碼就在 agent 視窗裡。": "This setup link is no longer valid (the pairing code expired or was regenerated). Ask the server owner to generate a new setup link in the GUI's Settings; if this is your own agent, the pairing code is shown in the agent window.",
+  "還沒安裝 agent?看下載與設定教學": "Don't have the agent yet? Download & setup guide",
+  "朋友這樣加入:開啟 Palworld → 加入多人遊戲 → 在畫面底部的輸入欄貼上位址 → 連線。": "How friends join: open Palworld → Join Multiplayer Game → paste the address into the box at the bottom → Connect.",
+  "Wine 模式(Windows binary,支援 PalDefender)": "Wine mode (Windows binary; supports PalDefender)"
 }

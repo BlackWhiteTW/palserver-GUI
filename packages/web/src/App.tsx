@@ -351,7 +351,16 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
       {instances === null ? (
         <EmptyState icon={<GiEggClutch className="animate-bounce" />}>{t("載入中…")}</EmptyState>
       ) : instances.length === 0 ? (
-        <EmptyState icon={<GiSheep />}>{t("還沒有伺服器,建立第一個吧!")}</EmptyState>
+        <EmptyState icon={<GiSheep />}>
+          {t("還沒有伺服器,建立第一個吧!")}
+          <button
+            type="button"
+            className={`${btn} mx-auto mt-3 flex items-center gap-1.5`}
+            onClick={() => setShowCreate(true)}
+          >
+            <FiPlus className="size-4" /> {t("建立伺服器")}
+          </button>
+        </EmptyState>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={ordered.map((i) => i.id)} strategy={rectSortingStrategy}>
@@ -377,10 +386,13 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
             setShowCreate(false);
             setPendingImport(null);
           }}
-          onCreated={() => {
+          onCreated={(id) => {
             setShowCreate(false);
             setPendingImport(null);
             void refresh();
+            // 建立完成直接進入該伺服器頁:安裝進度/啟動/邀請朋友的下一步都在那裡,
+            // 不把新手丟回列表自己猜。
+            if (id) onOpen(id);
           }}
         />
       )}
@@ -553,7 +565,7 @@ function CreateDialog({
 }: {
   client: AgentClient;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (id?: string) => void;
   /** 從「匯入存檔」流程帶進來的世界 — 建立成功後自動匯入並設為啟用世界。 */
   importWorld?: ExternalWorldCandidate;
 }) {
@@ -616,7 +628,7 @@ function CreateDialog({
         settings: { ...presetValues, ServerPlayerMaxNum: maxPlayers, ServerPassword: serverPassword },
       });
       if (importWorld) await client.importSave(created.id, importWorld.path, false);
-      onCreated();
+      onCreated(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);

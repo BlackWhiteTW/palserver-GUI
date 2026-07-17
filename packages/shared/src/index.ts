@@ -208,8 +208,9 @@ export interface ModsStatus {
   /** 伺服器本體檔案是否已就位;false = 尚未安裝完成(前端據此隱藏 pak 卡等)。
    *  舊版 agent 沒有此欄位 → 前端以 true 處理。 */
   serverInstalled?: boolean;
-  ue4ss: { installed: boolean; version: string | null };
-  paldefender: { installed: boolean; version: string | null };
+  /** enabled:false = 已「暫時停用」(主 DLL 改名保留,檔案都在);舊 agent 無此欄位。 */
+  ue4ss: { installed: boolean; version: string | null; enabled?: boolean };
+  paldefender: { installed: boolean; version: string | null; enabled?: boolean };
   /** UE4SS Lua mods found under the mods dir. */
   luaMods: { name: string; enabled: boolean }[];
   /** Server-dir-relative path of the Lua mods folder (layout varies by UE4SS

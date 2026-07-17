@@ -41,11 +41,24 @@ export function VersionCard({
   if (!version) return null;
 
   const update = async (fresh = false) => {
+    // 改版日最大坑:更新後模組常與新版不相容 → 確認文案點名已裝的模組
+    let modNote = "";
+    if (!fresh) {
+      const m = await client.mods(instanceId).catch(() => null);
+      const names = [m?.ue4ss.installed ? "UE4SS" : "", m?.paldefender.installed ? "PalDefender" : ""].filter(Boolean);
+      if (names.length) {
+        modNote =
+          "\n\n" +
+          t("注意:這台裝了模組({list})。遊戲更新後模組常暫時不相容 — 若更新完啟動異常,到「模組」分頁把模組「更新到最新版」或先「停用」。", {
+            list: names.join(" / "),
+          });
+      }
+    }
     const message = fresh
       ? t(
           "重灌會【刪除】遊戲本體檔案後全新下載(數 GB)。\n\n會保留:世界存檔與設定檔(整個 Pal/Saved,含 PalWorldSettings.ini / Engine.ini),並在開始前自動備份啟用中的世界。\n會刪除:已安裝的模組(UE4SS / PalDefender / pak),重灌後需重新安裝。\n\n確定要重灌嗎?",
         )
-      : t("更新會重新下載伺服器檔案(數 GB),期間伺服器無法啟動。\n\n確定要更新嗎?");
+      : t("更新會重新下載伺服器檔案(數 GB),期間伺服器無法啟動。") + modNote + "\n\n" + t("確定要更新嗎?");
     if (!confirm(message)) return;
     setBusy(true);
     setError(null);

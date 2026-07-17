@@ -23,6 +23,8 @@ export function ModsTab({
 }) {
   useI18n();
   const [mods, setMods] = useState<ModsStatus | null>(null);
+  // 各元件最新穩定版(「有新版」徽章);null=查詢失敗或尚未載入
+  const [latest, setLatest] = useState<{ ue4ss: string | null; paldefender: string | null } | null>(null);
   const [pakMods, setPakMods] = useState<{ name: string; size: number; enabled: boolean }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,6 +47,10 @@ export function ModsTab({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    client.modsLatest().then(setLatest).catch(() => {});
+  }, [client]);
 
   const install = async (component: ModComponent, channel: "stable" | "beta" = "stable") => {
     if (channel === "beta" && !confirm(t("測試版(Beta)可能不穩定,但含較新的功能(例如玩家細節 API)。\n\n確定要安裝最新測試版嗎?"))) {
@@ -73,6 +79,19 @@ export function ModsTab({
     try {
       await client.uninstallMod(instanceId, component);
       await refresh();
+      onModsChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const setComponentEnabled = async (component: ModComponent, enabled: boolean) => {
+    setBusy(component);
+    setError(null);
+    try {
+      setMods(await client.setModEnabled(instanceId, component, enabled));
       onModsChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -124,7 +143,7 @@ export function ModsTab({
         <span className="inline-flex items-start gap-2">
           <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
-            {t("每次")} <b>{t("Palworld 改版")}</b>{t("後,PalDefender / UE4SS 常會")}<b>{t("暫時無法使用")}</b>{t(",要等模組作者釋出相容版本(通常改版後幾天內)。若改版後伺服器啟動異常或閃退,先回這裡")}<b>{t("更新到最新版")}</b>{t(",或先")}<b>{t("移除")}</b>{t("模組再開服。")}
+            {t("每次")} <b>{t("Palworld 改版")}</b>{t("後,PalDefender / UE4SS 常會")}<b>{t("暫時無法使用")}</b>{t(",要等模組作者釋出相容版本(通常改版後幾天內)。若改版後伺服器啟動異常或閃退,先回這裡")}<b>{t("更新到最新版")}</b>{t(",或先按")}<b>{t("停用")}</b>{t("(不刪檔,Lua 模組與設定都保留)再開服。")}
           </span>
         </span>
       </DismissibleWarning>

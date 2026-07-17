@@ -369,6 +369,19 @@ export class AgentClient {
     return this.request(`/api/instances/${id}/mods`);
   }
 
+  /** 各模組元件的最新穩定版 tag(agent 端快取;查詢失敗值為 null)。 */
+  modsLatest(): Promise<{ ue4ss: string | null; paldefender: string | null }> {
+    return this.request("/api/mods/latest");
+  }
+
+  /** 暫時停用/啟用模組(不刪檔,改名主 DLL)。 */
+  setModEnabled(id: string, component: ModComponent, enabled: boolean): Promise<ModsStatus> {
+    return this.request(`/api/instances/${id}/mods/${component}/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   installMod(
     id: string,
     component: ModComponent,

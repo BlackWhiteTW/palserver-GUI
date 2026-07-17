@@ -52,7 +52,7 @@ import { k8sDriver } from "./k8s.js";
 import { SERVER_LAUNCHER, classifyServerDir, detectManualIniEdits, installProgressOf, isInstalling, lastInstallError, moveServerFiles, nativeDriver, serverRoot, updateServer, writeWorldIni } from "./native.js";
 import { cachedVersionSummary, getVersionStatus } from "./version.js";
 import { getConnectionInfo } from "./connectivity.js";
-import { getModsStatus, installComponent, installedEnhancements, removeComponent, setLuaModEnabled } from "./mods.js";
+import { getModsStatus, installComponent, latestModVersions, setModEnabled, installedEnhancements, removeComponent, setLuaModEnabled } from "./mods.js";
 import { checkPorts, udpPortFree } from "./port-check.js";
 import { runtimePortFree } from "./runtime-port-check.js";
 import * as pakMods from "./pak-mods.js";
@@ -1109,6 +1109,23 @@ export function registerRoutes(
       } catch { /* PD config is best-effort */ }
     }
     return { installed: component, version, applied: "on-next-restart" };
+  });
+
+  /** 各模組元件的最新穩定版(給「有新版」徽章;agent 端 6h 快取)。 */
+  app.get("/api/mods/latest", async () => latestModVersions());
+
+  /** 暫時停用/啟用(不刪檔,改名主 DLL):改版日的安全退路。 */
+  app.post("/api/instances/:id/mods/:component/enabled", async (req, reply) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const component = z
+      .enum(["ue4ss", "paldefender"])
+      .parse((req.params as { component: string }).component);
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    if (rec.backend === "native" && await isRunning(rec)) {
+      return reply.code(409).send({ error: "請先停止伺服器再停用或啟用模組(執行中時 DLL 被鎖定)" });
+    }
+    setModEnabled(rec, ctxOf(rec), component, enabled);
+    return getModsStatus(rec, ctxOf(rec));
   });
 
   app.post("/api/instances/:id/mods/:component/uninstall", async (req, reply) => {

@@ -128,6 +128,40 @@ const DEFAULT_MOD_FILES: Record<ModComponent, string[]> = {
   ue4ss: ["UE4SS.dll", "UE4SS-settings.ini", "ue4ss", "Mods"],
 };
 
+const DISABLED_SUFFIX = ".palserver-disabled";
+
+/** 各元件「停用時改名」的目標 DLL(相對 win64)。 */
+const DISABLE_TARGETS: Record<ModComponent, string[]> = {
+  ue4ss: ["UE4SS.dll", "ue4ss/UE4SS.dll", "UE4SS/UE4SS.dll"],
+  paldefender: ["PalDefender.dll"],
+};
+
+function componentState(root: string, component: ModComponent): { installed: boolean; enabled: boolean } {
+  let active = false;
+  let disabled = false;
+  for (const rel of DISABLE_TARGETS[component]) {
+    if (fs.existsSync(path.join(win64Dir(root), rel))) active = true;
+    if (fs.existsSync(path.join(win64Dir(root), rel + DISABLED_SUFFIX))) disabled = true;
+  }
+  return { installed: active || disabled, enabled: active };
+}
+
+/** 暫時停用/重新啟用(不刪任何檔):把主 DLL 改名加 .palserver-disabled 尾碼。
+ *  改版日的安全退路 —— 移除會連使用者的 Lua 模組一起刪,停用不會。
+ *  僅支援 native Windows(檔案就在本機);需伺服器停止(DLL 鎖定)。 */
+export function setModEnabled(rec: InstanceRecord, ctx: DriverContext, component: ModComponent, enabled: boolean): void {
+  if (rec.backend !== "native" || process.platform !== "win32") {
+    throw Object.assign(new Error("停用/啟用僅支援 Windows 原生模式"), { statusCode: 409 });
+  }
+  const root = serverRoot(rec, ctx);
+  for (const rel of DISABLE_TARGETS[component]) {
+    const active = path.join(win64Dir(root), rel);
+    const off = active + DISABLED_SUFFIX;
+    if (enabled && fs.existsSync(off)) fs.renameSync(off, active);
+    if (!enabled && fs.existsSync(active)) fs.renameSync(active, off);
+  }
+}
+
 export async function getModsStatus(rec: InstanceRecord, ctx: DriverContext): Promise<ModsStatus> {
   const unsupported = (reason: string, serverInstalled = true): ModsStatus => ({
     supported: false,
@@ -171,17 +205,17 @@ export async function getModsStatus(rec: InstanceRecord, ctx: DriverContext): Pr
   }
 
   const marker = readMarker(root);
-  const ue4ssInstalled =
-    fs.existsSync(path.join(win64Dir(root), "ue4ss", "UE4SS.dll")) ||
-    fs.existsSync(path.join(win64Dir(root), "UE4SS.dll"));
-  const paldefenderInstalled = fs.existsSync(path.join(win64Dir(root), "PalDefender.dll"));
+  const ue4ssState = componentState(root, "ue4ss");
+  const paldefenderState = componentState(root, "paldefender");
+  const ue4ssInstalled = ue4ssState.installed;
+  const paldefenderInstalled = paldefenderState.installed;
 
   const modsDir = ue4ssModsDir(root);
   return {
     supported: true,
     serverInstalled: true,
-    ue4ss: { installed: ue4ssInstalled, version: marker.ue4ss ?? null },
-    paldefender: { installed: paldefenderInstalled, version: marker.paldefender ?? null },
+    ue4ss: { installed: ue4ssInstalled, version: marker.ue4ss ?? null, enabled: ue4ssState.enabled },
+    paldefender: { installed: paldefenderInstalled, version: marker.paldefender ?? null, enabled: paldefenderState.enabled },
     luaMods: listLuaMods(root),
     luaModsDir: fs.existsSync(modsDir)
       ? path.relative(root, modsDir).split(path.sep).join("/")
@@ -261,6 +295,34 @@ interface GitRelease {
   prerelease: boolean;
   draft: boolean;
   assets: { name: string; browser_download_url: string }[];
+}
+
+/** 各元件的最新穩定版 tag(6 小時記憶體快取;查詢失敗回 null,不丟錯)。
+ *  給「有新版可更新」徽章用 —— 改版日玩家最需要知道模組能不能更了。 */
+const latestCache = new Map<ModComponent, { tag: string | null; at: number }>();
+const LATEST_TTL = 6 * 60 * 60 * 1000;
+export async function latestModVersions(): Promise<Record<ModComponent, string | null>> {
+  const out = {} as Record<ModComponent, string | null>;
+  for (const component of ["ue4ss", "paldefender"] as ModComponent[]) {
+    const hit = latestCache.get(component);
+    if (hit && Date.now() - hit.at < LATEST_TTL) {
+      out[component] = hit.tag;
+      continue;
+    }
+    try {
+      const { repo } = GH_REPOS[component];
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { "user-agent": "palserver-gui", accept: "application/vnd.github+json" },
+      });
+      const tag = res.ok ? ((await res.json()) as GitRelease).tag_name : null;
+      latestCache.set(component, { tag, at: Date.now() });
+      out[component] = tag;
+    } catch {
+      latestCache.set(component, { tag: null, at: Date.now() });
+      out[component] = null;
+    }
+  }
+  return out;
 }
 
 async function resolveDownload(

@@ -1497,5 +1497,15 @@
   "重啟設定": "Restart settings",
   "錯誤與警告": "Errors & warnings",
   "聊天與事件": "Chat & events",
-  "{n} 行新日誌,跳到最新": "{n} new lines — jump to latest"
+  "{n} 行新日誌,跳到最新": "{n} new lines — jump to latest",
+  "已停用": "Disabled",
+  "有新版 {v}": "Update available {v}",
+  "改版後模組常需更新才相容;按「更新到最新版」升級": "After game updates, mods usually need an update to stay compatible; click “Update to latest”.",
+  "重新啟用(把 DLL 改回原名)": "Re-enable (renames the DLL back)",
+  "暫時停用不刪檔:改版後模組不相容時的安全退路,Lua/設定檔都會保留": "Temporarily disable without deleting anything: the safe fallback when mods break after a game update — Lua mods and configs are kept",
+  ",或先按": ", or first click ",
+  "(不刪檔,Lua 模組與設定都保留)再開服。": " (nothing is deleted — Lua mods and configs are kept) and then start the server.",
+  "注意:這台裝了模組({list})。遊戲更新後模組常暫時不相容 — 若更新完啟動異常,到「模組」分頁把模組「更新到最新版」或先「停用」。": "Note: mods are installed ({list}). After game updates mods are often temporarily incompatible — if the server misbehaves after updating, go to the Mods tab and update the mods to latest, or disable them first.",
+  "更新會重新下載伺服器檔案(數 GB),期間伺服器無法啟動。": "Updating re-downloads the server files (several GB); the server can't start during the update.",
+  "確定要更新嗎?": "Update now?"
 }

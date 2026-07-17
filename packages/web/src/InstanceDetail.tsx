@@ -220,8 +220,10 @@ export function InstanceDetailPage({
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowLogs(true)}
+            title={t("日誌")}
+            aria-label={t("日誌")}
           >
-            <FiFileText className="size-4" /> {t("日誌")}
+            <FiFileText className="size-4" />
           </button>
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
@@ -466,7 +468,7 @@ function OverviewTab({
           </p>
         </div>
       )}
-      {/* 邀請卡顯示時:左欄「伺服器資訊+遊戲版本」疊放,右欄邀請卡撐同高;
+      {/* 邀請卡顯示時:左欄「伺服器資訊+遊戲版本」疊放,右欄邀請卡(內容高度);
           關掉邀請卡後:回到資訊左、版本右的兩欄並排。 */}
       {(() => {
         const infoCard = (
@@ -499,7 +501,7 @@ function OverviewTab({
             {versionCard}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid items-start gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-4">
               {infoCard}
               {versionCard}

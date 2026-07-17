@@ -22,10 +22,14 @@ Add-Type -AssemblyName System.Drawing
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 # 圖示與網頁 favicon 同款(web 靜態檔的 logo.png);載入失敗退回系統預設。
+# 注意:一定要經 MemoryStream 載入 —— System.Drawing.Bitmap(path) 會鎖住檔案
+# 直到程序結束,web/ 的重建與 GUI 自我更新都會因此 EPERM。
 $notify.Icon = [System.Drawing.SystemIcons]::Application
 if ($IconPng -and (Test-Path $IconPng)) {
   try {
-    $bmp = New-Object System.Drawing.Bitmap($IconPng)
+    $iconBytes = [System.IO.File]::ReadAllBytes($IconPng)
+    $iconStream = New-Object System.IO.MemoryStream(,$iconBytes)
+    $bmp = New-Object System.Drawing.Bitmap($iconStream)
     $notify.Icon = [System.Drawing.Icon]::FromHandle($bmp.GetHicon())
   } catch { }
 }
@@ -78,6 +82,18 @@ export function startTray(opts: { url: string; code: string; iconPng?: string | 
   if (process.platform !== "win32") return null;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    // 圖示複製一份到 DATA_DIR 再交給 tray:就算 PS 端鎖住檔案,鎖的也是複本,
+    // 原檔(web/logo.png)的重建與自我更新不受影響。
+    let iconArg: string[] = [];
+    if (opts.iconPng) {
+      try {
+        const iconCopy = path.join(DATA_DIR, "tray-icon.png");
+        fs.copyFileSync(opts.iconPng, iconCopy);
+        iconArg = ["-IconPng", iconCopy];
+      } catch {
+        /* 複製不了就用系統預設圖示 */
+      }
+    }
     const scriptPath = path.join(DATA_DIR, "tray.ps1");
     fs.writeFileSync(scriptPath, "﻿" + TRAY_PS1, "utf8");
     const child = spawn(
@@ -98,7 +114,7 @@ export function startTray(opts: { url: string; code: string; iconPng?: string | 
         opts.code,
         "-AgentPid",
         String(process.pid),
-        ...(opts.iconPng ? ["-IconPng", opts.iconPng] : []),
+        ...iconArg,
       ],
       { windowsHide: true, stdio: "ignore" },
     );

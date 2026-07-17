@@ -1173,6 +1173,37 @@ export function registerRoutes(
         target: z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9_.\- ]+$/),
       })
       .parse(req.body);
+
+    // 若 target 只有 X Y 兩軸（不含 Z），判斷是否為遠距離傳送。
+    // 直線距離 >= 250 時做兩次 tp，讓地形串流載入後第二次 tp 才正確著地。
+    const coord2d = target.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/);
+    if (coord2d) {
+      const tx = parseFloat(coord2d[1]);
+      const ty = parseFloat(coord2d[2]);
+
+      // 找出要重傳幾次：讀取目前位置計算距離
+      let attempts = 2; // 預設兩次（遠距離）
+      try {
+        const posOut = await rconExec(rec, `getpos ${source}`);
+        const xm = posOut.match(/X\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
+        const ym = posOut.match(/Y\s*[:=]\s*(-?\d+(?:\.\d+)?)/i);
+        if (xm && ym) {
+          const dx = tx - parseFloat(xm[1]);
+          const dy = ty - parseFloat(ym[1]);
+          if (Math.sqrt(dx * dx + dy * dy) < 250) attempts = 1;
+        }
+      } catch {
+        // getpos 失敗則保守用兩次 tp
+      }
+
+      await rconExec(rec, `tp ${source} ${tx} ${ty}`);
+      for (let i = 1; i < attempts; i++) {
+        await sleep(500);
+        await rconExec(rec, `tp ${source} ${tx} ${ty}`);
+      }
+      return { output: "OK" };
+    }
+
     const output = await rconExec(rec, `tp ${source} ${target}`);
     return { output };
   });
@@ -1759,26 +1790,25 @@ export function registerRoutes(
   // ── host directory browser (for server path picker in create dialog) ──
   const HostDirQuery = z.object({ path: z.string().max(1000).default("") });
 
-  /** 列出 Windows 上所有可用的磁碟機代號。 */
-  function listDrives(): DirEntry[] {
-    const drives: DirEntry[] = [];
-    for (let i = 65; i <= 90; i++) {
-      const letter = String.fromCharCode(i);
-      const root = `${letter}:\\`;
-      try {
-        fs.accessSync(root, fs.constants.F_OK);
-        drives.push({
-          name: root,
-          isDir: true,
-          size: 0,
-          modifiedAt: "",
-          editable: false,
-        });
-      } catch {
-        // 不存在的磁碟機
-      }
-    }
-    return drives;
+  /** 非同步列出 Windows 上所有可用的磁碟機代號。 */
+  async function listDrives(): Promise<DirEntry[]> {
+    const letters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+    const results = await Promise.allSettled(
+      letters.map(async (letter) => {
+        const root = `${letter}:\\`;
+        await fs.promises.access(root, fs.constants.F_OK);
+        return root;
+      }),
+    );
+    return results
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => ({
+        name: (r as PromiseFulfilledResult<string>).value,
+        isDir: true,
+        size: 0,
+        modifiedAt: "",
+        editable: false,
+      } satisfies DirEntry));
   }
 
   app.get("/api/host/list-dir", async (req) => {
@@ -1787,23 +1817,30 @@ export function registerRoutes(
 
     // Windows: 空路徑 → 列出所有可用磁碟機
     if (!target && process.platform === "win32") {
-      return { path: "", entries: listDrives() };
+      return { path: "", entries: await listDrives() };
     }
 
     const resolved = target ? path.resolve(target) : "/";
     if (target && !path.isAbsolute(target)) {
       throw Object.assign(new Error("請輸入絕對路徑"), { statusCode: 400 });
     }
-    const stat = fs.statSync(resolved, { throwIfNoEntry: false });
-    if (!stat) throw Object.assign(new Error("路徑不存在"), { statusCode: 404 });
-    if (!stat.isDirectory()) throw Object.assign(new Error("不是資料夾"), { statusCode: 400 });
-    const entries: DirEntry[] = fs
-      .readdirSync(resolved, { withFileTypes: true })
-      .flatMap((entry) => {
+    let stat: fs.Stats | undefined;
+    try {
+      stat = await fs.promises.stat(resolved);
+    } catch {
+      // 路徑不存在
+    }
+    if (!stat?.isDirectory()) {
+      throw stat
+        ? Object.assign(new Error("不是資料夾"), { statusCode: 400 })
+        : Object.assign(new Error("路徑不存在"), { statusCode: 404 });
+    }
+    const dirents = await fs.promises.readdir(resolved, { withFileTypes: true });
+    const results = await Promise.allSettled(
+      dirents.map(async (entry): Promise<DirEntry | null> => {
         try {
           const full = path.join(resolved, entry.name);
-          const s = fs.statSync(full, { throwIfNoEntry: false });
-          if (!s) return [];
+          const s = await fs.promises.stat(full);
           return {
             name: entry.name,
             isDir: entry.isDirectory(),
@@ -1812,9 +1849,13 @@ export function registerRoutes(
             editable: false,
           } satisfies DirEntry;
         } catch {
-          return []; // 跳過權限不足或無法存取的項目 (如 DumpStack.log.tmp)
+          return null; // 跳過權限不足或無法存取的項目 (如 DumpStack.log.tmp)
         }
-      })
+      }),
+    );
+    const entries: DirEntry[] = results
+      .filter((r): r is PromiseFulfilledResult<DirEntry> => r.status === "fulfilled" && r.value !== null)
+      .map((r) => r.value)
       .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
     return { path: resolved, entries };
   });
@@ -1825,10 +1866,14 @@ export function registerRoutes(
       throw Object.assign(new Error("請輸入絕對路徑"), { statusCode: 400 });
     }
     const resolved = path.resolve(dirPath);
-    if (fs.existsSync(resolved)) {
+    try {
+      await fs.promises.access(resolved);
       throw Object.assign(new Error("路徑已存在"), { statusCode: 409 });
+    } catch (err: any) {
+      if (err.statusCode === 409) throw err; // 路徑已存在
+      // ENOENT: 路徑不存在 → 可以建立
     }
-    fs.mkdirSync(resolved, { recursive: true });
+    await fs.promises.mkdir(resolved, { recursive: true });
     reply.code(201);
     return { created: resolved };
   });

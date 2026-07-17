@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FiChevronRight, FiFolder, FiFolderPlus, FiRefreshCw, FiArrowUpCircle } from "react-icons/fi";
+import { FiChevronRight, FiFolder, FiFolderPlus, FiRefreshCw, FiArrowUpCircle, FiX } from "react-icons/fi";
 import type { DirEntry } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { t, useI18n } from "./i18n";
@@ -222,6 +222,15 @@ export function DirectoryPicker({
             disabled={busy || !!error}
           >
             {t("選取此資料夾")}
+          </button>
+          <button
+            type="button"
+            className={`${btnGhost} inline-flex items-center gap-1.5`}
+            onClick={() => onSelect("")}
+            disabled={busy}
+            title={t("清除選擇，使用 agent 預設目錄")}
+          >
+            <FiX className="size-4" /> {t("清除")}
           </button>
           {currentPath && (
             <button

@@ -22,6 +22,7 @@ import { VersionCard } from "./VersionCard";
 import { ConnectionCard } from "./ConnectionCard";
 import { MigrationCard } from "./MigrationCard";
 import { InstanceSettingsTab } from "./InstanceSettingsTab";
+import { ChatTab } from "./ChatTab";
 import { SHOW_SPONSOR_FEATURES } from "./flags";
 import { PerformanceTab } from "./PerformanceTab";
 import { EngineTab } from "./EngineTab";
@@ -328,6 +329,9 @@ export function InstanceDetailPage({
             setTab("map");
           }}
         />
+      )}
+      {tab === "chat" && (
+        <ChatTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
       {tab === "guilds" && (
         <GuildsTab

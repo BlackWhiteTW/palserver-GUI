@@ -220,6 +220,9 @@ export function GuildDetailModal({
                             >
                               {hit?.iconUrl && <img src={hit.iconUrl} alt="" className="size-4" />}
                               {hit ? displayName(hit.entity) : w.characterId}
+                              {hit?.unknown && (
+                                <span className="text-ink-muted" title={t("不在圖鑑中")}>?</span>
+                              )}
                               {w.level !== null && (
                                 <span className="font-mono font-normal text-ink-muted">Lv.{w.level}</span>
                               )}

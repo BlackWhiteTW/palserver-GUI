@@ -11,7 +11,7 @@ const IMAGE_BOUNDS = L.latLngBounds([-2125.3, -1922.44], [1031.13, 1233.99]);
 
 /**
  * 地圖描點選座標:點地圖放圖釘,回傳 PalDefender tp / spawn 指令用的「地圖小座標」
- * 字串「X Y [Z]」(Z 由伺服器自動找地面)。tp 吃的就是地圖座標(-1000~1000),
+ * 字串「X Y [Z]」(Z 留空時由 PalDefender 自動找地面高度)。tp 吃的就是地圖座標(-1000~1000),
  * 而 Leaflet CRS.Simple 的 latlng 本身即 [mapY(北), mapX(東)],所以 X=lng、Y=lat,
  * 不需再換算世界座標。與線上地圖共用同一套座標系。
  */

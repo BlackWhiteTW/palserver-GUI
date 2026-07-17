@@ -283,7 +283,17 @@ export function ConsoleTab({
         setLog((prev) => [...prev.slice(-99), { command, output: res.output || t("(無輸出)"), failed: false }]);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      let message = err instanceof Error ? err.message : String(err);
+      // pgbroadcast 走 REST API，連不上時給具體提示
+      if (
+        command.startsWith("pgbroadcast ") &&
+        (message.includes("ECONNREFUSED") ||
+          message.includes("fetch failed") ||
+          message.includes("Connection refused") ||
+          message.includes("NetworkError"))
+      ) {
+        message = t("廣播失敗：請確認伺服器已啟用 REST API（預設埠 8212）");
+      }
       setLog((prev) => [...prev.slice(-99), { command, output: message, failed: true }]);
     } finally {
       setBusy(false);

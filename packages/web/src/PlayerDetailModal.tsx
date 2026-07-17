@@ -731,6 +731,9 @@ function PalCard({ p, gameData, deep }: { p: MergedPal; gameData: GameData | nul
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-extrabold">
             {p.nickname || (hit ? displayName(hit.entity) : p.speciesId)}
+            {hit?.unknown && (
+              <span className="ml-1 text-[11px] text-ink-muted" title={t("此帕魯不在圖鑑中，為推估名稱")}>?</span>
+            )}
           </p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-ink-muted">
             <span className="font-mono font-bold">{p.level !== null ? `Lv.${p.level}` : "—"}</span>

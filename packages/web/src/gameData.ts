@@ -63,6 +63,8 @@ export interface CharacterHit {
   entity: GameEntity;
   /** 完整圖示 URL(帕魯與人類 NPC 的圖檔在不同資料夾) */
   iconUrl?: string;
+  /** true 表示這是合成回退實體（不在圖鑑中），用於 UI 標示提示 */
+  unknown?: boolean;
 }
 
 /** 依存檔/REST 的 CharacterID 查「帕魯或人類 NPC」:
@@ -94,6 +96,7 @@ export function findCharacter(d: GameData | null, id: string): CharacterHit | un
   return {
     entity: { id, name: fallbackName },
     iconUrl: undefined,
+    unknown: true,
   };
 }
 

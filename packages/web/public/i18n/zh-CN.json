@@ -1544,13 +1544,6 @@
   "充裕": "充裕",
   "夠用": "够用",
   "吃緊": "吃紧",
-  "AI 白話評估(Gemini)": "AI 白话评估(Gemini)",
-  "產生評估": "生成评估",
-  "評估中…": "评估中…",
-  "更換 API key": "更换 API key",
-  "設定 API key": "设置 API key",
-  "貼上 Gemini API key(aistudio.google.com 免費申請;只存在你的 agent 主機)": "粘贴 Gemini API key(aistudio.google.com 免费申请;只存在你的 agent 主机)",
-  "串接你自己的 Gemini API key(免費方案即可),把實測數據交給 AI 產生白話的開服建議。key 只存在 agent 主機,不會上傳。": "接入你自己的 Gemini API key(免费方案即可),把实测数据交给 AI 生成白话的开服建议。key 只存在 agent 主机,不会上传。",
   "主機記憶體壓力": "主机内存压力",
   "最長運行時間": "最长运行时间",
   "最久世界天數": "最久世界天数"

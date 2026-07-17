@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { FiActivity, FiCpu, FiHardDrive, FiKey, FiRefreshCw, FiWifi, FiZap } from "react-icons/fi";
-import { GiBrain } from "react-icons/gi";
+import { FiActivity, FiCpu, FiHardDrive, FiRefreshCw, FiWifi, FiX, FiZap } from "react-icons/fi";
 import type { AgentClient, ReviewRating, SystemReview } from "./api";
-import { getLang, t, useI18n } from "./i18n";
-import { btn, btnGhost, card, errorCls, inputCls } from "./ui";
+import { t, useI18n } from "./i18n";
+import { btnGhost, card, errorCls } from "./ui";
 
 /**
  * 配置評估健檢(進階顯示/贊助者):按一下實測主機的 CPU/RAM/磁碟寫入/對外網路,
- * 給逐項評級與總分;可選串 Gemini(使用者自備 key,存 agent 端)產生白話評估。
- * 測試會實寫 64MB 到資料碟 + 對外連線採樣,約 2-5 秒,所以做成手動觸發不自動輪詢。
+ * 給逐項評級與總分。測試會實寫 64MB 到資料碟 + 對外連線採樣,約 2-5 秒,
+ * 所以做成手動觸發不自動輪詢。
  */
 
 const RATING_LABEL: Record<ReviewRating, string> = {
@@ -32,16 +31,11 @@ function RatingChip({ rating }: { rating: ReviewRating }) {
   );
 }
 
-export function SystemReviewCard({ client }: { client: AgentClient }) {
+export function SystemReviewCard({ client, onClose }: { client: AgentClient; onClose: () => void }) {
   useI18n();
   const [review, setReview] = useState<SystemReview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ai, setAi] = useState<string | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
-  const [savingKey, setSavingKey] = useState(false);
-  const [showKeyForm, setShowKeyForm] = useState(false);
 
   const run = async () => {
     setBusy(true);
@@ -52,34 +46,6 @@ export function SystemReviewCard({ client }: { client: AgentClient }) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
-    }
-  };
-
-  const runAi = async () => {
-    setAiBusy(true);
-    setError(null);
-    try {
-      setAi((await client.systemReviewAi(getLang())).text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAiBusy(false);
-    }
-  };
-
-  const saveKey = async () => {
-    if (!keyInput.trim()) return;
-    setSavingKey(true);
-    setError(null);
-    try {
-      await client.saveAgentSettings({ geminiApiKey: keyInput.trim() });
-      setKeyInput("");
-      setShowKeyForm(false);
-      if (review) setReview({ ...review, aiConfigured: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingKey(false);
     }
   };
 
@@ -117,19 +83,24 @@ export function SystemReviewCard({ client }: { client: AgentClient }) {
     : [];
 
   return (
-    <div className={`${card} mb-3.5 flex flex-col gap-3`}>
+    <div className={`${card} flex max-h-[90vh] flex-col gap-3 overflow-y-auto`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="inline-flex items-center gap-2 text-sm font-extrabold text-ink-muted">
           <FiActivity className="size-4 text-pal" /> {t("配置評估健檢")}
         </h3>
-        <button
-          className={`${btnGhost} inline-flex shrink-0 items-center gap-1.5`}
-          onClick={() => void run()}
-          disabled={busy}
-        >
-          <FiRefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />
-          {busy ? t("檢測中(實測磁碟與網路,約 5 秒)…") : review ? t("重新檢測") : t("開始檢測")}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className={`${btnGhost} inline-flex shrink-0 items-center gap-1.5`}
+            onClick={() => void run()}
+            disabled={busy}
+          >
+            <FiRefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />
+            {busy ? t("檢測中(實測磁碟與網路,約 5 秒)…") : review ? t("重新檢測") : t("開始檢測")}
+          </button>
+          <button className={btnGhost} onClick={onClose} aria-label={t("關閉")}>
+            <FiX className="size-4" />
+          </button>
+        </div>
       </div>
 
       {error && <p className={errorCls}>{error}</p>}
@@ -167,56 +138,6 @@ export function SystemReviewCard({ client }: { client: AgentClient }) {
             ))}
           </div>
 
-          {/* AI 評估(選配):Gemini,使用者自備 key,存 agent 端 */}
-          <div className="flex flex-col gap-2 border-t border-line pt-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[13px] font-extrabold text-ink-muted">
-                <GiBrain className="size-4 text-pal" /> {t("AI 白話評估(Gemini)")}
-              </span>
-              <div className="flex items-center gap-2">
-                {review.aiConfigured && (
-                  <button
-                    className={`${btn} btn-sm inline-flex items-center gap-1.5`}
-                    onClick={() => void runAi()}
-                    disabled={aiBusy}
-                  >
-                    {aiBusy ? t("評估中…") : t("產生評估")}
-                  </button>
-                )}
-                <button
-                  className={`${btnGhost} inline-flex items-center gap-1.5`}
-                  onClick={() => setShowKeyForm((v) => !v)}
-                >
-                  <FiKey className="size-4" />
-                  {review.aiConfigured ? t("更換 API key") : t("設定 API key")}
-                </button>
-              </div>
-            </div>
-            {showKeyForm && (
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className={`${inputCls} min-w-52 flex-1`}
-                  type="password"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  placeholder={t("貼上 Gemini API key(aistudio.google.com 免費申請;只存在你的 agent 主機)")}
-                />
-                <button
-                  className={`${btn} btn-sm`}
-                  onClick={() => void saveKey()}
-                  disabled={savingKey || !keyInput.trim()}
-                >
-                  {savingKey ? t("儲存中…") : t("儲存")}
-                </button>
-              </div>
-            )}
-            {ai && <p className="rounded-xl bg-card-soft px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">{ai}</p>}
-            {!review.aiConfigured && !showKeyForm && (
-              <p className="text-[12px] text-ink-muted">
-                {t("串接你自己的 Gemini API key(免費方案即可),把實測數據交給 AI 產生白話的開服建議。key 只存在 agent 主機,不會上傳。")}
-              </p>
-            )}
-          </div>
         </>
       )}
     </div>

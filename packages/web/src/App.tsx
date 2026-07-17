@@ -201,6 +201,7 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
   const [pendingImport, setPendingImport] = useState<ExternalWorldCandidate | null>(null);
   const [order, setOrder] = useState<string[]>(loadInstanceOrder);
   const [advanced, setAdvanced] = useState(() => localStorage.getItem(ADVANCED_KEY) === "1");
+  const [showReview, setShowReview] = useState(false); // 配置評估健檢彈窗
   const [extras, setExtras] = useState<Record<string, CardExtra>>({});
   // 進階顯示是贊助者先行功能(dashboard-stats),與其他早鳥功能同一套判斷。
   const [entitled, setEntitled] = useState(false);
@@ -328,8 +329,25 @@ function Dashboard({ client, onOpen }: { client: AgentClient; onOpen: (id: strin
       {advanced && entitled && instances && instances.length > 0 && (
         <DashboardOverview instances={instances} extras={extras} />
       )}
-      {/* 配置評估健檢:同屬進階顯示(贊助者);手動觸發,不跟著輪詢 */}
-      {advanced && entitled && <SystemReviewCard client={client} />}
+      {/* 配置評估健檢:同屬進階顯示(贊助者)。刻意做成不醒目的一行小字入口,
+          有需要才點開彈窗跑檢測(檢測會實寫磁碟+對外連線,不適合常駐輪詢)。 */}
+      {advanced && entitled && (
+        <div className="-mt-1.5 mb-2 flex justify-end">
+          <button
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted transition hover:text-ink"
+            onClick={() => setShowReview(true)}
+          >
+            <FiActivity className="size-3.5" /> {translate("配置評估健檢")}
+          </button>
+        </div>
+      )}
+      {showReview && (
+        <Overlay onClose={() => setShowReview(false)}>
+          <div className="w-160 max-w-full" onClick={(e) => e.stopPropagation()}>
+            <SystemReviewCard client={client} onClose={() => setShowReview(false)} />
+          </div>
+        </Overlay>
+      )}
       {instances === null ? (
         <EmptyState icon={<GiEggClutch className="animate-bounce" />}>{t("載入中…")}</EmptyState>
       ) : instances.length === 0 ? (

@@ -1484,13 +1484,6 @@
   "充裕": "Plenty",
   "夠用": "Adequate",
   "吃緊": "Tight",
-  "AI 白話評估(Gemini)": "AI plain-language review (Gemini)",
-  "產生評估": "Generate review",
-  "評估中…": "Reviewing…",
-  "更換 API key": "Change API key",
-  "設定 API key": "Set API key",
-  "貼上 Gemini API key(aistudio.google.com 免費申請;只存在你的 agent 主機)": "Paste your Gemini API key (free at aistudio.google.com; stored only on your agent host)",
-  "串接你自己的 Gemini API key(免費方案即可),把實測數據交給 AI 產生白話的開服建議。key 只存在 agent 主機,不會上傳。": "Connect your own Gemini API key (free tier works) to turn the measurements into plain-language hosting advice. The key stays on your agent host and is never uploaded.",
   "主機記憶體壓力": "Host memory pressure",
   "最長運行時間": "Longest uptime",
   "最久世界天數": "Oldest world (days)"

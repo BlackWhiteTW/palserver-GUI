@@ -7,11 +7,10 @@ import { DATA_DIR } from "./env.js";
 
 /**
  * 配置評估健檢(進階顯示/贊助者):收集這台主機的硬體與網路狀況,
- * 用「開帕魯專用伺服器」的需求給逐項評級與總分;可另外串 Gemini 產生
- * 白話的 AI 評估(使用者自備 API key,存 agent 的 settings.json)。
+ * 用「開帕魯專用伺服器」的需求給逐項評級與總分。
  *
  * 設計原則:
- * - 規則評分永遠可用(離線、免 key),AI 只是加值。
+ * - 規則評分完全在本機完成(離線可用,不外送任何資料)。
  * - 磁碟不猜 SSD/HDD 型號,直接實測寫入速度(64MB 到 DATA_DIR,存檔就住這顆碟)。
  * - 網路量不到玩家到主機的 UDP 品質,用對外 TCP 連線 RTT/抖動當代理指標,誠實標示。
  */
@@ -52,8 +51,6 @@ export interface SystemReview {
   network: DimensionReview;
   /** 0–100 加權總分。 */
   overall: number;
-  /** 是否已設定 Gemini API key(可用 AI 評估)。 */
-  aiConfigured: boolean;
   generatedAt: string;
 }
 
@@ -147,7 +144,7 @@ export async function collectSpecs(): Promise<SystemSpecs> {
 const RATING_SCORE: Record<Rating, number> = { good: 100, ok: 60, poor: 25 };
 
 /** 規則評分:門檻依帕魯專用伺服器的實際需求(RAM 吃最兇,單核時脈次之)。 */
-export function reviewSpecs(specs: SystemSpecs, aiConfigured: boolean): SystemReview {
+export function reviewSpecs(specs: SystemSpecs): SystemReview {
   const gb = (n: number) => n / (1 << 30);
 
   // RAM:官方建議 16GB 起,實際 8-10 人以上/大量據點會吃到 16-24GB
@@ -191,57 +188,6 @@ export function reviewSpecs(specs: SystemSpecs, aiConfigured: boolean): SystemRe
     disk: { rating: diskRating, score: RATING_SCORE[diskRating] },
     network: { rating: netRating, score: RATING_SCORE[netRating] },
     overall,
-    aiConfigured,
     generatedAt: new Date().toISOString(),
   };
-}
-
-/** Gemini 白話評估。模型名經官方文件查證(2026-07):穩定版 gemini-3.5-flash。 */
-export async function aiReview(review: SystemReview, apiKey: string, lang: string): Promise<string> {
-  const s = review.specs;
-  const langName =
-    lang === "zh-CN" ? "簡體中文" : lang === "en" ? "English" : lang === "ja" ? "日本語" : "繁體中文(台灣用語)";
-  const prompt = [
-    `你是 Palworld(幻獸帕魯)專用伺服器的架站顧問。以下是一台準備開服的主機的實測配置,`,
-    `請用${langName}寫一段給伺服器主看的評估(250 字以內,口語、直接、可執行):`,
-    `1) 這台機器適合帶幾人的伺服器 2) 最大瓶頸與具體改善建議 3) 一句總結。`,
-    `不要重複列規格,不要用 markdown 標題,可以用短段落或條列。`,
-    ``,
-    `實測資料:`,
-    `- CPU:${s.cpuModel}(${s.cpuCores} 核,${s.cpuSpeedMHz ? `${s.cpuSpeedMHz}MHz` : "時脈未知"})`,
-    `- 記憶體:總 ${(s.ramTotalBytes / (1 << 30)).toFixed(1)}GB / 可用 ${(s.ramFreeBytes / (1 << 30)).toFixed(1)}GB`,
-    `- 磁碟:剩餘 ${(s.diskFreeBytes / (1 << 30)).toFixed(0)}GB,實測循序寫入 ${s.diskWriteMBps}MB/s`,
-    `- 對外網路:平均 RTT ${s.netAvgMs ?? "量不到"}ms,抖動 ${s.netJitterMs ?? "—"}ms(TCP 連線代理指標,非玩家實際延遲)`,
-    `- 系統:${s.platform}(${s.arch})`,
-    `- 規則評分:RAM ${review.ram.rating} / CPU ${review.cpu.rating} / 磁碟 ${review.disk.rating} / 網路 ${review.network.rating},總分 ${review.overall}/100`,
-    ``,
-    `背景知識:帕魯專用伺服器單實例常駐吃 8-20GB RAM(據點與帕魯數量越多越兇),tick 吃單核,`,
-    `自動備份會做大檔循序寫入;主機頻寬上行 10 人約需 3-5Mbps。`,
-  ].join("\n");
-
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
-      }),
-      signal: AbortSignal.timeout(30_000),
-    },
-  );
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const hint = res.status === 400 || res.status === 403 ? "(API key 可能無效)" : res.status === 429 ? "(額度用盡,稍後再試)" : "";
-    throw Object.assign(new Error(`Gemini API 回應 HTTP ${res.status}${hint} ${body.slice(0, 200)}`), {
-      statusCode: 502,
-    });
-  }
-  const data = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  if (!text.trim()) throw Object.assign(new Error("Gemini 回傳空內容,請稍後再試"), { statusCode: 502 });
-  return text.trim();
 }

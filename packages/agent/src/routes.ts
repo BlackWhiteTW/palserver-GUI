@@ -32,8 +32,8 @@ import type { PresenceTracker } from "./presence.js";
 import type { BackupScheduler } from "./backup-scheduler.js";
 import type { RestartSupervisor } from "./supervisor.js";
 import { AGENT_VERSION, PORT, HOST, REQUIRE_TOKEN, WEB_ORIGINS, TLS_ENABLED, OPEN_BROWSER, ENV_LOCKED, IS_PORTABLE_EXE } from "./env.js";
-import { loadSettings, saveSettings } from "./settings.js";
-import { aiReview, collectSpecs, reviewSpecs } from "./system-review.js";
+import { saveSettings } from "./settings.js";
+import { collectSpecs, reviewSpecs } from "./system-review.js";
 import { restartSelf } from "./self-update.js";
 import {
   type AuthContext,
@@ -355,34 +355,19 @@ export function registerRoutes(
         agentHost: z.string().max(64).optional(),
         webOrigins: z.string().max(2000).optional(),
         autoOpenBrowser: z.boolean().optional(),
-        // 健檢的 Gemini key:只存 settings.json;GET /api/settings 刻意不回傳
-        geminiApiKey: z.string().max(200).optional(),
       })
       .parse(req.body);
     saveSettings(b);
     return { ok: true };
   });
 
-  // ── 配置評估健檢(進階顯示/贊助者):主機硬體+網路實測與評分;可選 Gemini AI 評估 ──
+  // ── 配置評估健檢(進階顯示/贊助者):主機硬體+網路實測與評分 ──
   app.get("/api/system-review", async (_req, reply) => {
     if (!featureEnabled("dashboard-stats")) {
       return reply.code(403).send({ error: "配置評估健檢為贊助者專屬功能,請在設定頁輸入贊助者識別碼解鎖。" });
     }
     const specs = await collectSpecs();
-    return reviewSpecs(specs, !!loadSettings().geminiApiKey?.trim());
-  });
-  app.post("/api/system-review/ai", async (req, reply) => {
-    if (!featureEnabled("dashboard-stats")) {
-      return reply.code(403).send({ error: "配置評估健檢為贊助者專屬功能,請在設定頁輸入贊助者識別碼解鎖。" });
-    }
-    const { lang } = z.object({ lang: z.string().max(8).default("zh") }).parse(req.body ?? {});
-    const apiKey = loadSettings().geminiApiKey?.trim();
-    if (!apiKey) {
-      return reply.code(409).send({ error: "尚未設定 Gemini API key — 在健檢卡片輸入一次即可。" });
-    }
-    const specs = await collectSpecs();
-    const review = reviewSpecs(specs, true);
-    return { text: await aiReview(review, apiKey, lang) };
+    return reviewSpecs(specs);
   });
   // 套用系統設定:重啟自己(免安裝執行檔才會真的重啟;開發模式回 restarting:false)。
   app.post("/api/restart", async () => {

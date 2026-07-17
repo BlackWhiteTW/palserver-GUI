@@ -27,8 +27,6 @@ export interface AgentSettings {
   webOrigins?: string;
   /** 開機時自動打開瀏覽器到管理介面(下次啟動生效)。 */
   autoOpenBrowser?: boolean;
-  /** 配置評估健檢的 Gemini API key(使用者自備;只存本機,不回傳前端)。 */
-  geminiApiKey?: string;
 }
 
 export function loadSettings(): AgentSettings {

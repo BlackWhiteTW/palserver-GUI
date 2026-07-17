@@ -45,7 +45,16 @@ const emptyDraft = () =>
  * DT_PalMonsterParameter 的物種基礎值(HP / 攻防 / 移速 / 捕獲率等)。
  * 未解鎖時整組表單照樣顯示,但變灰、不可操作,並提示去設定頁輸入識別碼。
  */
-export function PalStatsTab({ client, instanceId }: { client: AgentClient; instanceId: string }) {
+export function PalStatsTab({
+  client,
+  instanceId,
+  running,
+}: {
+  client: AgentClient;
+  instanceId: string;
+  /** 伺服器運行中 + auto-reload 已開 → 儲存即熱重載,通知文案不同。 */
+  running?: boolean;
+}) {
   useI18n();
   const gameData = useGameData();
   // 原版數值(placeholder/大小寫校正);檔案缺失時為空物件,一切照舊
@@ -178,7 +187,11 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
       ) as PalStatValues;
       const next = await client.updatePalStats(instanceId, row, values);
       setStatus(next);
-      setNotice(t("已儲存,伺服器重啟後生效"));
+      setNotice(
+        running && next.schema.autoReload
+          ? t("已儲存,PalSchema 會自動熱重載 — 對新生成/新遭遇的帕魯生效;若沒生效再重啟伺服器。")
+          : t("已儲存,伺服器重啟後生效"),
+      );
       setTimeout(() => setNotice(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -200,7 +213,11 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
     try {
       const next = await client.clearPalStats(instanceId);
       setStatus(next);
-      setNotice(t("已刪除所有物種數值調整,重啟伺服器後生效"));
+      setNotice(
+        running && next.schema.autoReload
+          ? t("已刪除所有物種數值調整,PalSchema 會自動熱重載;若沒生效再重啟伺服器。")
+          : t("已刪除所有物種數值調整,重啟伺服器後生效"),
+      );
       setTimeout(() => setNotice(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -339,9 +356,13 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
               </p>
             )}
             <p className="text-xs text-ink-muted">
-              {t(
-                "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;儲存後要重啟伺服器,才會對新遭遇的帕魯生效。留空的欄位不會覆寫既有值。",
-              )}
+              {status.schema.autoReload
+                ? t(
+                    "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;已開啟熱重載:儲存後自動套用到新生成/新遭遇的帕魯(若沒生效再重啟)。留空的欄位不會覆寫既有值。",
+                  )
+                : t(
+                    "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;儲存後要重啟伺服器,才會對新遭遇的帕魯生效。留空的欄位不會覆寫既有值。",
+                  )}
             </p>
           </div>
 

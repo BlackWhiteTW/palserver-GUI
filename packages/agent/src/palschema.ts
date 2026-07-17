@@ -65,6 +65,8 @@ const statsFile = (root: string) => path.join(rawDir(root), "pal-stats.json");
 const ue4ssSettingsFile = (root: string) => path.join(ue4ssDir(root), "UE4SS-settings.ini");
 const modsTxtFile = (root: string) => path.join(ue4ssModsDir(root), "mods.txt");
 const markerFile = (root: string) => path.join(win64Dir(root), ".palserver-palschema.json");
+/** PalSchema 自己的設定檔(enableAutoReload 等;官方文件 /docs/configuration)。 */
+const palSchemaConfigFile = (root: string) => path.join(palSchemaDir(root), "config", "config.json");
 const WIN64_REL = "Pal/Binaries/Win64";
 const UE4SS_UPPER_REL = `${WIN64_REL}/UE4SS`;
 const UE4SS_LOWER_REL = `${WIN64_REL}/ue4ss`;
@@ -72,6 +74,7 @@ const PALSCHEMA_REL = (ue4ss: string) => `${ue4ss}/Mods/PalSchema`;
 const OUR_MOD_REL = (ue4ss: string) => `${PALSCHEMA_REL(ue4ss)}/mods/${OUR_MOD_NAME}`;
 const RAW_REL = (ue4ss: string) => `${OUR_MOD_REL(ue4ss)}/raw`;
 const STATS_REL = (ue4ss: string) => `${RAW_REL(ue4ss)}/pal-stats.json`;
+const CONFIG_REL = (ue4ss: string) => `${PALSCHEMA_REL(ue4ss)}/config/config.json`;
 const MARKER_REL = `${WIN64_REL}/.palserver-palschema.json`;
 
 /** UE4SS 是否已安裝(不區分 fork/標準;安裝流程會補上 fork)。 */
@@ -108,11 +111,13 @@ export async function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext
     }
     const ue4ss = await k8sUe4ssRel(rec, ctx);
     const marker = await readMarkerRuntime(rec, ctx);
+    const installed = await runtimeExists(rec, ctx, PALSCHEMA_REL(ue4ss), "d");
     return {
       supported: true,
       ue4ss: await runtimeExists(rec, ctx, `${ue4ss}/UE4SS.dll`, "f") || await runtimeExists(rec, ctx, `${WIN64_REL}/UE4SS.dll`, "f"),
-      installed: await runtimeExists(rec, ctx, PALSCHEMA_REL(ue4ss), "d"),
+      installed,
       version: marker.palschema ?? null,
+      autoReload: installed ? await readAutoReloadRuntime(rec, ctx, ue4ss) : false,
     };
   }
   const root = serverRoot(rec, ctx);
@@ -120,11 +125,13 @@ export async function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext
     return { supported: false, reason: "伺服器尚未安裝完成 — 先啟動一次讓 agent 下載伺服器", ue4ss: false, installed: false, version: null };
   }
   const marker = readMarker(root);
+  const installed = fs.existsSync(palSchemaDir(root));
   return {
     supported: true,
     ue4ss: ue4ssInstalled(root),
-    installed: fs.existsSync(palSchemaDir(root)),
+    installed,
     version: marker.palschema ?? null,
+    autoReload: installed && readAutoReload(root),
   };
 }
 
@@ -299,6 +306,8 @@ export async function installPalSchema(rec: InstanceRecord, ctx: DriverContext):
 
     // 5) 建立我們自管的子 mod(metadata.json + raw/)。
     scaffoldOurMod(root);
+    // 6) 開啟 auto-reload:運行中改數值即熱重載,免重啟(raw table 需 PalSchema ≥0.5.0)。
+    enableAutoReload(root);
 
     writeMarker(root, { ue4ss: ue4ss.version, palschema: ps.version });
     return { version: ps.version };
@@ -372,6 +381,8 @@ async function installPalSchemaK8s(rec: InstanceRecord, ctx: DriverContext): Pro
     }
     await copyTreeToPod(rec, psStage, modsRel);
     await scaffoldOurModK8s(rec, ctx, ue4ssRel);
+    // 開啟 auto-reload:運行中改數值即熱重載,免重啟(raw table 需 PalSchema ≥0.5.0)。
+    await enableAutoReloadRuntime(rec, ctx, ue4ssRel).catch(() => {});
     await writeMarkerRuntime(rec, ctx, { ue4ss: ue4ss.version, palschema: ps.version });
     return { version: ps.version };
   } finally {
@@ -390,6 +401,52 @@ async function copyTreeToPod(rec: InstanceRecord, localDir: string, remoteRel: s
       await writeFileBytesInPod(rec, remotePath, fs.readFileSync(localPath));
     }
   }
+}
+
+/** 讀 PalSchema config 的 enableAutoReload(檔案缺失或壞檔 → false = PalSchema 預設)。
+ *  (export 供單元測試;mac 開發機跑不到 native 分支。) */
+export function readAutoReload(root: string): boolean {
+  try {
+    return JSON.parse(fs.readFileSync(palSchemaConfigFile(root), "utf8")).enableAutoReload === true;
+  } catch {
+    return false;
+  }
+}
+
+async function readAutoReloadRuntime(rec: InstanceRecord, ctx: DriverContext, ue4ss: string): Promise<boolean> {
+  try {
+    return JSON.parse(await runtimeReadText(rec, ctx, CONFIG_REL(ue4ss))).enableAutoReload === true;
+  } catch {
+    return false;
+  }
+}
+
+/** 開啟 PalSchema 的 auto-reload(檔案監看,存檔即熱重載;raw table 自 v0.5.0 支援)。
+ *  merge 寫入,保留 languageOverride 等其他設定鍵。 */
+export function enableAutoReload(root: string): void {
+  let cfg: Record<string, unknown> = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(palSchemaConfigFile(root), "utf8"));
+  } catch {
+    /* 尚未生成 → 從空物件開始,缺的鍵 PalSchema 自己補預設 */
+  }
+  if (cfg.enableAutoReload === true) return;
+  cfg.enableAutoReload = true;
+  fs.mkdirSync(path.dirname(palSchemaConfigFile(root)), { recursive: true });
+  fs.writeFileSync(palSchemaConfigFile(root), JSON.stringify(cfg, null, 2));
+}
+
+async function enableAutoReloadRuntime(rec: InstanceRecord, ctx: DriverContext, ue4ss: string): Promise<void> {
+  let cfg: Record<string, unknown> = {};
+  try {
+    cfg = JSON.parse(await runtimeReadText(rec, ctx, CONFIG_REL(ue4ss)));
+  } catch {
+    /* 同上 */
+  }
+  if (cfg.enableAutoReload === true) return;
+  cfg.enableAutoReload = true;
+  await runtimeMkdir(rec, ctx, `${PALSCHEMA_REL(ue4ss)}/config`);
+  await runtimeWriteText(rec, ctx, CONFIG_REL(ue4ss), JSON.stringify(cfg, null, 2));
 }
 
 function scaffoldOurMod(root: string): void {
@@ -510,15 +567,21 @@ export async function writePalStats(
   if (rec.backend === "k8s") {
     const ue4ss = await k8sUe4ssRel(rec, ctx);
     await scaffoldOurModK8s(rec, ctx, ue4ss);
+    await enableAutoReloadRuntime(rec, ctx, ue4ss).catch(() => {}); // 舊安裝補開;失敗不擋寫入
     const merged = mergeStatsPatch(await readStatsRawRuntime(rec, ctx, ue4ss), PAL_STATS_TABLE, row, patch);
     await runtimeWriteText(rec, ctx, STATS_REL(ue4ss), JSON.stringify(merged, null, 4));
-    return { supported: true, schema, rows: rowsFromRaw(merged) };
+    return { supported: true, schema: await getPalSchemaStatus(rec, ctx), rows: rowsFromRaw(merged) };
   }
   const root = serverRoot(rec, ctx);
   scaffoldOurMod(root); // 確保 raw/ 目錄存在(安裝後理應已在)
+  try {
+    enableAutoReload(root); // 舊安裝補開;失敗不擋寫入
+  } catch {
+    /* noop */
+  }
   const merged = mergeStatsPatch(readStatsRaw(root), PAL_STATS_TABLE, row, patch);
   fs.writeFileSync(statsFile(root), JSON.stringify(merged, null, 4));
-  return { supported: true, schema, rows: rowsFromRaw(merged) };
+  return { supported: true, schema: await getPalSchemaStatus(rec, ctx), rows: rowsFromRaw(merged) };
 }
 
 /** 清空所有已寫入的物種數值調整(移除受管 table),PalSchema 本體保留。

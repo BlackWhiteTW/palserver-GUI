@@ -103,6 +103,9 @@ export interface PalSchemaStatus {
   installed: boolean;
   /** 我們安裝時記錄的版本(release tag);未由本 GUI 安裝時為 null。 */
   version: string | null;
+  /** PalSchema 的 enableAutoReload 是否已開(開了 → 運行中改數值即熱重載)。
+   *  舊版 agent 沒有此欄位。 */
+  autoReload?: boolean;
 }
 
 /** 我們的 PalSchema mod 目前管理的一列數值。 */

@@ -503,7 +503,7 @@ export function InstanceDetailPage({
       {tab === "paldefender" && (
         <PalDefenderTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
-      {tab === "palstats" && <PalStatsTab client={client} instanceId={detail.id} />}
+      {tab === "palstats" && <PalStatsTab client={client} instanceId={detail.id} running={detail.status === "running"} />}
       {tab === "saves" && (
         <SavesTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}

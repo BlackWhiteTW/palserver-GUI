@@ -72,7 +72,6 @@
   "用 token 連線": "Connect with token",
   "← 改用別的位址": "← Use a different address",
   "邀請朋友加入": "Invite friends",
-  "多台伺服器埠提醒": "Multi-server port reminder",
   "遠端的朋友 — 用 VPN 連線(推薦)": "Remote friends — connect via VPN (recommended)",
   "不用動路由器、也不怕外網攻擊。你和朋友裝同一套免費 VPN、加入同一個網路,就像在同一個 WiFi 裡。": "No router changes, no exposure to the open internet. You and your friends install the same free VPN and join one network — like being on the same WiFi.",
   "你的 Tailscale 位址:": "Your Tailscale address:",
@@ -1060,9 +1059,6 @@
   "新增道具": "Add Item",
   "指令台": "Console",
   "Pod 名稱": "Pod Name",
-  "多台伺服器?這些埠都不能重複": "Running multiple servers? These ports must not overlap",
-  "同一台主機上跑多個伺服器時,每台的以下埠都必須各自不同,否則會發生埠綁定衝突,導致伺服器起不來或玩家連不上:": "When running multiple servers on the same host, the following ports must be unique for each server. Otherwise, port binding conflicts will occur, preventing the server from starting or players from connecting:",
-  "遊戲埠(port) · Steam 查詢埠(queryport) · RCON 埠 · REST API 埠 · PalDefender REST 埠(預設 17993)": "Game Port (port) · Steam Query Port (queryport) · RCON Port · REST API Port · PalDefender REST Port (default 17993)",
   "這個路徑由 agent 自動管理。": "This path is managed automatically by the agent.",
   "Steam 查詢埠(queryport)": "Steam Query Port (queryport)",
   "同機多台伺服器的查詢埠必須不同,否則儲存時會回報衝突。": "When running multiple servers on the same machine, query ports must be different, or saving will report a conflict.",
@@ -1421,5 +1417,7 @@
   "playit 會給你一個專屬位址,朋友輸入就能進來,路由器什麼都不用設定。": "playit gives you a dedicated address friends can just type to join — zero router setup.",
   "下載並執行 playit(免費),照畫面指示完成綁定。": "Download and run playit (free), then follow the on-screen steps to link it.",
   "按「Create Tunnel」建隧道:類型選 Custom → UDP,Local port 填 {port}。": "Click “Create Tunnel”: choose Custom → UDP and set Local port to {port}.",
-  "把 playit 顯示的位址傳給朋友,輸入就能一起玩。": "Send the address playit shows you to your friends — they type it in and play."
+  "把 playit 顯示的位址傳給朋友,輸入就能一起玩。": "Send the address playit shows you to your friends — they type it in and play.",
+  "開啟更多分頁": "Enable more tabs",
+  "到設定管理分頁": "Manage tabs in Settings"
 }

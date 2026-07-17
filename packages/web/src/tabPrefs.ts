@@ -101,7 +101,6 @@ export const OVERVIEW_CARDS: { id: string; label: string }[] = [
 
 /** 各分頁上「常駐資訊型」黃色警告 —— 包一層 <DismissibleWarning> 即可按叉叉收起。 */
 export const DISMISSIBLE_WARNINGS: { id: string; label: string }[] = [
-  { id: "ports", label: "多台伺服器埠提醒" },
   { id: "warn-mods-compat", label: "模組:改版相容性提醒" },
   { id: "warn-palstats-risk", label: "帕魯數值:mod 風險提示" },
 ];

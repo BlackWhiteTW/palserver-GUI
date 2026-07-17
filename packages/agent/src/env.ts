@@ -73,6 +73,12 @@ export const IMAGES: Record<"vanilla" | "modded", string> = {
   modded: process.env.PALSERVER_IMAGE_MODDED ?? "palserver/modded:latest",
 };
 
+/** Wine variants — Windows binary under Wine (PalDefender compatible). */
+export const IMAGES_WINE: Record<"vanilla" | "modded", string> = {
+  vanilla: process.env.PALSERVER_IMAGE_WINE ?? "palserver/wine:latest",
+  modded: process.env.PALSERVER_IMAGE_WINE_MODDED ?? "palserver/wine-modded:latest",
+};
+
 /** GUI 自己的 GitHub repo — 自我更新從這裡的 Releases 取得新版。 */
 export const GITHUB_REPO = process.env.PALSERVER_GITHUB_REPO ?? "io-software-ai/palserver-gui";
 

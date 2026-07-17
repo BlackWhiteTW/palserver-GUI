@@ -38,6 +38,32 @@ execFileSync(process.execPath, ["--experimental-sea-config", configPath], { stdi
 // 2) 複製一份 node 執行檔當作載體
 fs.copyFileSync(process.execPath, exePath);
 
+// 2.5) Windows:把執行檔圖示換成 palserver 圖示(與網頁 favicon 同款,
+//     來源 images/palserver.ico,由 packages/web/public/logo.png 生成)。
+//     必須在注入 SEA blob「之前」做 —— resedit 會整個重寫 PE,順序反了會弄壞 blob。
+//     (resedit 是純 JS 的 PE 資源編輯器;ignoreCert 因為 node.exe 帶簽章,
+//     改資源本來就會讓簽章失效,SEA 注入亦然。)
+if (isWin) {
+  const ResEdit = await import("resedit");
+  const exe = ResEdit.NtExecutable.from(fs.readFileSync(exePath), { ignoreCert: true });
+  const res = ResEdit.NtExecutableResource.from(exe);
+  const iconFile = ResEdit.Data.IconFile.from(
+    fs.readFileSync(path.join(root, "images/palserver.ico")),
+  );
+  // 換掉既有的第一組 icon group(node.exe 的預設圖示)。
+  const groups = ResEdit.Resource.IconGroupEntry.fromEntries(res.entries);
+  const groupId = groups[0]?.id ?? 1;
+  ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
+    res.entries,
+    groupId,
+    1033,
+    iconFile.icons.map((i) => i.data),
+  );
+  res.outputResource(exe);
+  fs.writeFileSync(exePath, Buffer.from(exe.generate()));
+  console.log(`執行檔圖示已換成 images/palserver.ico(icon group ${groupId})`);
+}
+
 // 3) macOS:注入前要先移除既有簽章
 if (isMac) execSync(`codesign --remove-signature "${exePath}"`);
 

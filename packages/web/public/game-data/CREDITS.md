@@ -43,11 +43,17 @@ alongside English names when the source provides them.
   `oMaN-Rod` id order — verified by inspection); one entry (`EmitFlame1_6`,
   "Kindling Lv6") has no `ja` because paldb's own list doesn't include that
   tier, and is left blank rather than guessed.
+- **Player technology catalog** (`technologies.json`): technology ids,
+  English, Traditional-Chinese, Simplified-Chinese, and Japanese names, and
+  icon URLs are read directly from paldb.cc's four `/Technologies` pages. Icons
+  already present in this project's `items/` catalog are reused; the remaining
+  PalDB icons are stored in `technologies/`.
 
 `passives.json` / `activeSkills.json` are regenerated with
 `node scripts/fetch-skills-passives.mjs`. `humans.json` is regenerated with
 `node scripts/fetch-human-npcs.mjs`. `research.json` is regenerated with
-`node scripts/fetch-lab-research.mjs`.
+`node scripts/fetch-lab-research.mjs`. The player technology catalog and icons
+are refreshed with `node scripts/fetch-game-data-i18n.mjs technologies`.
 
 All Palworld artwork is © Pocketpair, Inc. These icons are bundled only to
 label in-game entities within this management tool.

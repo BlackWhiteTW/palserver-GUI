@@ -753,6 +753,77 @@ async function spawnServer(rec: InstanceRecord, ctx: DriverContext): Promise<voi
   writePidRecord(ctx, { pid: child.pid, startedAt: id?.startedAt ?? null });
 }
 
+/** 每實例的 CPU 取樣歷史(instanceDir → 上一筆);行程結束就清掉。 */
+interface CpuSample {
+  /** 全行程樹的累計 CPU 時間(毫秒;pidusage 的 ctime 加總) */
+  ctimeMs: number;
+  /** 取樣時刻(Date.now() 毫秒) */
+  at: number;
+  stats: InstanceStats;
+}
+const cpuSamples = new Map<string, CpuSample>();
+
+/** CPU%(單核基準,行程樹加總可破百;export 供單元測試):
+ *  有上一筆且 ctime 沒回退(行程沒換)→ Δctime/Δt 毫秒精度差分;
+ *  首次取樣或行程重啟(ctime 回退)/歷史過舊 → 退回「自開機以來平均」。 */
+export function computeCpuPercent(
+  prev: { ctimeMs: number; at: number } | null,
+  ctimeMs: number,
+  at: number,
+  mainElapsedMs: number | null,
+): number {
+  const usable =
+    prev !== null && ctimeMs >= prev.ctimeMs && at > prev.at && at - prev.at < 10 * 60_000;
+  const ratio = usable
+    ? (ctimeMs - prev.ctimeMs) / (at - prev.at)
+    : mainElapsedMs && mainElapsedMs > 0
+      ? ctimeMs / mainElapsedMs
+      : 0;
+  return Math.round(ratio * 1000) / 10; // 百分比,一位小數
+}
+
+/** 建立時選了「強化」(flavor=modded)的實例:伺服器檔案就緒後、啟動前,
+ *  自動安裝 UE4SS + PalDefender(等同模組分頁的一鍵安裝)。已裝過就跳過;
+ *  失敗不擋啟動(伺服器照樣以原生開起來),原因寫進日誌讓使用者到模組分頁重試。
+ *  動態 import 避免 native ↔ mods 循環相依。 */
+async function autoEnhance(
+  rec: InstanceRecord,
+  ctx: DriverContext,
+  log: (line: string) => void,
+): Promise<void> {
+  if (rec.flavor !== "modded" || !IS_WIN) return;
+  const mods = await import("./mods.js");
+  for (const component of ["ue4ss", "paldefender"] as const) {
+    try {
+      const status = await mods.getModsStatus(rec, ctx);
+      if (!status.supported) {
+        log(`[palserver] 強化模組跳過:${status.reason}`);
+        return;
+      }
+      if (status[component].installed) continue;
+      log(`[palserver] 強化模式:安裝 ${component}…`);
+      const { version } = await mods.installComponent(rec, ctx, component);
+      log(`[palserver] ${component} ${version} 安裝完成`);
+      if (component === "paldefender") {
+        // 強化版預設開啟 PalDefender REST API 並先鋪好 GUI 權杖,首次開機即生效
+        try {
+          const pdRest = await import("./paldefender-rest.js");
+          pdRest.preprovisionPdRest(rec, ctx);
+          log("[palserver] PalDefender REST API 已預設啟用(埠 17993),GUI 權杖已就緒");
+        } catch (err) {
+          log(`[palserver] PalDefender REST 預設定失敗(可到 PalDefender 分頁手動開啟):${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      log(
+        `[palserver] ${component} 自動安裝失敗(伺服器仍以原生模式啟動,可到「模組」分頁重試):${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+}
+
 export const nativeDriver: ServerDriver = {
   status: getNativeStatus,
 
@@ -769,6 +840,7 @@ export const nativeDriver: ServerDriver = {
     if (alreadyInstalled) {
       // Fast path: spawn synchronously so errors surface in the response.
       await ensureInstalled(rec, ctx, appendLog); // validates adopted dirs
+      await autoEnhance(rec, ctx, appendLog);
       await spawnServer(rec, ctx);
       installErrors.delete(rec.id); // 成功啟動,清掉上次的安裝失敗
       return true;
@@ -791,6 +863,7 @@ export const nativeDriver: ServerDriver = {
     void (async () => {
       try {
         await ensureInstalled(rec, ctx, installLog, (pct) => installProgress.set(rec.id, pct));
+        await autoEnhance(rec, ctx, installLog);
         await spawnServer(rec, ctx);
       } catch (err) {
         const info = classifyInstallError(err);
@@ -886,7 +959,15 @@ export const nativeDriver: ServerDriver = {
   async stats(_rec, ctx) {
     // 用 checkAlive 而非裸 pid:PID 被別台重用時別回報鄰居的 CPU/記憶體。
     const live = await checkAlive(ctx);
-    if (!live.alive || live.pid === null) return null;
+    if (!live.alive || live.pid === null) {
+      cpuSamples.delete(ctx.instanceDir);
+      return null;
+    }
+    // 多個消費者(首頁進階顯示/效能分析頁/supervisor 記憶體檢查)各自輪詢:
+    // 1.5 秒內重複查詢直接回上一筆,取樣間隔不會被並行輪詢切碎。
+    const prev = cpuSamples.get(ctx.instanceDir);
+    if (prev && Date.now() - prev.at < 1500) return prev.stats;
+
     const pid = live.pid;
     // PalServer.exe is a thin launcher; the actual server is a child process
     // (PalServer-Win64-Shipping-Cmd.exe), so aggregate the whole tree.
@@ -896,17 +977,28 @@ export const nativeDriver: ServerDriver = {
       pids.map((p) => pidusage(p).catch(() => null)),
     );
     const alive = usages.filter((u) => u !== null);
-    if (alive.length === 0) return null;
+    if (alive.length === 0) {
+      cpuSamples.delete(ctx.instanceDir);
+      return null;
+    }
     // 主行程(pids[0])的 elapsed 就是伺服器運行時間;pidusage 以毫秒回報。
     const mainElapsed = usages[0]?.elapsed;
-    return {
-      cpuPercent: alive.reduce((sum, u) => sum + u.cpu, 0),
+    // CPU% 不用 pidusage 的 cpu 欄位:它在 Windows 以 os.uptime()(整秒)算間隔,
+    // 短輪詢誤差極大(實測 3 秒內 78%→36%→0%),且其 per-pid 歷史會被多個輪詢互踩。
+    // 改用 ctime(累計 CPU 毫秒,與取樣間隔無關)配 Date.now() 毫秒精度自算差分。
+    const ctimeMs = alive.reduce((sum, u) => sum + u.ctime, 0);
+    const at = Date.now();
+    const cpuPercent = computeCpuPercent(prev ?? null, ctimeMs, at, mainElapsed ?? null);
+    const stats = {
+      cpuPercent,
       cpuCores: os.cpus().length,
       memoryBytes: alive.reduce((sum, u) => sum + u.memory, 0),
       memoryLimitBytes: os.totalmem(),
       processCount: alive.length,
       uptimeSeconds: mainElapsed ? Math.round(mainElapsed / 1000) : undefined,
     } satisfies InstanceStats;
+    cpuSamples.set(ctx.instanceDir, { ctimeMs, at, stats });
+    return stats;
   },
 
   logSources(rec, ctx) {

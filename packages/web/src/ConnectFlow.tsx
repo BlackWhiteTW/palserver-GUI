@@ -3,6 +3,7 @@ import { FiArrowRight, FiLock, FiWifi } from "react-icons/fi";
 import { probeAgent, pairAgent, type Connection } from "./api";
 import { btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 import { LangSelect, useI18n } from "./i18n";
+import { usePromoConfig } from "./promoConfig";
 import { ThemeToggle } from "./theme";
 
 /**
@@ -44,7 +45,7 @@ export function ConnectFlow({ onConnect }: { onConnect: (c: Connection) => void 
           } catch {
             clearSetupParam();
             setAgentUrl(origin);
-            setError("這條設定連結的配對碼無效或已過期,請重新輸入。");
+            setError("這條設定連結已失效(配對碼過期或已重新產生)。請伺服器主人在 GUI 的「設定」重新產生一條設定連結給你;如果這是你自己的 agent,配對碼就在 agent 視窗裡。");
             setMode("pair");
             return;
           }
@@ -118,6 +119,7 @@ function ManualStep({
   onNeedPair: (url: string) => void;
 }) {
   const { t } = useI18n();
+  const { faq } = usePromoConfig();
   const [url, setUrl] = useState(initialUrl);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -159,6 +161,14 @@ function ManualStep({
           <span className="mt-1 text-xs text-ink-muted">
             {t("在 agent 的視窗裡有列出可用位址;遠端請填 VPN 位址(如 Tailscale 的 100.x)。")}
           </span>
+          <a
+            className="mt-1 text-xs font-bold text-pal underline underline-offset-2 hover:opacity-80"
+            href={faq}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t("還沒安裝 agent?看下載與設定教學")}
+          </a>
         </label>
         {error && <p className={errorCls}>{t(error)}</p>}
         <button className={`${btn} inline-flex items-center justify-center gap-1.5`} disabled={busy || !url.trim()}>

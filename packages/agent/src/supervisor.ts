@@ -196,7 +196,7 @@ export class RestartSupervisor {
         // PalDefender's `exitServerOnStartupFailure` makes the server exit on
         // boot when the plugin can't load. That reads as a crash, but restarting
         // just loops until the hourly cap — so detect it and stop with a reason.
-        if (this.isStartupFailure(rec, ctx, state, now)) {
+        if (await this.isStartupFailure(rec, ctx, state, now)) {
           this.handleStartupFailure(rec, ctx, state);
         } else {
           await this.handleCrash(rec, ctx, driver, policy, state);
@@ -248,16 +248,17 @@ export class RestartSupervisor {
   /** A crash is really a PalDefender startup abort when: the server died during
    * boot (within the grace window of our last start) AND the user asked
    * PalDefender to exit the server on startup failure. Restarting can't help. */
-  private isStartupFailure(
+  private async isStartupFailure(
     rec: InstanceRecord,
     ctx: DriverContext,
     state: SupervisorState,
     now: Date,
-  ): boolean {
+  ): Promise<boolean> {
     if (!state.lastStartAt) return false;
     if (now.getTime() - Date.parse(state.lastStartAt) >= BOOT_GRACE_MS) return false;
     try {
-      return getPalDefenderConfig(rec, ctx).values.exitServerOnStartupFailure === true;
+      const cfg = await getPalDefenderConfig(rec, ctx);
+      return cfg.values.exitServerOnStartupFailure === true;
     } catch {
       return false;
     }

@@ -10,16 +10,11 @@ import {
 } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
+import { serverPlatform } from "./platform.js";
 import { serverRoot } from "./native.js";
-
-/**
- * Read/write the managed subset of PalDefender's Config.json.
- *
- * The file is the user's and PalDefender adds keys per version, so writes
- * merge: we set only the keys we manage and preserve everything else
- * (arrays like MOTD / bannedChatWords, unknown future keys, comments-as-keys).
- * Changes apply on the next server start or a PalDefender `reloadcfg`.
- */
+import * as dockerOps from "./docker.js";
+import { execInPod } from "./k8s-files.js";
+import { getPdDir } from "./paldefender-rest.js";
 
 /** MOTD 可能寫成 "MOTD"(官方)或 "motd";讀取兩者,只取字串成員。 */
 function readMotd(raw: Record<string, unknown>): string[] {
@@ -27,31 +22,47 @@ function readMotd(raw: Record<string, unknown>): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
-function palDefenderDir(rec: InstanceRecord, ctx: DriverContext): string | null {
-  const win64 = path.join(serverRoot(rec, ctx), "Pal", "Binaries", "Win64");
-  for (const name of ["PalDefender", "palguard"]) {
-    const dir = path.join(win64, name);
-    if (fs.existsSync(dir)) return dir;
+async function readConfigJson(rec: InstanceRecord, file: string): Promise<string | null> {
+  if (rec.backend === "native") {
+    try { return fs.readFileSync(file, "utf8"); } catch { return null; }
   }
-  return null;
+  if (rec.backend === "docker") {
+    try { return await dockerOps.execInContainer(rec, ["cat", file]); } catch { return null; }
+  }
+  try { return await execInPod(rec, ["cat", file]); } catch { return null; }
 }
 
-export function getPalDefenderConfig(rec: InstanceRecord, ctx: DriverContext): PalDefenderConfigStatus {
-  if (rec.backend !== "native") {
-    return { supported: false, reason: "PalDefender 設定僅支援原生模式的實例", exists: false, values: {}, motd: [] };
+async function writeConfigJson(rec: InstanceRecord, file: string, content: string): Promise<void> {
+  if (rec.backend === "native") {
+    fs.writeFileSync(file, content);
+    return;
   }
-  const dir = palDefenderDir(rec, ctx);
+  if (rec.backend === "docker") {
+    const b64 = Buffer.from(content, "utf8").toString("base64");
+    await dockerOps.execInContainer(rec, ["sh", "-c", `echo '${b64}' | base64 -d > '${file}'`]);
+    return;
+  }
+  const b64 = Buffer.from(content, "utf8").toString("base64");
+  await execInPod(rec, ["sh", "-c", `echo '${b64}' | base64 -d > '${file}'`]);
+}
+
+export async function getPalDefenderConfig(rec: InstanceRecord, ctx: DriverContext): Promise<PalDefenderConfigStatus> {
+  if (serverPlatform(rec) !== "windows") {
+    return { supported: false, reason: "PalDefender 設定僅支援 Windows 伺服器", exists: false, values: {}, motd: [] };
+  }
+  const dir = await getPdDir(rec, ctx);
   if (!dir) {
     return { supported: false, reason: "尚未安裝 PalDefender,或伺服器尚未啟動過以生成設定檔", exists: false, values: {}, motd: [] };
   }
-  const file = path.join(dir, "Config.json");
-  if (!fs.existsSync(file)) {
+  const file = `${dir}/Config.json`;
+  const raw_str = await readConfigJson(rec, file);
+  if (!raw_str) {
     return { supported: true, exists: false, reason: "Config.json 尚未生成 — 啟動一次伺服器即會產生", values: {}, motd: [] };
   }
 
   let raw: Record<string, unknown>;
   try {
-    raw = JSON.parse(fs.readFileSync(file, "utf8"));
+    raw = JSON.parse(raw_str);
   } catch {
     return { supported: true, exists: true, reason: "Config.json 無法解析(格式損壞)", values: {}, motd: [] };
   }
@@ -66,34 +77,33 @@ export function getPalDefenderConfig(rec: InstanceRecord, ctx: DriverContext): P
   return { supported: true, exists: true, values, motd: readMotd(raw) };
 }
 
-export function writePalDefenderConfig(
+export async function writePalDefenderConfig(
   rec: InstanceRecord,
   ctx: DriverContext,
   patch: PalDefenderConfigPatch,
-): PalDefenderConfigStatus {
-  const dir = palDefenderDir(rec, ctx);
+): Promise<PalDefenderConfigStatus> {
+  const dir = await getPdDir(rec, ctx);
   if (!dir) throw Object.assign(new Error("找不到 PalDefender 目錄"), { statusCode: 409 });
-  const file = path.join(dir, "Config.json");
+  const file = `${dir}/Config.json`;
 
-  // Preserve everything already in the file; overlay our managed keys.
   let raw: Record<string, unknown> = {};
-  if (fs.existsSync(file)) {
+  const existing = await readConfigJson(rec, file);
+  if (existing) {
     try {
-      raw = JSON.parse(fs.readFileSync(file, "utf8"));
+      raw = JSON.parse(existing);
     } catch {
       throw Object.assign(new Error("Config.json 格式損壞,無法安全寫入"), { statusCode: 409 });
     }
   }
   for (const [key, value] of Object.entries(patch)) {
     const meta = PALDEFENDER_OPTIONS[key as PdOptionKey];
-    if (!meta) continue; // 略過 motd 等非 scalar 鍵,另行處理
+    if (!meta) continue;
     raw[key] = meta.type === "int" ? Math.trunc(Number(value)) : value;
   }
-  // MOTD(字串陣列)寫回原本使用的鍵名(預設 "MOTD"),保留既有大小寫。
   if (Array.isArray(patch.motd)) {
     const motdKey = "motd" in raw && !("MOTD" in raw) ? "motd" : "MOTD";
     raw[motdKey] = patch.motd.map((l) => String(l)).slice(0, PD_MOTD_MAX_LINES);
   }
-  fs.writeFileSync(file, JSON.stringify(raw, null, 4));
-  return getPalDefenderConfig(rec, ctx);
+  await writeConfigJson(rec, file, JSON.stringify(raw, null, 4));
+  return await getPalDefenderConfig(rec, ctx);
 }

@@ -11,7 +11,7 @@
 export const PAL_STATS_TABLE = "DT_PalMonsterParameter";
 
 export type PalStatType = "int" | "float";
-export type PalStatCategory = "combat" | "utility" | "movement";
+export type PalStatCategory = "combat" | "utility" | "movement" | "work";
 
 export interface PalStatMeta {
   /** DataTable 欄位的**確切鍵名**(大小寫敏感)。 */
@@ -40,6 +40,22 @@ export const PAL_STAT_OPTIONS = {
   WalkSpeed: { key: "WalkSpeed", type: "int", min: 0, max: 10_000, category: "movement", label: "步行速度" },
   RunSpeed: { key: "RunSpeed", type: "int", min: 0, max: 10_000, category: "movement", label: "奔跑速度" },
   RideSprintSpeed: { key: "RideSprintSpeed", type: "int", min: 0, max: 10_000, category: "movement", label: "騎乘衝刺速度" },
+  // 工作適性:0 = 不會做;遊戲改版後部分帕魯可到 Lv6,上限給寬到 10。
+  // 鍵名全數經 uasset dump 驗證(.claude/notes/palschema-datatable-fields.md)。
+  WorkSuitability_EmitFlame: { key: "WorkSuitability_EmitFlame", type: "int", min: 0, max: 10, category: "work", label: "生火" },
+  WorkSuitability_Watering: { key: "WorkSuitability_Watering", type: "int", min: 0, max: 10, category: "work", label: "澆水" },
+  WorkSuitability_Seeding: { key: "WorkSuitability_Seeding", type: "int", min: 0, max: 10, category: "work", label: "播種" },
+  WorkSuitability_GenerateElectricity: { key: "WorkSuitability_GenerateElectricity", type: "int", min: 0, max: 10, category: "work", label: "發電" },
+  WorkSuitability_Handcraft: { key: "WorkSuitability_Handcraft", type: "int", min: 0, max: 10, category: "work", label: "手工" },
+  WorkSuitability_Collection: { key: "WorkSuitability_Collection", type: "int", min: 0, max: 10, category: "work", label: "採集" },
+  WorkSuitability_Deforest: { key: "WorkSuitability_Deforest", type: "int", min: 0, max: 10, category: "work", label: "伐木" },
+  WorkSuitability_Mining: { key: "WorkSuitability_Mining", type: "int", min: 0, max: 10, category: "work", label: "採礦" },
+  WorkSuitability_OilExtraction: { key: "WorkSuitability_OilExtraction", type: "int", min: 0, max: 10, category: "work", label: "採油",
+    hint: "paldb 未顯示此欄位,原版值多為 0;是否實際生效請以遊戲內為準。" },
+  WorkSuitability_ProduceMedicine: { key: "WorkSuitability_ProduceMedicine", type: "int", min: 0, max: 10, category: "work", label: "製藥" },
+  WorkSuitability_Cool: { key: "WorkSuitability_Cool", type: "int", min: 0, max: 10, category: "work", label: "冷卻" },
+  WorkSuitability_Transport: { key: "WorkSuitability_Transport", type: "int", min: 0, max: 10, category: "work", label: "搬運" },
+  WorkSuitability_MonsterFarm: { key: "WorkSuitability_MonsterFarm", type: "int", min: 0, max: 10, category: "work", label: "牧場" },
 } as const satisfies Record<string, PalStatMeta>;
 
 export type PalStatKey = keyof typeof PAL_STAT_OPTIONS;
@@ -51,6 +67,7 @@ export const PAL_STAT_CATEGORY_LABELS: Record<PalStatCategory, string> = {
   combat: "戰鬥",
   utility: "工具 / 捕獲",
   movement: "移動",
+  work: "工作適性",
 };
 
 /**
@@ -86,6 +103,11 @@ export interface PalSchemaStatus {
   installed: boolean;
   /** 我們安裝時記錄的版本(release tag);未由本 GUI 安裝時為 null。 */
   version: string | null;
+  /** PalSchema 的 enableAutoReload 是否已開(開了 → 運行中改數值即熱重載)。
+   *  舊版 agent 沒有此欄位。 */
+  autoReload?: boolean;
+  /** false = 已暫時停用(資料夾搬出 Mods/,檔案保留);undefined = 不支援停用(k8s)或舊 agent。 */
+  enabled?: boolean;
 }
 
 /** 我們的 PalSchema mod 目前管理的一列數值。 */

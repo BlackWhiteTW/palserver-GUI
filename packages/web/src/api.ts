@@ -81,6 +81,8 @@ export interface AgentSettingsStatus {
   autoOpenBrowser: AgentSettingField<boolean>;
   /** 免安裝執行檔可一鍵重啟;開發模式為 false(需手動重啟)。 */
   canRestart: boolean;
+  /** Windows 免安裝執行檔:登入時自動啟動 agent(讀自 Run key)。其他情境為 null(UI 不顯示)。 */
+  bootStart: boolean | null;
 }
 export interface AgentSettingsPatch {
   requireToken?: boolean;
@@ -89,6 +91,33 @@ export interface AgentSettingsPatch {
   agentHost?: string;
   webOrigins?: string;
   autoOpenBrowser?: boolean;
+  bootStart?: boolean;
+}
+
+/** 配置評估健檢(對應 agent 的 system-review.ts;rating 由前端翻成文字與顏色)。 */
+export type ReviewRating = "good" | "ok" | "poor";
+export interface SystemReview {
+  specs: {
+    platform: string;
+    arch: string;
+    cpuModel: string;
+    cpuCores: number;
+    cpuSpeedMHz: number;
+    ramTotalBytes: number;
+    ramFreeBytes: number;
+    diskTotalBytes: number;
+    diskFreeBytes: number;
+    diskWriteMBps: number;
+    netAvgMs: number | null;
+    netMinMs: number | null;
+    netJitterMs: number | null;
+  };
+  ram: { rating: ReviewRating; score: number };
+  cpu: { rating: ReviewRating; score: number };
+  disk: { rating: ReviewRating; score: number };
+  network: { rating: ReviewRating; score: number };
+  overall: number;
+  generatedAt: string;
 }
 
 export interface ConfigSnapshotResult {
@@ -102,6 +131,21 @@ export interface ConfigSnapshotRestoreResult {
   reason?: string;
   snapshot?: ConfigSnapshotInfo;
   safetySnapshot?: ConfigSnapshotInfo;
+}
+
+/** 埠檢查結果(agent GET /ports/check)。 */
+export interface PortCheckEntry {
+  key: "game" | "query" | "rest" | "rcon" | "paldefender";
+  port: number;
+  protocol: "udp" | "tcp";
+  free: boolean;
+  suggestion?: number;
+}
+export interface PortsCheckResult {
+  supported: boolean;
+  reason?: string;
+  ports: PortCheckEntry[];
+  anyConflict: boolean;
 }
 
 const STORAGE_KEY = "palserver.connection";
@@ -229,6 +273,10 @@ export class AgentClient {
   saveAgentSettings(patch: AgentSettingsPatch): Promise<{ ok: boolean }> {
     return this.request("/api/settings", { method: "PUT", body: JSON.stringify(patch) });
   }
+  /** 配置評估健檢(進階顯示/贊助者):主機硬體+網路實測與評分。會實跑磁碟/網路測試,約 2-5 秒。 */
+  systemReview(): Promise<SystemReview> {
+    return this.request("/api/system-review");
+  }
   /** 重啟 agent 以套用系統設定;restarting=false 表示開發模式,需手動重啟。 */
   restartAgent(): Promise<{ restarting: boolean }> {
     return this.request("/api/restart", { method: "POST", body: JSON.stringify({}) });
@@ -320,8 +368,29 @@ export class AgentClient {
     return this.request(`/api/instances/${id}/stats`);
   }
 
+  /** agent 啟動時自動開服(每實例)。 */
+  setAutoStart(id: string, enabled: boolean): Promise<{ autoStart: boolean }> {
+    return this.request(`/api/instances/${id}/auto-start`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   mods(id: string): Promise<ModsStatus> {
     return this.request(`/api/instances/${id}/mods`);
+  }
+
+  /** 各模組元件的最新穩定版 tag(agent 端快取;查詢失敗值為 null)。 */
+  modsLatest(): Promise<{ ue4ss: string | null; paldefender: string | null }> {
+    return this.request("/api/mods/latest");
+  }
+
+  /** 暫時停用/啟用模組(不刪檔,改名主 DLL)。 */
+  setModEnabled(id: string, component: ModComponent, enabled: boolean): Promise<ModsStatus> {
+    return this.request(`/api/instances/${id}/mods/${component}/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
   }
 
   installMod(
@@ -503,6 +572,14 @@ export class AgentClient {
     return this.request(`/api/instances/${id}/palschema/uninstall`, { method: "POST" });
   }
 
+  /** 暫時停用/啟用 PalSchema(不刪檔);回傳最新 pal-stats 狀態。 */
+  setPalSchemaEnabled(id: string, enabled: boolean): Promise<PalStatsStatus> {
+    return this.request(`/api/instances/${id}/palschema/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   /** 物種數值(PalSchema DataTable patch)目前狀態 + 各 row 已寫入的值。 */
   palStats(id: string): Promise<PalStatsStatus> {
     return this.request(`/api/instances/${id}/pal-stats`);
@@ -671,6 +748,19 @@ export class AgentClient {
   ): Promise<{ worldGuid: string; history: SaveScanStats[]; autoScan: AutoScanSetting }> {
     const q = worldGuid ? `?worldGuid=${encodeURIComponent(worldGuid)}` : "";
     return this.request(`/api/instances/${id}/saves/stats-history${q}`);
+  }
+
+  /** 啟動前埠占用檢查(遺戲/查詢/REST/RCON/PalDefender)。 */
+  portsCheck(id: string): Promise<PortsCheckResult> {
+    return this.request(`/api/instances/${id}/ports/check`);
+  }
+
+  /** 套用埠修改(啟動前衝突面板)。 */
+  portsUpdate(
+    id: string,
+    patch: Partial<Record<"game" | "query" | "rest" | "rcon" | "paldefender", number>>,
+  ): Promise<{ gamePort: number; queryPort: number | null }> {
+    return this.request(`/api/instances/${id}/ports`, { method: "PUT", body: JSON.stringify(patch) });
   }
 
   /** 每小時自動掃描開關。 */

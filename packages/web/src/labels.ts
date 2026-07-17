@@ -19,7 +19,7 @@ export const OPTION_LABELS: Record<WorldOptionKey, string> = {
   ServerPlayerMaxNum: "玩家數上限",
   CoopPlayerMaxNum: "合作玩家數上限",
   PublicIP: "公開 IP 位址",
-  PublicPort: "端口號",
+  PublicPort: "對外顯示埠(不影響實際連線埠)",
   bIsMultiplay: "開啟多人遊戲",
   bShowPlayerList: "展示玩家列表",
   bIsShowJoinLeftMessage: "顯示加入/離開訊息",

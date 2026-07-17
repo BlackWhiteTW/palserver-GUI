@@ -37,6 +37,20 @@ git pull
 Write-Host "[2/3] pnpm install ..." -ForegroundColor Cyan
 pnpm install
 
+# Windows 下 dist 裡的檔案偶爾被鎖住 (防毒即時掃描剛寫入的檔 / agent 正在送檔),
+# vite 清空 dist 會 EPERM 中斷. 先自行清空, 鎖住就等 2 秒重試, 最多 3 次.
+$dist = "packages\web\dist"
+if (Test-Path $dist) {
+  for ($i = 1; $i -le 3; $i++) {
+    try { Remove-Item -Recurse -Force $dist -ErrorAction Stop; break }
+    catch {
+      Write-Host ("[等待] {0} 被其他程式占用 (第 {1}/3 次), 2 秒後重試 ..." -f $dist, $i) -ForegroundColor Yellow
+      if ($i -eq 3) { Write-Host "  仍被占用 - 若接下來 build 失敗, 請關閉 agent 與瀏覽器分頁後重跑本腳本." -ForegroundColor Yellow }
+      Start-Sleep -Seconds 2
+    }
+  }
+}
+
 Write-Host "[3/3] pnpm build ..." -ForegroundColor Cyan
 pnpm build
 

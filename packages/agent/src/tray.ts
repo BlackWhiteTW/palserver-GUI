@@ -15,13 +15,24 @@ import { DATA_DIR } from "./env.js";
 
 // 注意:PowerShell 5.1 只有在有 BOM 時才把 .ps1 當 UTF-8 讀,否則中文會亂碼 —— 寫檔時補上 BOM。
 // 這裡刻意不用 PowerShell 的反引號逸出(`n 之類),以免和 TS 樣板字串的反引號打架。
-const TRAY_PS1 = String.raw`param([string]$Url, [string]$Code, [int]$AgentPid)
+const TRAY_PS1 = String.raw`param([string]$Url, [string]$Code, [int]$AgentPid, [string]$IconPng)
 $ErrorActionPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
+# 圖示與網頁 favicon 同款(web 靜態檔的 logo.png);載入失敗退回系統預設。
+# 注意:一定要經 MemoryStream 載入 —— System.Drawing.Bitmap(path) 會鎖住檔案
+# 直到程序結束,web/ 的重建與 GUI 自我更新都會因此 EPERM。
 $notify.Icon = [System.Drawing.SystemIcons]::Application
+if ($IconPng -and (Test-Path $IconPng)) {
+  try {
+    $iconBytes = [System.IO.File]::ReadAllBytes($IconPng)
+    $iconStream = New-Object System.IO.MemoryStream(,$iconBytes)
+    $bmp = New-Object System.Drawing.Bitmap($iconStream)
+    $notify.Icon = [System.Drawing.Icon]::FromHandle($bmp.GetHicon())
+  } catch { }
+}
 $notify.Text = 'palserver GUI 引擎運作中'
 $notify.Visible = $true
 
@@ -67,10 +78,22 @@ $notify.Dispose()
  * 啟動系統匣圖示。只在 Windows 有效,其他平台回 null。盡力而為:失敗絕不影響 agent 本體
  * (回 null,呼叫端照常運作)。回傳的 ChildProcess 供 agent 結束時一併收掉。
  */
-export function startTray(opts: { url: string; code: string }): ChildProcess | null {
+export function startTray(opts: { url: string; code: string; iconPng?: string | null }): ChildProcess | null {
   if (process.platform !== "win32") return null;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+    // 圖示複製一份到 DATA_DIR 再交給 tray:就算 PS 端鎖住檔案,鎖的也是複本,
+    // 原檔(web/logo.png)的重建與自我更新不受影響。
+    let iconArg: string[] = [];
+    if (opts.iconPng) {
+      try {
+        const iconCopy = path.join(DATA_DIR, "tray-icon.png");
+        fs.copyFileSync(opts.iconPng, iconCopy);
+        iconArg = ["-IconPng", iconCopy];
+      } catch {
+        /* 複製不了就用系統預設圖示 */
+      }
+    }
     const scriptPath = path.join(DATA_DIR, "tray.ps1");
     fs.writeFileSync(scriptPath, "﻿" + TRAY_PS1, "utf8");
     const child = spawn(
@@ -91,6 +114,7 @@ export function startTray(opts: { url: string; code: string }): ChildProcess | n
         opts.code,
         "-AgentPid",
         String(process.pid),
+        ...iconArg,
       ],
       { windowsHide: true, stdio: "ignore" },
     );

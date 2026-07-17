@@ -375,9 +375,21 @@ async function run({ canApply, onRestart, log }: UpdateOps): Promise<void> {
       fs.copyFileSync(newExe, layout.exePath);
       fs.chmodSync(layout.exePath, 0o755);
       if (fs.existsSync(newWeb)) {
+        // 先把新 web 完整複製到目標同目錄(staging),成功後才動舊的;
+        // rename 幾乎不會失敗,失敗也能把舊的原樣還原 —— 避免舊版流程
+        // 「先搬走舊的、複製新的失敗」導致 web 消失、前端 404。
+        const staged = `${layout.webDir}.new-${Date.now()}`;
         const oldWeb = `${layout.webDir}.old-${Date.now()}`;
-        if (fs.existsSync(layout.webDir)) fs.renameSync(layout.webDir, oldWeb);
-        fs.cpSync(newWeb, layout.webDir, { recursive: true });
+        fs.cpSync(newWeb, staged, { recursive: true });
+        const hadOld = fs.existsSync(layout.webDir);
+        if (hadOld) fs.renameSync(layout.webDir, oldWeb);
+        try {
+          fs.renameSync(staged, layout.webDir);
+        } catch (err) {
+          if (hadOld) fs.renameSync(oldWeb, layout.webDir);
+          fs.rmSync(staged, { recursive: true, force: true });
+          throw err;
+        }
         fs.rmSync(oldWeb, { recursive: true, force: true });
       }
       // 授權條款必須留在散布出去的副本旁(PolyForm Notices)。
@@ -403,6 +415,44 @@ async function run({ canApply, onRestart, log }: UpdateOps): Promise<void> {
     throw err;
   } finally {
     fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
+const BOOT_RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const BOOT_RUN_NAME = "palserver-agent";
+
+/** Windows 登入自啟:寫 HKCU Run key(免管理員權限)。只在免安裝執行檔有意義。
+ *  回傳是否有實際套用(非 Windows / 開發模式回 false)。 */
+export async function setBootStart(enabled: boolean): Promise<boolean> {
+  if (process.platform !== "win32") return false;
+  const layout = installLayout();
+  if (!layout) return false;
+  try {
+    if (enabled) {
+      await execFileP(
+        "reg",
+        ["add", BOOT_RUN_KEY, "/v", BOOT_RUN_NAME, "/t", "REG_SZ", "/d", `"${layout.exePath}"`, "/f"],
+        { windowsHide: true },
+      );
+    } else {
+      await execFileP("reg", ["delete", BOOT_RUN_KEY, "/v", BOOT_RUN_NAME, "/f"], { windowsHide: true }).catch(
+        () => {},
+      ); // 不存在時 delete 會失敗,視為已達成
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 目前是否已設定登入自啟(查 Run key)。 */
+export async function getBootStart(): Promise<boolean> {
+  if (process.platform !== "win32") return false;
+  try {
+    const { stdout } = await execFileP("reg", ["query", BOOT_RUN_KEY, "/v", BOOT_RUN_NAME], { windowsHide: true });
+    return stdout.includes(BOOT_RUN_NAME);
+  } catch {
+    return false;
   }
 }
 

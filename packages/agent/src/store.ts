@@ -16,6 +16,8 @@ export interface InstanceRecord {
   queryPort?: number;
   /** docker only: 自訂容器鏡像;undefined = 用內建 IMAGES[flavor]。 */
   dockerImage?: string;
+  /** docker/k8s: 執行環境。"wine" = 跑 Windows binary via Wine; undefined = 原生。 */
+  runtime?: "native" | "wine";
   /** native only: custom server root; undefined = agent-managed install
    * under instanceDir/server. */
   serverDir?: string;
@@ -30,6 +32,10 @@ export interface InstanceRecord {
   engineSettings?: EngineSettings;
   /** 命令列啟動參數(launch options);啟動時由 buildLaunchArgs 組成 -flag。 */
   launchOptions?: LaunchOptions;
+  /** 玩家連線用的公開位址(playit.gg 隧道等,使用者貼上;含埠)。undefined = 未設定。 */
+  externalAddress?: string;
+  /** agent 啟動時自動啟動這台伺服器(搭配「開機自動啟動 agent」= 主機開機即開服)。 */
+  autoStart?: boolean;
   createdAt: string;
   /** k8s backend: namespace of the game server StatefulSet. */
   k8sNamespace?: string;
@@ -46,6 +52,9 @@ const QUERY_PORT_BASE = 27015;
 
 /** REST API 埠的分配起點(Palworld 預設值);往上遞增找沒被占用的。 */
 const REST_PORT_BASE = 8212;
+
+/** RCON 埠的分配起點(Palworld 預設值);往上遞增找沒被占用的。 */
+const RCON_PORT_BASE = 25575;
 
 /**
  * Flat-file store for instance metadata. Container state lives in Docker
@@ -129,6 +138,16 @@ export class InstanceStore {
     return port;
   }
 
+  /** 分配一個沒被任何實例占用(含 REST,同為 TCP)的 RCON 埠(建立實例時用)。
+   *  avoid:同批要建立、還沒進 store 的埠(例:剛分配的 REST 埠)。 */
+  nextRconPort(avoid: Iterable<number> = []): number {
+    const used = this.usedTcpPorts();
+    for (const p of avoid) used.add(p);
+    let port = RCON_PORT_BASE;
+    while (used.has(port)) port++;
+    return port;
+  }
+
   list(): InstanceRecord[] {
     return [...this.instances.values()].sort((a, b) =>
       a.createdAt.localeCompare(b.createdAt),
@@ -160,7 +179,7 @@ export class InstanceStore {
       Pick<
         InstanceRecord,
         // name/gamePort 由世界設定的 ServerName/PublicPort 鏡射(routes mirrorIdentityFromSettings)
-        "settings" | "serverDir" | "serverDirManaged" | "engineSettings" | "launchOptions" | "queryPort" | "name" | "gamePort"
+        "settings" | "serverDir" | "serverDirManaged" | "engineSettings" | "launchOptions" | "queryPort" | "name" | "gamePort" | "externalAddress" | "autoStart"
       >
     >,
   ): InstanceRecord {

@@ -20,7 +20,7 @@ import { GiveItemsModal } from "./GiveItemsModal";
 import { TeleportModal } from "./TeleportModal";
 import { MapPickModal } from "./MapPickModal";
 import { SHOW_SPONSOR_FEATURES } from "./flags";
-import { useGameData, itemIconUrl, palIconUrl, type GameData } from "./gameData";
+import { useGameData, itemIconUrl, palIconUrl, technologyIconUrl, type GameData } from "./gameData";
 import { t, useI18n } from "./i18n";
 import { btn, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
@@ -98,20 +98,27 @@ function ArgField({
   // 座標參數:文字欄 + 「地圖描點」按鈕(自帶狀態,獨立成元件避免條件 hook)。
   if (arg.coord) return <CoordField arg={arg} value={value} onChange={onChange} />;
 
-  // Item/Egg/Pal id args get an icon search picker backed by the catalogs.
-  // eggid 只列帕魯蛋(不是全部道具),itemid 才是全物品目錄。
-  if ((arg.name === "itemid" || arg.name === "eggid") && gameData) {
+  // Item/Egg/Tech ids get an icon search picker backed by the catalogs.
+  // eggid 只列帕魯蛋;techid 使用玩家科技目錄;itemid 才是全物品目錄。
+  if ((arg.name === "itemid" || arg.name === "eggid" || arg.name === "techid") && gameData) {
     const isEgg = arg.name === "eggid";
+    const isTech = arg.name === "techid";
     return (
       <label className={`${labelCls} min-w-0`}>
         {t(arg.label)}
         {!arg.required && <span className="font-normal">{t("(選填)")}</span>}
         <EntityPicker
-          catalog={isEgg ? gameData.eggs : gameData.items}
-          iconUrl={itemIconUrl}
+          catalog={isEgg ? gameData.eggs : isTech ? gameData.technologies : gameData.items}
+          iconUrl={isTech ? technologyIconUrl : itemIconUrl}
           value={value}
           onChange={onChange}
-          placeholder={isEgg ? t("搜尋蛋名稱或輸入 ID…") : t("搜尋道具名稱或輸入 ID…")}
+          placeholder={
+            isEgg
+              ? t("搜尋蛋名稱或輸入 ID…")
+              : isTech
+                ? t("搜尋科技名稱或輸入 ID…")
+                : t("搜尋道具名稱或輸入 ID…")
+          }
         />
       </label>
     );
@@ -377,53 +384,35 @@ export function ConsoleTab({
               placeholder={t("搜尋指令…")}
             />
           </div>
-          {/* 贊助者先行版:自訂帕魯(帕魯 / 帕魯蛋兩條)—— 樣式與下方指令一致,藍色標示贊助。
-              未公布前用 SHOW_SPONSOR_FEATURES 整組隱藏;點了跳彈窗,未解鎖時表單不可用。 */}
-          {SHOW_SPONSOR_FEATURES && catalog.paldefender && (
-            <>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
-                onClick={() => setCustomPalMode("pal")}
-              >
-                <span className="inline-flex items-center gap-1 font-mono text-pal">
-                  givepal_j <FiStar className="size-3" />
-                </span>
-                <span className="block text-xs text-ink-muted">{t("自訂帕魯(詞條 / 體質 / 星星)")}</span>
-              </button>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
-                onClick={() => setCustomPalMode("egg")}
-              >
-                <span className="inline-flex items-center gap-1 font-mono text-pal">
-                  giveegg_j <FiStar className="size-3" />
-                </span>
-                <span className="block text-xs text-ink-muted">{t("自訂帕魯蛋(詞條 / 體質 / 星星)")}</span>
-              </button>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
-                onClick={() => setShowGiveItems(true)}
-              >
-                <span className="inline-flex items-center gap-1 font-mono text-pal">
-                  giveitems <FiStar className="size-3" />
-                </span>
-                <span className="block text-xs text-ink-muted">{t("批量給予道具(選單 + 數量)")}</span>
-              </button>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
-                onClick={() => setShowTeleport(true)}
-              >
-                <span className="inline-flex items-center gap-1 font-mono text-pal">
-                  tp <FiStar className="size-3" />
-                </span>
-                <span className="block text-xs text-ink-muted">{t("傳送玩家(玩家 / 地圖座標)")}</span>
-              </button>
-            </>
-          )}
           <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* 贊助者專屬指令:混在清單裡跟其他分類一樣捲動,星星+title 標示。
+                未公布前用 SHOW_SPONSOR_FEATURES 整組隱藏;點了跳彈窗,未解鎖時表單不可用。 */}
+            {SHOW_SPONSOR_FEATURES && catalog.paldefender && (
+              <div>
+                <p className="mt-2 mb-1 px-1 text-xs font-extrabold text-ink-muted">{t("贊助者專屬")}</p>
+                <div className="flex flex-col">
+                  {([
+                    { cmd: "givepal_j", desc: "自訂帕魯(詞條 / 體質 / 星星)", onClick: () => setCustomPalMode("pal" as const) },
+                    { cmd: "giveegg_j", desc: "自訂帕魯蛋(詞條 / 體質 / 星星)", onClick: () => setCustomPalMode("egg" as const) },
+                    { cmd: "giveitems", desc: "批量給予道具(選單 + 數量)", onClick: () => setShowGiveItems(true) },
+                    { cmd: "tp", desc: "傳送玩家(玩家 / 地圖座標)", onClick: () => setShowTeleport(true) },
+                  ] as const).map((x) => (
+                    <button
+                      key={x.cmd}
+                      type="button"
+                      className="rounded-lg px-2 py-1.5 text-left text-[13px] transition hover:bg-card-soft"
+                      onClick={x.onClick}
+                      title={t("贊助者專屬")}
+                    >
+                      <span className="inline-flex items-center gap-1 font-mono text-pal">
+                        {x.cmd} <FiStar className="size-3" />
+                      </span>
+                      <span className="block text-xs text-ink-muted">{t(x.desc)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {[...grouped.entries()].map(([category, cmds]) => (
               <div key={category}>
                 <p className="mt-2 mb-1 px-1 text-xs font-extrabold text-ink-muted">{category}</p>

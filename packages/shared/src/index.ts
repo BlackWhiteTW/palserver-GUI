@@ -8,6 +8,7 @@ export * from "./launch-options.js";
 export * from "./paldefender-options.js";
 export * from "./pal-stats-options.js";
 export * from "./features.js";
+export * from "./world-presets.js";
 
 /** Value type an option can hold at runtime. */
 export type WorldOptionValue = string | number | boolean;
@@ -78,8 +79,12 @@ export const CreateInstanceSchema = z.object({
   /** docker only: 自訂容器鏡像(如 ghcr.io/…/palworld:tag);省略則用內建的
    * vanilla/modded 映像。方便沿用已在 Docker 部署的其他帕魯鏡像。 */
   dockerImage: z.string().trim().max(200).optional(),
-  /** UDP port the server listens on (host port for docker). */
-  gamePort: z.number().int().min(1024).max(65535).default(8211),
+  /** docker/k8s: 執行環境。"wine" = 跑 Windows binary via Wine(支援 PalDefender)。
+   *  undefined 或 "native" = 原生 Linux binary。 */
+  runtime: z.enum(["native", "wine"]).optional(),
+  /** UDP port the server listens on (host port for docker)。
+   *  省略 = 由 agent 自動分配(從 8211 起找沒被登記且 OS 綁得起來的埠)。 */
+  gamePort: z.number().int().min(1024).max(65535).optional(),
   /** native only: custom server directory (absolute path). An existing
    * dedicated-server install (e.g. C:\steamcmd\steamapps\common\PalServer)
    * is adopted as-is; an empty or new directory becomes the install target.
@@ -155,6 +160,8 @@ export interface InstanceSummary {
   name: string;
   backend: Backend;
   flavor: "vanilla" | "modded";
+  /** docker/k8s: "wine" = Windows binary via Wine; undefined = native. */
+  runtime?: "native" | "wine";
   gamePort: number;
   status: InstanceStatus;
   createdAt: string;
@@ -171,6 +178,8 @@ export interface InstanceSummary {
 
 export interface InstanceDetail extends InstanceSummary {
   settings: WorldSettings;
+  /** agent 啟動時自動開服(每實例;在「設定」分頁切換)。 */
+  autoStart?: boolean;
   /** docker: container id · native: process id (null when not running). */
   runtimeId: string | null;
   /** user-configured server dir; null when the agent picks the folder. */
@@ -198,8 +207,12 @@ export interface ModsStatus {
   /** false when the backend/platform can't manage mods (docker, non-adopted…). */
   supported: boolean;
   reason?: string;
-  ue4ss: { installed: boolean; version: string | null };
-  paldefender: { installed: boolean; version: string | null };
+  /** 伺服器本體檔案是否已就位;false = 尚未安裝完成(前端據此隱藏 pak 卡等)。
+   *  舊版 agent 沒有此欄位 → 前端以 true 處理。 */
+  serverInstalled?: boolean;
+  /** enabled:false = 已「暫時停用」(主 DLL 改名保留,檔案都在);舊 agent 無此欄位。 */
+  ue4ss: { installed: boolean; version: string | null; enabled?: boolean };
+  paldefender: { installed: boolean; version: string | null; enabled?: boolean };
   /** UE4SS Lua mods found under the mods dir. */
   luaMods: { name: string; enabled: boolean }[];
   /** Server-dir-relative path of the Lua mods folder (layout varies by UE4SS
@@ -632,7 +645,8 @@ export interface BackupSchedule {
 }
 
 export const DEFAULT_BACKUP_SCHEDULE: BackupSchedule = {
-  enabled: false,
+  // 預設啟用:沒動過備份設定的實例自動每小時備份(明確關閉過的照舊)。
+  enabled: true,
   intervalMinutes: 60,
   keep: 10,
   skipWhenEmpty: true,
@@ -1076,6 +1090,8 @@ export interface ConnectionInfo {
   publicIp: string | null;
   /** host is behind a router → direct connect needs port forwarding */
   behindNat: boolean;
+  /** 使用者設定的公開位址(playit.gg 隧道等;null = 未設定) */
+  externalAddress: string | null;
 }
 
 export interface AgentInfo {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiArrowLeft, FiPlay, FiSquare, FiRefreshCw, FiSave, FiTerminal, FiFileText, FiX, FiAlertTriangle, FiAlignLeft, FiStar } from "react-icons/fi";
+import { FiAlertTriangle, FiAlignLeft, FiArrowLeft, FiCheck, FiFileText, FiPlay, FiPlus, FiRefreshCw, FiSave, FiSend, FiSquare, FiStar, FiTerminal, FiX } from "react-icons/fi";
 import type {
   InstanceDetail as Detail,
   LogSource,
@@ -20,7 +20,6 @@ import { SavesTab } from "./SavesTab";
 import { RestartCard } from "./RestartCard";
 import { VersionCard } from "./VersionCard";
 import { ConnectionCard } from "./ConnectionCard";
-import { MigrationCard } from "./MigrationCard";
 import { InstanceSettingsTab } from "./InstanceSettingsTab";
 import { ChatTab } from "./ChatTab";
 import { SHOW_SPONSOR_FEATURES } from "./flags";
@@ -30,9 +29,14 @@ import { maskSteamIdsInText } from "./SteamId";
 import { hasFeature } from "@palserver/shared";
 import { classifyLine, categoryColor, formatLine, genericLine, translateTarget, useLogPrefs } from "./logHighlight";
 import { STATUS_LABELS } from "./labels";
-import { TABS, LOCKED_TABS, useHiddenTabs, useHiddenCards, type Tab } from "./tabPrefs";
+import { TABS, LOCKED_TABS, defaultHiddenTabs, useHiddenTabs, useHiddenCards, useTabOrder, type Tab } from "./tabPrefs";
 import { t, t as translate, useI18n } from "./i18n";
-import { InstallProgress, Overlay, StatusBadge, btn, btnGhost, card, errorCls } from "./ui";
+import { InstallProgress, Overlay, StatusBadge, btn, btnGhost, card, errorCls, inputCls } from "./ui";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS as DndCSS } from "@dnd-kit/utilities";
+import { PortConflictModal } from "./PortConflictModal";
+import type { PortsCheckResult } from "./api";
 
 
 export function InstanceDetailPage({
@@ -51,7 +55,33 @@ export function InstanceDetailPage({
   const [tab, setTab] = useState<Tab>("overview");
   // 玩家詳情「據點跳地圖」:切到地圖分頁並聚焦座標(n 為 nonce,連點同一點也重觸發)
   const [mapFocus, setMapFocus] = useState<{ x: number; y: number; n: number } | null>(null);
-  const [hiddenTabs] = useHiddenTabs();
+  // 分頁偏好每實例獨立;預設集合只看「建立時選的口味」——事後手動安裝模組
+  // 不改變預設可見分頁(避免裝完 PalDefender 分頁自己跳出來),要開去「＋」面板。
+  const enhancedMode = detail ? detail.flavor === "modded" : false;
+  const [hiddenTabs, setHiddenTabs] = useHiddenTabs(instanceId, enhancedMode);
+  const [tabOrder, setTabOrder] = useTabOrder(instanceId);
+  // 「＋」快速開啟面板:列出被隱藏(且通過 gating)的分頁,點了立刻顯示並切換過去
+  const [morePanel, setMorePanel] = useState(false);
+  // 拖曳需移動 6px 才觸發,一般點擊不受影響
+  const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // 面板寬 224px(w-56):＋按鈕靠螢幕右緣時改右對齊,避免小螢幕橫向溢出
+  const [moreAlignRight, setMoreAlignRight] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!morePanel) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMorePanel(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMorePanel(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [morePanel]);
   // 若目前分頁被使用者在設定裡藏起來,退回總覽,避免停在看不見的分頁。
   useEffect(() => {
     if (!LOCKED_TABS.includes(tab) && hiddenTabs.includes(tab)) setTab("overview");
@@ -65,10 +95,46 @@ export function InstanceDetailPage({
   const [palDefender, setPalDefender] = useState(false);
   // 非 null 時代表正在倒數(數字為剩餘秒數),用來鎖按鈕與顯示提示。
   const [countdown, setCountdown] = useState<number | null>(null);
+  // 意外停止偵測:上次輪詢還是 running、這次變 stopped、且使用者沒按過停止/重啟
+  // → 幾乎都是閃退(壞 ini / 模組衝突),要明講而不是默默變「已停止」。
+  const stopRequested = useRef(false);
+  const prevStatus = useRef<string | null>(null);
+  const [unexpectedStop, setUnexpectedStop] = useState(false);
+  // 連續崩潰達上限 → supervisor 停止自動重啟:這件事不能只埋在重啟紀錄裡
+  const [restartHalted, setRestartHalted] = useState(false);
+  // 啟動前偵測到埠被占用 → 開修改面板(新手最常見的開不起來原因)
+  const [portConflict, setPortConflict] = useState<PortsCheckResult | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setDetail(await client.getInstance(instanceId));
+      const d = await client.getInstance(instanceId);
+      if (prevStatus.current === "running" && d.status === "exited" && !stopRequested.current) {
+        setUnexpectedStop(true);
+      }
+      if (d.status === "running") {
+        stopRequested.current = false;
+        setUnexpectedStop(false);
+        setRestartHalted(false);
+      }
+      // 停止狀態時查一次重啟紀錄:最新事件若是「崩潰達上限」就浮出橫幅
+      if (d.status === "exited" && prevStatus.current !== "exited") {
+        client
+          .restartPolicy(instanceId)
+          .then(({ events }) => {
+            const last = events[0];
+            if (
+              last &&
+              last.reason === "crash" &&
+              !last.ok &&
+              Date.now() - new Date(last.at).getTime() < 24 * 60 * 60 * 1000
+            ) {
+              setRestartHalted(true);
+            }
+          })
+          .catch(() => {});
+      }
+      prevStatus.current = d.status;
+      setDetail(d);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -76,12 +142,19 @@ export function InstanceDetailPage({
   }, [client, instanceId]);
 
   // Gate PalDefender-only tabs on whether the plugin is installed.
-  useEffect(() => {
+  // ModsTab 安裝/移除後呼叫 onModsChanged 重查,分頁即時出現/消失(不用刷新頁面)。
+  const checkPalDefender = useCallback(() => {
     client
       .mods(instanceId)
       .then((m) => setPalDefender(m.supported && m.paldefender.installed))
       .catch(() => setPalDefender(false));
   }, [client, instanceId]);
+  useEffect(() => checkPalDefender(), [checkPalDefender]);
+  // 移除 PalDefender 時人正停在該分頁 → 退回總覽(帕魯數值不依賴 PalDefender,不在此列)
+  useEffect(() => {
+    // 強化(modded)實例例外:autoEnhance 會裝 PalDefender,分頁常駐(裝好前顯示原因)
+    if (tab === "paldefender" && !palDefender && detail?.flavor !== "modded") setTab("overview");
+  }, [tab, palDefender, detail]);
 
   useEffect(() => {
     void refresh();
@@ -89,7 +162,18 @@ export function InstanceDetailPage({
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const act = async (action: "start" | "stop" | "restart") => {
+  const act = async (action: "start" | "stop" | "restart", skipPortCheck = false) => {
+    if (action === "stop" || action === "restart") stopRequested.current = true;
+    if (action === "start") setUnexpectedStop(false);
+    // 啟動前先檢查五種埠(遊戲/查詢/REST/RCON/PalDefender)有沒有被其他程式占走;
+    // 有衝突就開修改面板,而不是讓伺服器啟動失敗留下天書錯誤。
+    if (action === "start" && !skipPortCheck && detail && detail.status !== "running") {
+      const chk = await client.portsCheck(instanceId).catch(() => null);
+      if (chk?.supported && chk.anyConflict) {
+        setPortConflict(chk);
+        return;
+      }
+    }
     // 手動停止/重啟時,agent 端會依「伺服器重啟設定」裡的倒數秒數,在遊戲聊天室倒數公告
     // 再執行;公告訊息用 GUI 介面語言的模板({n} 由 agent 代入剩餘秒數)。前端只負責把
     // 模板傳過去,並用讀到的秒數跑一個純顯示用的本地倒數。
@@ -207,8 +291,10 @@ export function InstanceDetailPage({
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
             onClick={() => setShowLogs(true)}
+            title={t("日誌")}
+            aria-label={t("日誌")}
           >
-            <FiFileText className="size-4" /> {t("日誌")}
+            <FiFileText className="size-4" />
           </button>
           <button
             className={`${btnGhost} inline-flex items-center gap-1.5`}
@@ -231,6 +317,19 @@ export function InstanceDetailPage({
         <div className="rounded-xl border-2 border-sun/40 bg-sun/10 px-4 py-3">
           <InstallProgress percent={detail.installProgress} />
         </div>
+      )}
+
+      {portConflict && (
+        <PortConflictModal
+          client={client}
+          instanceId={instanceId}
+          check={portConflict}
+          onResolved={() => {
+            setPortConflict(null);
+            void act("start", true);
+          }}
+          onClose={() => setPortConflict(null)}
+        />
       )}
 
       {showConsole && (
@@ -274,7 +373,53 @@ export function InstanceDetailPage({
       {notice && (
         <p className="rounded-xl bg-grass/10 px-3 py-2 text-[13px] font-bold text-grass">{notice}</p>
       )}
-      {error && <p className={errorCls}>{error}</p>}
+      {error && (
+        <p className={`${errorCls} inline-flex flex-wrap items-center gap-2`}>
+          <span className="min-w-0 break-all">{error}</span>
+          <button
+            className="shrink-0 underline underline-offset-2 hover:opacity-80"
+            onClick={() => setShowLogs(true)}
+          >
+            {t("查看日誌")}
+          </button>
+        </p>
+      )}
+
+      {restartHalted && (
+        <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
+          <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {t("伺服器連續崩潰達上限,自動重啟已暫停。請先查日誌排除原因(常見:模組不相容、存檔損壞),再手動啟動。")}{" "}
+            <button className="underline underline-offset-2 hover:opacity-80" onClick={() => setShowLogs(true)}>
+              {t("查看日誌")}
+            </button>{" "}
+            <button className="underline underline-offset-2 hover:opacity-80" onClick={() => setTab("restart")}>
+              {t("重啟設定")}
+            </button>
+          </span>
+        </p>
+      )}
+
+      {unexpectedStop && (
+        <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
+          <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {t("伺服器意外停止了(不是你按的)。最常見原因:模組與遊戲版本不相容、世界設定檔損壞、或記憶體不足。")}{" "}
+            <button
+              className="underline underline-offset-2 hover:opacity-80"
+              onClick={() => setShowLogs(true)}
+            >
+              {t("查看日誌")}
+            </button>{" "}
+            <button
+              className="underline underline-offset-2 hover:opacity-80"
+              onClick={() => setUnexpectedStop(false)}
+            >
+              {t("知道了")}
+            </button>
+          </span>
+        </p>
+      )}
 
       {detail.installError && (
         <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
@@ -295,25 +440,102 @@ export function InstanceDetailPage({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-x-2 gap-y-1 border-b-2 border-line">
-        {TABS.filter((t) => t.id !== "paldefender" || palDefender)
-          .filter((t) => t.id !== "palstats" || SHOW_SPONSOR_FEATURES)
-          .filter((t) => LOCKED_TABS.includes(t.id) || !hiddenTabs.includes(t.id))
-          .map((t) => (
-          <button
-            key={t.id}
-            data-tab={t.id}
-            className={
-              t.id === tab
-                ? "-mb-0.5 border-b-[3px] border-pal px-4 py-2 text-sm font-extrabold whitespace-nowrap text-pal"
-                : "px-4 py-2 text-sm font-extrabold whitespace-nowrap text-ink-muted transition hover:text-ink"
-            }
-            onClick={() => setTab(t.id)}
-          >
-            {translate(t.label)}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        // 依每實例自訂順序排列,再套 gating(PalDefender 裝了才有、贊助旗標)
+        const orderedTabs = tabOrder
+          .map((id) => TABS.find((tb) => tb.id === id))
+          .filter((tb): tb is (typeof TABS)[number] => !!tb)
+          .filter((tb) => tb.id !== "paldefender" || palDefender || detail.flavor === "modded")
+          .filter((tb) => tb.id !== "palstats" || SHOW_SPONSOR_FEATURES);
+        const visibleTabs = orderedTabs.filter((tb) => LOCKED_TABS.includes(tb.id) || !hiddenTabs.includes(tb.id));
+        const manageable = orderedTabs.filter((tb) => !LOCKED_TABS.includes(tb.id));
+        const onDragEnd = (e: DragEndEvent) => {
+          const { active, over } = e;
+          if (!over || active.id === over.id) return;
+          const ids = visibleTabs.map((tb) => tb.id);
+          const from = ids.indexOf(active.id as Tab);
+          const to = ids.indexOf(over.id as Tab);
+          if (from < 0 || to < 0) return;
+          // 只重排可見分頁,隱藏分頁保持原本的相對位置
+          const moved = arrayMove(ids, from, to);
+          let vi = 0;
+          setTabOrder(tabOrder.map((id) => (ids.includes(id) ? moved[vi++] : id)));
+        };
+        return (
+          <div className="flex flex-wrap gap-x-2 gap-y-1 border-b-2 border-line">
+            <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <SortableContext items={visibleTabs.map((tb) => tb.id)} strategy={rectSortingStrategy}>
+                {visibleTabs.map((tb) => (
+                  <SortableTabButton
+                    key={tb.id}
+                    id={tb.id}
+                    active={tb.id === tab}
+                    label={translate(tb.label)}
+                    onSelect={() => setTab(tb.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+            <div ref={moreRef} className="relative">
+              <button
+                type="button"
+                className="inline-flex items-center self-center px-3 pb-1 pt-2.5 text-sm font-extrabold text-ink-muted transition hover:text-ink"
+                onClick={() => {
+                  const r = moreRef.current?.getBoundingClientRect();
+                  setMoreAlignRight(!!r && r.left + 224 > window.innerWidth - 16);
+                  setMorePanel((v) => !v);
+                }}
+                title={translate("管理分頁")}
+                aria-label={translate("管理分頁")}
+              >
+                <FiPlus className="size-4" />
+              </button>
+              {morePanel && (
+                <div className={`absolute top-full z-30 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl border-2 border-line bg-card p-2 shadow-lg ${moreAlignRight ? "right-0" : "left-0"}`}>
+                  <p className="px-2 py-1 text-xs font-extrabold text-ink-muted">{translate("管理分頁")}</p>
+                  {manageable.map((tb) => {
+                    const shown = !hiddenTabs.includes(tb.id);
+                    return (
+                      <button
+                        key={tb.id}
+                        type="button"
+                        className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-bold transition hover:bg-card-soft ${shown ? "" : "text-ink-muted"}`}
+                        onClick={() => {
+                          if (shown) {
+                            setHiddenTabs([...hiddenTabs, tb.id]);
+                          } else {
+                            setHiddenTabs(hiddenTabs.filter((id) => id !== tb.id));
+                            setTab(tb.id);
+                            setMorePanel(false);
+                          }
+                        }}
+                      >
+                        {shown ? (
+                          <FiCheck className="size-3.5 shrink-0 text-pal" />
+                        ) : (
+                          <FiPlus className="size-3.5 shrink-0" />
+                        )}
+                        {translate(tb.label)}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-bold text-ink-muted transition hover:bg-card-soft hover:text-ink"
+                    onClick={() => {
+                      setHiddenTabs(defaultHiddenTabs(enhancedMode));
+                      setTabOrder(TABS.map((tb) => tb.id));
+                      setMorePanel(false);
+                    }}
+                  >
+                    <FiRefreshCw className="size-3.5 shrink-0" /> {translate("恢復預設分頁與順序")}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {tab === "overview" && <OverviewTab client={client} detail={detail} onRefresh={refresh} />}
       {tab === "performance" && (
@@ -361,12 +583,17 @@ export function InstanceDetailPage({
         <EngineTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
       {tab === "mods" && (
-        <ModsTab client={client} instanceId={detail.id} running={detail.status === "running"} />
+        <ModsTab
+          client={client}
+          instanceId={detail.id}
+          running={detail.status === "running"}
+          onModsChanged={checkPalDefender}
+        />
       )}
       {tab === "paldefender" && (
         <PalDefenderTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
-      {tab === "palstats" && <PalStatsTab client={client} instanceId={detail.id} />}
+      {tab === "palstats" && <PalStatsTab client={client} instanceId={detail.id} running={detail.status === "running"} />}
       {tab === "saves" && (
         <SavesTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
@@ -420,62 +647,85 @@ function OverviewTab({
 
   return (
     <div className="flex flex-col gap-4">
-      {!hiddenCards.includes("ports") && (
-        <div className="rounded-cute border-2 border-sun/45 bg-sun/10 px-4 py-3">
-          <div className="flex items-start justify-between gap-2">
-            <p className="inline-flex min-w-0 items-center gap-2 text-sm font-extrabold text-sun">
-              <FiAlertTriangle className="size-4 shrink-0" /> {t("多台伺服器?這些埠都不能重複")}
-            </p>
-            <button
-              className="-mr-1 -mt-1 rounded-lg p-1 text-ink-muted transition hover:bg-card-soft hover:text-ink"
-              onClick={() => setHiddenCards([...hiddenCards, "ports"])}
-              title={t("隱藏此卡片(可在設定恢復)")}
-              aria-label={t("隱藏此卡片(可在設定恢復)")}
-            >
-              <FiX className="size-4" />
-            </button>
+      {/* 邀請卡顯示時:左欄「伺服器資訊+遊戲版本」疊放,右欄邀請卡(內容高度);
+          關掉邀請卡後:回到資訊左、版本右的兩欄並排。 */}
+      {(() => {
+        const infoCard = (
+          <div className={card}>
+            <h3 className="mb-3 text-sm font-extrabold text-ink-muted">{t("伺服器資訊")}</h3>
+            <dl className="flex flex-col gap-2">
+              {rows.map(([k, v], i) => (
+                <div key={i} className="flex items-center justify-between gap-4 text-sm">
+                  <dt className="shrink-0 text-ink-muted">{k}</dt>
+                  <dd className="min-w-0 text-right font-bold">
+                    {typeof v === "string" ? <span className="break-all">{v}</span> : v}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </div>
-          <p className="mt-1 text-[13px] text-ink-muted">
-            {t("同一台主機上跑多個伺服器時,每台的以下埠都必須各自不同,否則會發生埠綁定衝突,導致伺服器起不來或玩家連不上:")}
-          </p>
-          <p className="mt-1 text-[13px] font-bold">
-            {t("遊戲埠(port) · Steam 查詢埠(queryport) · RCON 埠 · REST API 埠 · PalDefender REST 埠(預設 17993)")}
-          </p>
-        </div>
-      )}
-      <div className="grid gap-4 sm:grid-cols-2">
-      <div className={card}>
-        <h3 className="mb-3 text-sm font-extrabold text-ink-muted">{t("伺服器資訊")}</h3>
-        <dl className="flex flex-col gap-2">
-          {rows.map(([k, v], i) => (
-            <div key={i} className="flex items-center justify-between gap-4 text-sm">
-              <dt className="shrink-0 text-ink-muted">{k}</dt>
-              <dd className="min-w-0 text-right font-bold">
-                {typeof v === "string" ? <span className="break-all">{v}</span> : v}
-              </dd>
+        );
+        const versionCard = (
+          <VersionCard
+            client={client}
+            instanceId={detail.id}
+            running={detail.status === "running"}
+            canReinstall={detail.backend === "native"}
+            onUpdateStarted={onRefresh}
+          />
+        );
+        return hiddenCards.includes("invite") ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {infoCard}
+            {versionCard}
+          </div>
+        ) : (
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-4">
+              {infoCard}
+              {versionCard}
             </div>
-          ))}
-        </dl>
-      </div>
-      {!hiddenCards.includes("migration") && (
-        <MigrationCard onDismiss={() => setHiddenCards([...hiddenCards, "migration"])} />
-      )}
-      <VersionCard
-        client={client}
-        instanceId={detail.id}
-        running={detail.status === "running"}
-        canReinstall={detail.backend === "native"}
-        onUpdateStarted={onRefresh}
-      />
-      {!hiddenCards.includes("invite") && (
-        <ConnectionCard
-          client={client}
-          instanceId={detail.id}
-          onDismiss={() => setHiddenCards([...hiddenCards, "invite"])}
-        />
-      )}
-      </div>
+            <ConnectionCard
+              client={client}
+              instanceId={detail.id}
+              onDismiss={() => setHiddenCards([...hiddenCards, "invite"])}
+            />
+          </div>
+        );
+      })()}
     </div>
+  );
+}
+
+/** 可拖曳排序的分頁標籤:PointerSensor 距離閾值讓點擊照常運作。 */
+function SortableTabButton({
+  id,
+  active,
+  label,
+  onSelect,
+}: {
+  id: Tab;
+  active: boolean;
+  label: string;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <button
+      ref={setNodeRef}
+      data-tab={id}
+      style={{ transform: DndCSS.Translate.toString(transform), transition, touchAction: "none" }}
+      className={`${
+        active
+          ? "-mb-0.5 border-b-[3px] border-pal px-4 py-2 text-sm font-extrabold whitespace-nowrap text-pal"
+          : "px-4 py-2 text-sm font-extrabold whitespace-nowrap text-ink-muted transition hover:text-ink"
+      }${isDragging ? " z-10 opacity-60" : ""}`}
+      onClick={onSelect}
+      {...attributes}
+      {...listeners}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -520,6 +770,23 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
   const transRef = useRef<Map<string, string>>(new Map());
   const [, bumpTrans] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // 廣播訊息(從玩家分頁移來):日誌串流就在上方,管理員能邊看聊天邊回話。
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sendAnnounce = async () => {
+    if (!message.trim()) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await client.announce(instanceId, message.trim());
+      setMessage("");
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
+  };
 
   useEffect(() => {
     client.license().then((l) => setEntitled(hasFeature("log-tools", l))).catch(() => setEntitled(false));
@@ -595,9 +862,25 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
     })();
   }, [entitled, prefs.translate, prefs.format, lines, client]);
 
+  // 只看重點:錯誤/警告過濾(重用 classifyLine 分類);聊天=chat/join/leave/death/capture
+  const [logFilter, setLogFilter] = useState<"all" | "issues" | "chat">("all");
+  // 智慧跟捲:使用者在底部才自動捲;往上回看時暫停,顯示「N 行新日誌」浮動按鈕
+  const atBottomRef = useRef(true);
+  const [pendingLines, setPendingLines] = useState(0);
+  const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (atBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      setPendingLines(0);
+    } else {
+      setPendingLines((n) => n + 1);
+    }
   }, [lines]);
+  const jumpToLatest = () => {
+    atBottomRef.current = true;
+    setPendingLines(0);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const highlight = prefs.highlight; // 免費
   const format = prefs.format; // 免費
@@ -641,10 +924,30 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
           on={translate}
           onChange={(v) => entitled === true && prefs.setTranslate(v)}
           disabled={entitled !== true}
-          icon={<FiStar className="size-4 text-pal" />}
+          icon={<FiStar className={`size-4 ${translate ? "" : "text-pal"}`} />}
           label={t("翻譯")}
           title={entitled === true ? undefined : t("翻譯為贊助者專屬功能")}
         />
+        <span className="mx-1 h-5 w-0.5 rounded bg-line" />
+        {(
+          [
+            { id: "all", label: "全部" },
+            { id: "issues", label: "錯誤與警告" },
+            { id: "chat", label: "聊天與事件" },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.id}
+            className={
+              logFilter === f.id
+                ? "rounded-full bg-pal px-3 py-1 text-[12px] font-extrabold text-white"
+                : "rounded-full border-2 border-line bg-card-soft px-3 py-1 text-[12px] font-extrabold text-ink-muted transition hover:border-pal"
+            }
+            onClick={() => setLogFilter(f.id)}
+          >
+            {t(f.label)}
+          </button>
+        ))}
       </div>
       {entitled === false && (
         <p className="inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
@@ -653,10 +956,23 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
         </p>
       )}
 
-      <div className="h-[440px] overflow-auto rounded-(--radius-cute) bg-[#1c1927] p-4 font-mono text-sm">
+      <div className="relative">
+      <div
+        ref={scrollBoxRef}
+        className="h-[440px] overflow-auto rounded-(--radius-cute) bg-[#1c1927] p-4 font-mono text-sm"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          atBottomRef.current = atBottom;
+          if (atBottom) setPendingLines(0);
+        }}
+      >
         {lines.length ? (
           lines.map((line, i) => {
-            const color = highlight ? categoryColor(classifyLine(line)) : "#cfd6df";
+            const cat = classifyLine(line);
+            if (logFilter === "issues" && cat !== "warn" && cat !== "error") return null;
+            if (logFilter === "chat" && (cat === null || cat === "warn" || cat === "error")) return null;
+            const color = highlight ? categoryColor(cat) : "#cfd6df";
             let text = line;
             if (format) {
               const ev = formatLine(line);
@@ -686,6 +1002,36 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
         )}
         <div ref={bottomRef} />
       </div>
+      {pendingLines > 0 && (
+        <button
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-pal px-4 py-1.5 text-[12px] font-extrabold text-white shadow-lg transition hover:bg-pal-strong"
+          onClick={jumpToLatest}
+        >
+          {t("{n} 行新日誌,跳到最新", { n: pendingLines })}
+        </button>
+      )}
+      </div>
+
+      {/* 廣播訊息(從玩家分頁移來):貼在日誌下方,聊天訊息在上面滾,回話就在手邊。 */}
+      {sendError && <p className={errorCls}>{sendError}</p>}
+      <form
+        className="flex shrink-0 items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void sendAnnounce();
+        }}
+      >
+        <input
+          className={`${inputCls} min-w-0 flex-1`}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder={t("輸入要廣播給所有玩家的訊息…")}
+          maxLength={500}
+        />
+        <button className={`${btn} inline-flex shrink-0 items-center gap-1.5`} disabled={sending || !message.trim()}>
+          <FiSend className="size-4" /> {sending ? t("發送中…") : t("廣播")}
+        </button>
+      </form>
     </div>
   );
 }

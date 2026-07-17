@@ -1,20 +1,11 @@
 import { useState } from "react";
-import { FiAlertTriangle, FiColumns, FiCopy, FiDownloadCloud, FiFolder, FiHardDrive, FiLayout, FiSave, FiTrash2 } from "react-icons/fi";
+import { FiAlertTriangle, FiCopy, FiDownloadCloud, FiFolder, FiHardDrive, FiLayout, FiSave, FiTrash2 } from "react-icons/fi";
 import type { InstanceDetail } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { CopyPath } from "./CopyPath";
 import { FileBrowserDialog } from "./FileManager";
 import { LaunchOptionsCard } from "./LaunchOptionsCard";
-import {
-  TABS,
-  LOCKED_TABS,
-  OVERVIEW_CARDS,
-  DISMISSIBLE_WARNINGS,
-  DISMISSIBLE_PROMOS,
-  useHiddenTabs,
-  useHiddenCards,
-  type Tab,
-} from "./tabPrefs";
+import { OVERVIEW_CARDS, DISMISSIBLE_WARNINGS, DISMISSIBLE_PROMOS, useHiddenCards } from "./tabPrefs";
 import { t, useI18n } from "./i18n";
 import { btn, btnDanger, btnGhost, card, errorCls, inputCls, labelCls } from "./ui";
 
@@ -39,6 +30,8 @@ export function InstanceSettingsTab({
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
+      <AutoStartCard client={client} detail={detail} />
+
       <ServerFilesCard client={client} instanceId={detail.id} />
 
       {detail.backend === "native" && (
@@ -57,7 +50,6 @@ export function InstanceSettingsTab({
 
       <LaunchOptionsCard client={client} instanceId={detail.id} category="general" />
 
-      <TabVisibilityCard />
 
       <OverviewCardsCard />
 
@@ -100,48 +92,6 @@ function ServerFilesCard({ client, instanceId }: { client: AgentClient; instance
           onClose={() => setBrowsing(null)}
         />
       )}
-    </div>
-  );
-}
-
-/** 選擇實例詳情頁要顯示哪些分頁(存 localStorage,全實例共用)。總覽與本設定頁不可隱藏。 */
-function TabVisibilityCard() {
-  useI18n();
-  const [hidden, setHidden] = useHiddenTabs();
-  const toggle = (id: Tab) =>
-    setHidden(hidden.includes(id) ? hidden.filter((x) => x !== id) : [...hidden, id]);
-
-  return (
-    <div className={`${card} flex flex-col gap-3`}>
-      <h3 className="inline-flex items-center gap-2 text-sm font-extrabold">
-        <FiColumns className="size-4 text-pal" /> {t("顯示的分頁")}
-      </h3>
-      <p className="text-[13px] text-ink-muted">
-        {t("勾選要在伺服器頁面顯示的分頁。取消勾選會把該分頁隱藏起來。")}
-      </p>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-        {TABS.map((tb) => {
-          const locked = LOCKED_TABS.includes(tb.id);
-          const shown = locked || !hidden.includes(tb.id);
-          return (
-            <label
-              key={tb.id}
-              className={`inline-flex items-center gap-2 text-[13px] font-bold ${
-                locked ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="size-4 accent-pal"
-                checked={shown}
-                disabled={locked}
-                onChange={() => toggle(tb.id)}
-              />
-              {t(tb.label)}
-            </label>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -517,6 +467,43 @@ function DangerZone({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** agent 啟動時自動開服的開關。搭配全域設定的「開機自動啟動 agent」= 主機開機即開服。 */
+function AutoStartCard({ client, detail }: { client: AgentClient; detail: InstanceDetail }) {
+  useI18n();
+  const [on, setOn] = useState(detail.autoStart ?? false);
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const r = await client.setAutoStart(detail.id, !on);
+      setOn(r.autoStart);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={`${card} flex flex-wrap items-center justify-between gap-3`}>
+      <div className="min-w-0">
+        <h3 className="text-sm font-extrabold">{t("自動啟動")}</h3>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          {t("agent 啟動時自動開這台伺服器。搭配「設定 → 系統 → 開機自動啟動 agent」,主機開機就會自動開服。")}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={busy}
+        onClick={() => void toggle()}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition ${on ? "bg-grass" : "bg-line"}`}
+      >
+        <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-all ${on ? "left-6" : "left-1"}`} />
+      </button>
     </div>
   );
 }

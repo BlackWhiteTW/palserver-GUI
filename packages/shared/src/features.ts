@@ -19,7 +19,7 @@ export const EARLY_ACCESS_FEATURES: EarlyAccessFeature[] = [
   { id: "bulk-items", label: "批量給予道具(物品選單 + 數量)" },
   { id: "teleport", label: "傳送玩家(玩家 / 地圖座標描點)" },
   { id: "log-tools", label: "日誌重點標記與格式化(事件上色 + 易讀套版)" },
-  { id: "dashboard-stats", label: "首頁進階顯示(在線玩家 / 資源用量一覽)" },
+  { id: "dashboard-stats", label: "首頁進階顯示(在線玩家 / 資源用量 / 配置評估健檢)" },
   { id: "save-slim", label: "存檔健檢(組成分析 / 殘留統計)" },
   { id: "leaderboard", label: "伺服器排行榜(等級 / 財富 / 圖鑑 / 最強帕魯 + 掃描差異週報)" },
   { id: "daily-restart", label: "每天多個固定時刻自動重啟(單一時刻免費;多時刻如 00:00/06:00/12:00/18:00)" },

@@ -16,7 +16,7 @@ export interface GameEntity {
   zhCN?: string;
   /** Japanese name where known(scripts/fetch-game-data-i18n.mjs 由 paldb.cc 抓) */
   ja?: string;
-  /** icon filename within the category folder, if we have artwork for it */
+  /** icon filename within the category folder, or a path relative to /game-data */
   icon?: string;
   /** passive-skill rank (詞條 catalog only): 1–5 good, negative = 惡性 */
   rank?: number;
@@ -36,6 +36,8 @@ export const displayName = (e: GameEntity) => {
 export interface GameData {
   pals: GameEntity[];
   items: GameEntity[];
+  /** 可由 learntech / unlearntech 使用的玩家科技目錄。 */
+  technologies: GameEntity[];
   /** 帕魯蛋子集(items 中 id 以 PalEgg 開頭者),給「給予帕魯蛋」選單用,
    *  避免混入 Egg / FriedEggs 等食材。 */
   eggs: GameEntity[];
@@ -107,12 +109,13 @@ let cache: GameData | null = null;
 let inflight: Promise<GameData> | null = null;
 const listeners = new Set<(d: GameData) => void>();
 
-type Catalogs = [GameEntity[], GameEntity[], GameEntity[], GameEntity[], GameEntity[], GameEntity[]];
+type Catalogs = [GameEntity[], GameEntity[], GameEntity[], GameEntity[], GameEntity[], GameEntity[], GameEntity[]];
 
-function build([pals, items, passives, activeSkills, humans, research]: Catalogs): GameData {
+function build([pals, items, passives, activeSkills, humans, research, technologies]: Catalogs): GameData {
   return {
     pals,
     items,
+    technologies,
     eggs: items.filter((i) => i.id.startsWith("PalEgg")),
     passives,
     activeSkills,
@@ -147,6 +150,7 @@ async function fetchCatalogs(base: string, opts?: RequestInit): Promise<Catalogs
     // humans/research 較晚加入:遠端(GitHub raw)或舊快取拿不到時退空陣列,不擋整包
     one("humans.json").catch(() => [] as GameEntity[]),
     one("research.json").catch(() => [] as GameEntity[]),
+    one("technologies.json").catch(() => [] as GameEntity[]),
   ]);
 }
 
@@ -184,8 +188,9 @@ async function refreshFromRemote(): Promise<void> {
       merge(remote[3], cache?.activeSkills),
       merge(remote[4], cache?.humans),
       merge(remote[5], cache?.research),
+      merge(remote[6], cache?.technologies),
     ];
-    const [pals, items, passives, activeSkills, humans, research] = fresh;
+    const [pals, items, passives, activeSkills, humans, research, technologies] = fresh;
     // 任一目錄跟目前載入的不同就換上 —— 舊版只比 pals/items,導致 humans/research
     // 這類後加的目錄在舊 bundle 上永遠不會被遠端更新補上
     const changed =
@@ -194,7 +199,8 @@ async function refreshFromRemote(): Promise<void> {
       JSON.stringify(passives) !== JSON.stringify(cache?.passives) ||
       JSON.stringify(activeSkills) !== JSON.stringify(cache?.activeSkills) ||
       JSON.stringify(humans) !== JSON.stringify(cache?.humans) ||
-      JSON.stringify(research) !== JSON.stringify(cache?.research);
+      JSON.stringify(research) !== JSON.stringify(cache?.research) ||
+      JSON.stringify(technologies) !== JSON.stringify(cache?.technologies);
     if (Array.isArray(pals) && Array.isArray(items) && pals.length > 0 && items.length > 0 && changed) {
       cache = build(fresh);
       listeners.forEach((l) => l(cache!));
@@ -218,4 +224,5 @@ export function useGameData(): GameData | null {
 
 export const palIconUrl = (icon: string) => `/game-data/pals/${icon}`;
 export const itemIconUrl = (icon: string) => `/game-data/items/${icon}`;
+export const technologyIconUrl = (icon: string) => `/game-data/${icon}`;
 export const humanIconUrl = (icon: string) => `/game-data/humans/${icon}`;

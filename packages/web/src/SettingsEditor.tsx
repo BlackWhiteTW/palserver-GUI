@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiFileText, FiAlertTriangle } from "react-icons/fi";
+import { FiFileText, FiAlertTriangle, FiSearch } from "react-icons/fi";
 import type { FileHealth, OptionMeta } from "@palserver/shared";
 import {
   OPTION_CATEGORIES,
@@ -47,6 +47,20 @@ export function SettingsEditor({
 }) {
   useI18n();
   const [category, setCategory] = useState<OptionCategory>("server");
+  // 搜尋:比對「翻譯後標籤 + ini key + hint」,有輸入時跨分類顯示
+  const [search, setSearch] = useState("");
+  const visibleKeys = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return optionKeysByCategory(category);
+    return (Object.keys(WORLD_OPTIONS) as WorldOptionKey[]).filter((key) => {
+      const meta = WORLD_OPTIONS[key] as OptionMeta;
+      return (
+        key.toLowerCase().includes(q) ||
+        t(OPTION_LABELS[key]).toLowerCase().includes(q) ||
+        (meta.hint ? t(meta.hint).toLowerCase().includes(q) : false)
+      );
+    });
+  }, [search, category]);
   const [draft, setDraft] = useState<Partial<WorldSettings>>({});
   const [error, setError] = useState<string | null>(null);
   const [rawPath, setRawPath] = useState<string | null>(null);
@@ -120,8 +134,17 @@ export function SettingsEditor({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          {OPTION_CATEGORIES.map((c) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="relative">
+            <FiSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
+            <input
+              className={`${inputCls} w-44 py-1.5 pl-8 text-[13px]`}
+              value={search}
+              placeholder={t("搜尋設定…")}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          {!search.trim() && OPTION_CATEGORIES.map((c) => (
             <button
               key={c}
               className={
@@ -143,9 +166,12 @@ export function SettingsEditor({
       </div>
 
       <div className="flex flex-col divide-y divide-line">
-        {optionKeysByCategory(category).map((key) => (
+        {visibleKeys.map((key) => (
           <OptionRow key={key} optionKey={key} value={valueOf(key)} onChange={(v) => setValue(key, v)} />
         ))}
+        {search.trim() && visibleKeys.length === 0 && (
+          <p className="py-6 text-center text-[13px] text-ink-muted">{t("沒有符合「{q}」的設定。", { q: search.trim() })}</p>
+        )}
       </div>
 
       {error && <p className={errorCls}>{error}</p>}
@@ -207,6 +233,12 @@ function OptionRow({
         <p className="text-sm font-bold">{t(OPTION_LABELS[optionKey])}</p>
         <p className="text-xs text-ink-muted">{optionKey}</p>
         {meta.hint && <p className="mt-1 text-xs text-ink-muted">{t(meta.hint)}</p>}
+        {meta.warn && (
+          <p className="mt-1 inline-flex items-start gap-1.5 text-xs font-bold text-sun">
+            <FiAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            {t(meta.warn)}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-3">
         {meta.type === "bool" && (

@@ -5,7 +5,7 @@ import type { AgentClient } from "./api";
 import { GuildDetailModal, researchName } from "./GuildDetailModal";
 import { useGameData } from "./gameData";
 import { t, useI18n } from "./i18n";
-import { btnGhost, card, errorCls } from "./ui";
+import { EmptyState, btnGhost, card, errorCls } from "./ui";
 
 /**
  * 公會分頁 — 存檔快照(save-tools 掃描)驅動的公會總覽。
@@ -90,11 +90,15 @@ export function GuildsTab({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* 無法取得快照(note)且不能掃描時整列收起,虛線提示框與其他分頁一樣貼齊頂部 */}
+      {(generatedAt || !note || canScan) && (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-ink-muted">
           {generatedAt
             ? t("資料來自存檔掃描(掃描於 {when})。", { when: new Date(generatedAt).toLocaleString() })
-            : t("尚未掃描過存檔。點「從存檔刷新」建立快照。")}
+            : note
+              ? "" // 無法取得快照時只顯示下方的提示框,不重複「尚未掃描」
+              : t("尚未掃描過存檔。點「從存檔刷新」建立快照。")}
         </p>
         {canScan && (
           <button
@@ -107,15 +111,15 @@ export function GuildsTab({
           </button>
         )}
       </div>
+      )}
 
       {error && <p className={errorCls}>{error}</p>}
-      {note && !scanning && <p className="text-[13px] text-ink-muted">{note}</p>}
+      {note && !scanning && <EmptyState icon={<FiHome />}>{note}</EmptyState>}
 
-      {generatedAt && sorted.length === 0 && (
-        <div className="rounded-cute border-2 border-dashed border-line px-6 py-10 text-center text-ink-muted">
-          <FiHome className="mx-auto mb-2 size-11" />
-          {t("這個世界還沒有公會。")}
-        </div>
+      {!note && !scanning && sorted.length === 0 && (
+        <EmptyState icon={<FiHome />}>
+          {generatedAt ? t("這個世界還沒有公會。") : t("尚未掃描過存檔。點「從存檔刷新」建立快照。")}
+        </EmptyState>
       )}
 
       {sorted.map((g) => (

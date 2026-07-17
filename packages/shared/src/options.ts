@@ -26,6 +26,8 @@ export type OptionCategory =
  *  hint:顯示在設定項下方的說明/建議值文案(zh-TW 原文,前端 t() 翻譯),純 UI 用、不進 ini。 */
 interface OptionExtras {
   hint?: string;
+  /** 危險/破壞性選項的黃色警告(不可逆、或會斷 GUI 功能)。 */
+  warn?: string;
 }
 export type OptionMeta =
   | ({ type: "float"; default: number; min: number; max: number; step: number; category: OptionCategory; soft?: boolean } & OptionExtras)
@@ -52,13 +54,18 @@ export const WORLD_OPTIONS = {
   ServerPlayerMaxNum: { type: "int", default: 32, min: 1, max: 99, category: "server" },
   CoopPlayerMaxNum: { type: "int", default: 4, min: 1, max: 8, category: "server" },
   PublicIP: { type: "string", default: "", maxLength: 64, category: "server" },
-  PublicPort: { type: "int", default: 8211, min: 1024, max: 65535, category: "server" },
+  PublicPort: { type: "int", default: 8211, min: 1024, max: 65535, category: "server",
+    hint: "只影響社群伺服器列表顯示的埠,改這裡不會改實際監聽埠。要換連線埠請到「設定」分頁(或首頁卡片)看實際的遊戲埠。" },
   bIsMultiplay: { type: "bool", default: false, category: "server" },
   bShowPlayerList: { type: "bool", default: false, category: "server" },
   bIsShowJoinLeftMessage: { type: "bool", default: true, category: "server" },
-  RESTAPIEnabled: { type: "bool", default: true, category: "server" },
+  RESTAPIEnabled: { type: "bool", default: true, category: "server",
+    warn: "關閉後 GUI 的玩家列表、踢出/封鎖、線上地圖、效能監控都會失效 — 除非你清楚在做什麼,建議保持開啟。" },
   RESTAPIPort: { type: "int", default: 8212, min: 1024, max: 65535, category: "server" },
-  RCONEnabled: { type: "bool", default: false, category: "server" },
+  // 預設啟用:GUI 的倒數公告/廣播/指令台與 PalDefender 管理功能都靠 RCON;
+  // 建立時會自動生管理員密碼與唯一埠。
+  RCONEnabled: { type: "bool", default: true, category: "server",
+    warn: "關閉後 GUI 的停機倒數公告、廣播、指令台都會失效 — 建議保持開啟。" },
   RCONPort: { type: "int", default: 25575, min: 1024, max: 65535, category: "server" },
   ChatPostLimitPerMinute: { type: "int", default: 10, min: 1, max: 120, category: "server" },
   LogFormatType: { type: "enum", default: "Text", choices: ["Text", "Json"], category: "server" },
@@ -106,7 +113,8 @@ export const WORLD_OPTIONS = {
   PalAutoHpRegeneRateInSleep: rate("pal"),
   PalEggDefaultHatchingTime: { type: "float", default: 72, min: 0, max: 240, step: 1, category: "pal" },
   WorkSpeedRate: rate("pal", 1, 0.1, 20),
-  bPalLost: { type: "bool", default: false, category: "pal" },
+  bPalLost: { type: "bool", default: false, category: "pal",
+    warn: "開啟後帕魯死亡即永久消失,無法復活 — 對休閒玩家非常嚴苛,開啟前請確定全員知情。" },
   bAllowGlobalPalboxExport: { type: "bool", default: true, category: "pal" },
   bAllowGlobalPalboxImport: { type: "bool", default: false, category: "pal" },
   EnablePredatorBossPal: { type: "bool", default: true, category: "pal" },
@@ -199,7 +207,8 @@ export const WORLD_OPTIONS = {
   DropItemMaxNum_UNKO: { type: "int", default: 100, min: 0, max: 5000, category: "drop" },
   bActiveUNKO: { type: "bool", default: false, category: "drop" },
   PhysicsActiveDropItemMaxNum: { type: "int", default: -1, min: -1, max: 10000, category: "drop", hint: "啟用物理計算的掉落物上限(-1 = 無上限);設上限可減少物理運算負擔。" },
-  DenyTechnologyList: { type: "string", default: "", maxLength: 512, category: "drop" },
+  DenyTechnologyList: { type: "string", default: "", maxLength: 512, category: "drop",
+    hint: "填科技的英文內部 ID,逗號分隔(例:Workbench,Pickaxe)。ID 對照表:docs.palworldgame.com 的 technologyids 頁面;填中文名稱無效。" },
 
   // ── world ─────────────────────────────────────────────────────────────
   Difficulty: {
@@ -212,10 +221,12 @@ export const WORLD_OPTIONS = {
   bEnableInvaderEnemy: { type: "bool", default: true, category: "world" },
   bEnableAimAssistPad: { type: "bool", default: true, category: "world" },
   bEnableAimAssistKeyboard: { type: "bool", default: false, category: "world" },
-  bHardcore: { type: "bool", default: false, category: "world" },
+  bHardcore: { type: "bool", default: false, category: "world",
+    warn: "硬核模式:玩家死亡即永久死亡(角色刪除)— 不可逆,開啟前請確定全員知情。" },
   bCharacterRecreateInHardcore: { type: "bool", default: false, category: "world" },
   RandomizerType: {
     type: "enum", default: "None", choices: ["None", "Region", "All"], category: "world",
+    hint: "只在「建立新世界」時生效 — 既有世界改這個不會有任何變化。",
   },
   // 官方 ini 是帶引號的字串(RandomizerSeed=""),曾誤標為 int 導致寫出無引號的
   // 0 而觸發「missing opening symbol」解析錯誤;舊存的數字值由 schema 的 catch

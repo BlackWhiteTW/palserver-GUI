@@ -27,7 +27,7 @@ import type { AgentClient } from "./api";
 import { FileBrowserDialog } from "./FileManager";
 import { HostFixModal } from "./HostFixModal";
 import { t, useI18n } from "./i18n";
-import { btn, btnGhost, card, errorCls, inputCls } from "./ui";
+import { EmptyState, btn, btnGhost, card, errorCls, inputCls } from "./ui";
 
 /** Where a world's .sav files live, relative to the server directory. */
 const worldPath = (guid: string) => `Pal/Saved/SaveGames/0/${guid}`;
@@ -95,18 +95,34 @@ export function SavesTab({
 
   if (!saves.supported && saves.worlds.length === 0 && saves.backups.length === 0) {
     return (
-      <div className="rounded-(--radius-cute) border-2 border-dashed border-line px-6 py-12 text-center text-ink-muted">
-        <FiArchive className="mx-auto mb-2 size-11" />
-        <p className="font-bold">{t("尚無存檔")}</p>
-        <p className="mt-1 text-[13px]">{saves.reason}</p>
-      </div>
+      <EmptyState icon={<FiArchive />} title={t("尚無存檔")}>{saves.reason}</EmptyState>
     );
   }
 
   const restore = async (name: string) => {
+    // 新手不敢按的主因是「不知道會失去多少」:把備份時間點與回溯量講清楚。
+    const backup = saves.backups.find((b) => b.name === name);
+    let rollback = "";
+    if (backup) {
+      const at = new Date(backup.createdAt);
+      const hours = Math.max(0, (Date.now() - at.getTime()) / 3_600_000);
+      const span =
+        hours < 1
+          ? t("不到 1 小時")
+          : hours < 48
+            ? t("約 {n} 小時", { n: String(Math.round(hours)) })
+            : t("約 {n} 天", { n: String(Math.round(hours / 24)) });
+      rollback = "\n\n" + t("這份備份建立於 {when} — 之後({span})的遊戲進度會消失。", {
+        when: at.toLocaleString(),
+        span,
+      });
+    }
     if (
       !confirm(
-        t("還原備份「{name}」會覆蓋目前的世界存檔。\n\n還原前會自動先幫現有存檔做一份安全備份。確定要繼續嗎?", { name }),
+        t("還原備份「{name}」會覆蓋目前的世界存檔。", { name }) +
+          rollback +
+          "\n\n" +
+          t("還原前會自動先幫現有存檔做一份安全備份。確定要繼續嗎?"),
       )
     )
       return;
@@ -196,7 +212,7 @@ export function SavesTab({
           {t("備份")}({saves.backups.length})
         </h3>
         {saves.backups.length === 0 ? (
-          <p className="px-5 py-8 text-center text-[13px] text-ink-muted">{t("尚無備份。")}</p>
+          <EmptyState compact className="m-4">{t("尚無備份。")}</EmptyState>
         ) : (
           <div className="flex flex-col divide-y divide-line">
             {saves.backups.map((backup) => (
@@ -369,9 +385,7 @@ function HealthCard({
       )}
 
       {!locked && status && !status.supported && (
-        <div className="rounded-cute border-2 border-dashed border-line px-6 py-6 text-center text-[13px] text-ink-muted">
-          {status.reason}
-        </div>
+        <EmptyState compact>{status.reason}</EmptyState>
       )}
 
       {!locked && error && <p className={errorCls}>{error}</p>}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiAlertTriangle, FiDownload, FiEdit2, FiList, FiLock, FiStar, FiTrash2 } from "react-icons/fi";
+import { FiAlertTriangle, FiEdit2, FiList, FiStar, FiTrash2 } from "react-icons/fi";
 import { GiSheep } from "react-icons/gi";
 import {
   hasFeature,
@@ -17,9 +17,11 @@ import {
 } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { EntityPicker } from "./EntityPicker";
+import { ModInstallCard } from "./ModInstallCard";
 import { useGameData, palIconUrl, displayName } from "./gameData";
+import { usePalStatsDefaults, resolveRowCase } from "./palStatsDefaults";
 import { t, useI18n } from "./i18n";
-import { btn, btnGhost, card, errorCls, inputCls, DismissibleWarning } from "./ui";
+import { SponsorLockNotice, EmptyState, btn, btnGhost, card, errorCls, inputCls, DismissibleWarning } from "./ui";
 
 /** 空字串 = 不覆寫(維持既有值 / 交給 PalSchema 原始預設)。 */
 function numOrUndef(v: string): number | undefined {
@@ -44,9 +46,20 @@ const emptyDraft = () =>
  * DT_PalMonsterParameter 的物種基礎值(HP / 攻防 / 移速 / 捕獲率等)。
  * 未解鎖時整組表單照樣顯示,但變灰、不可操作,並提示去設定頁輸入識別碼。
  */
-export function PalStatsTab({ client, instanceId }: { client: AgentClient; instanceId: string }) {
+export function PalStatsTab({
+  client,
+  instanceId,
+  running,
+}: {
+  client: AgentClient;
+  instanceId: string;
+  /** 伺服器運行中 + auto-reload 已開 → 儲存即熱重載,通知文案不同。 */
+  running?: boolean;
+}) {
   useI18n();
   const gameData = useGameData();
+  // 原版數值(placeholder/大小寫校正);檔案缺失時為空物件,一切照舊
+  const defaults = usePalStatsDefaults();
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [status, setStatus] = useState<PalStatsStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +92,10 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
   }, [refresh]);
 
   const locked = entitled === false;
-  const row = palId.trim() ? palRowName(palId.trim(), variant) : "";
+  const row = palId.trim() ? resolveRowCase(defaults, palRowName(palId.trim(), variant)) : "";
+  // 該 row 的原版數值(有資料檔才有;給 placeholder 與變體存在性判斷)
+  const original = row && defaults ? defaults[row] : undefined;
+  const hasDefaults = defaults != null && Object.keys(defaults).length > 0;
 
   // 該資料列目前已存的值(儲存基準),用來算「哪些欄位改過」與載入表單預設。
   const savedValues = useMemo<PalStatValues>(
@@ -122,9 +138,11 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
 
   if (!status.schema.supported) {
     return (
-      <div className="rounded-cute border-2 border-dashed border-line px-6 py-12 text-center text-ink-muted">
-        <GiSheep className="mx-auto mb-2 size-11" />
-        <p className="mt-1 text-[13px]">{status.schema.reason ?? status.reason}</p>
+      <div className="flex flex-col gap-4">
+        {entitled === false && (
+          <SponsorLockNotice>{t("這是贊助者先行版功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}</SponsorLockNotice>
+        )}
+        <EmptyState icon={<GiSheep />}>{status.schema.reason ?? status.reason}</EmptyState>
       </div>
     );
   }
@@ -134,24 +152,8 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
     setError(null);
     try {
       await client.installPalSchema(instanceId);
-      setNotice(t("PalSchema 已安裝,伺服器下次啟動後生效"));
+      setNotice(t("PalSchema 已是最新版,伺服器下次啟動後生效"));
       setTimeout(() => setNotice(null), 4000);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setInstalling(false);
-    }
-  };
-
-  const uninstall = async () => {
-    if (!confirm(t("確定要移除 PalSchema 嗎?已寫入的物種數值調整也會一併移除,此動作無法復原,重啟後生效。"))) {
-      return;
-    }
-    setInstalling(true);
-    setError(null);
-    try {
-      await client.uninstallPalSchema(instanceId);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -170,7 +172,11 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
       ) as PalStatValues;
       const next = await client.updatePalStats(instanceId, row, values);
       setStatus(next);
-      setNotice(t("已儲存,伺服器重啟後生效"));
+      setNotice(
+        running && next.schema.autoReload
+          ? t("已儲存,PalSchema 會自動熱重載 — 對新生成/新遭遇的帕魯生效;若沒生效再重啟伺服器。")
+          : t("已儲存,伺服器重啟後生效"),
+      );
       setTimeout(() => setNotice(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -192,7 +198,11 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
     try {
       const next = await client.clearPalStats(instanceId);
       setStatus(next);
-      setNotice(t("已刪除所有物種數值調整,重啟伺服器後生效"));
+      setNotice(
+        running && next.schema.autoReload
+          ? t("已刪除所有物種數值調整,PalSchema 會自動熱重載;若沒生效再重啟伺服器。")
+          : t("已刪除所有物種數值調整,重啟伺服器後生效"),
+      );
       setTimeout(() => setNotice(null), 4000);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -209,61 +219,65 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
       )}
 
       {locked && (
-        <div className="inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
-          <FiLock className="size-4 shrink-0" />
-          {t("這是贊助者先行版功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}
-        </div>
+        <SponsorLockNotice>{t("這是贊助者先行版功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}</SponsorLockNotice>
       )}
 
-      <div className={`${card} flex flex-wrap items-center justify-between gap-2`}>
-        <p className="inline-flex items-center gap-2 text-sm font-extrabold">
-          <GiSheep className="size-4 text-pal" /> {t("帕魯物種數值編輯器")}
-          <span className="inline-flex items-center gap-1 rounded-full bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
-            <FiStar className="size-3" /> {t("贊助者")}
-          </span>
-        </p>
-        {status.schema.installed && (
-          <div className={locked ? "pointer-events-none opacity-55" : ""}>
-            <button
-              className={`${btnGhost} inline-flex items-center gap-1.5 text-berry hover:border-berry`}
-              onClick={uninstall}
-              disabled={installing}
-            >
-              <FiTrash2 className="size-4" /> {t("解除安裝 PalSchema")}
-            </button>
-          </div>
-        )}
+      <div className={locked ? "pointer-events-none opacity-55" : undefined}>
+        <ModInstallCard
+          title={t("帕魯物種數值編輯器")}
+          titleExtra={
+            <span className="inline-flex items-center gap-1 rounded-full bg-pal/10 px-2 py-0.5 text-xs font-bold text-pal">
+              <FiStar className="size-3" /> {t("贊助者")}
+            </span>
+          }
+          desc={t("透過社群開發的 PalSchema mod 修改物種基礎數值(HP / 近戰攻擊 / 遠程攻擊 / 防禦 / 移速 / 捕獲率等),改動寫在 DataTable patch,不動存檔本身。")}
+          installed={status.schema.installed}
+          version={status.schema.version ? `PalSchema ${status.schema.version}` : null}
+          running={false}
+          busy={installing}
+          busyLabel={status.schema.installed ? t("更新中…") : t("安裝中…")}
+          onInstall={install}
+          installLabel={t("安裝 PalSchema")}
+          updateLabel={t("更新 PalSchema")}
+          installTitle={t("重新下載最新版 PalSchema 與相依的 UE4SS(遊戲改版後模組失效時先做這個)")}
+          enabled={status.schema.enabled}
+          onToggleEnabled={
+            status.schema.enabled !== undefined
+              ? () => {
+                  void (async () => {
+                    setInstalling(true);
+                    setError(null);
+                    try {
+                      setStatus(await client.setPalSchemaEnabled(instanceId, status.schema.enabled === false));
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setInstalling(false);
+                    }
+                  })();
+                }
+              : undefined
+          }
+        >
+          {!status.schema.installed && (
+            <div className="mt-2">
+              <DismissibleWarning id="warn-palstats-risk">
+                <span className="inline-flex items-start gap-2">
+                  <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    {t(
+                      "風險提示:PalSchema 為社群 mod、僅支援 Windows(native)伺服器,且依賴特定版本的 UE4SS(改版後可能暫時失效);安裝或調整數值前建議先備份存檔。",
+                    )}
+                  </span>
+                </span>
+              </DismissibleWarning>
+              {status.reason && <p className="mt-2 text-[13px] text-sun">{status.reason}</p>}
+            </div>
+          )}
+        </ModInstallCard>
       </div>
 
-      {!status.schema.installed ? (
-        <div className={`${card} flex flex-col gap-3`}>
-          <p className="text-sm text-ink-muted">
-            {t(
-              "透過社群開發的 PalSchema mod 修改物種基礎數值(HP / 近戰攻擊 / 遠程攻擊 / 防禦 / 移速 / 捕獲率等),改動寫在 DataTable patch,不動存檔本身。",
-            )}
-          </p>
-          <DismissibleWarning id="warn-palstats-risk">
-            <span className="inline-flex items-start gap-2">
-              <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>
-                {t(
-                  "風險提示:PalSchema 為社群 mod、僅支援 Windows(native)伺服器,且依賴特定版本的 UE4SS(改版後可能暫時失效);安裝或調整數值前建議先備份存檔。",
-                )}
-              </span>
-            </span>
-          </DismissibleWarning>
-          {status.reason && <p className="text-[13px] text-sun">{status.reason}</p>}
-          <div className={locked ? "pointer-events-none w-fit opacity-55" : "w-fit"}>
-            <button
-              className={`${btn} inline-flex items-center gap-1.5`}
-              onClick={install}
-              disabled={locked || installing}
-            >
-              <FiDownload className="size-4" /> {installing ? t("安裝中…") : t("安裝 PalSchema")}
-            </button>
-          </div>
-        </div>
-      ) : (
+      {!status.schema.installed ? null : (
         <>
           <div className={locked ? "pointer-events-none flex flex-col gap-4 opacity-55" : "flex flex-col gap-4"}>
           <div className={`${card} flex flex-col gap-3`}>
@@ -290,20 +304,27 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
               <div className="flex flex-col gap-1 text-xs font-bold text-ink-muted">
                 {t("變體")}
                 <div className="flex flex-wrap gap-1.5">
-                  {PAL_ROW_VARIANTS.map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      className={`rounded-full border-2 px-3 py-1 text-xs font-bold transition ${
-                        variant === v.id
-                          ? "border-pal bg-pal/10 text-pal"
-                          : "border-line text-ink-muted hover:border-pal/50"
-                      }`}
-                      onClick={() => setVariant(v.id)}
-                    >
-                      {t(v.label)}
-                    </button>
-                  ))}
+                  {PAL_ROW_VARIANTS.map((v) => {
+                    const exists =
+                      !hasDefaults ||
+                      !palId.trim() ||
+                      resolveRowCase(defaults, palRowName(palId.trim(), v.id)) in (defaults ?? {});
+                    return (
+                      <button
+                        key={v.id}
+                        type="button"
+                        className={`rounded-full border-2 px-3 py-1 text-xs font-bold transition ${
+                          variant === v.id
+                            ? "border-pal bg-pal/10 text-pal"
+                            : "border-line text-ink-muted hover:border-pal/50"
+                        } ${exists ? "" : "opacity-45"}`}
+                        title={exists ? undefined : t("這隻帕魯沒有此變體的資料列(寫入不會生效)")}
+                        onClick={() => setVariant(v.id)}
+                      >
+                        {t(v.label)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -313,9 +334,13 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
               </p>
             )}
             <p className="text-xs text-ink-muted">
-              {t(
-                "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;儲存後要重啟伺服器,才會對新遭遇的帕魯生效。留空的欄位不會覆寫既有值。",
-              )}
+              {status.schema.autoReload
+                ? t(
+                    "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;已開啟熱重載:儲存後自動套用到新生成/新遭遇的帕魯(若沒生效再重啟)。留空的欄位不會覆寫既有值。",
+                  )
+                : t(
+                    "改的是物種基礎值,會套用到該物種所有個體;首領(Boss_)/ 高塔首領(GYM_)是獨立資料列,只影響對應版本;儲存後要重啟伺服器,才會對新遭遇的帕魯生效。留空的欄位不會覆寫既有值。",
+                  )}
             </p>
           </div>
 
@@ -338,16 +363,43 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
                               <p className="mt-1 max-w-xl text-xs text-ink-muted">{t(meta.hint)}</p>
                             )}
                           </div>
-                          <input
-                            type="number"
-                            className={`${inputCls} w-32 text-right`}
-                            value={draft[k]}
-                            placeholder={t("不覆寫")}
-                            min={meta.min}
-                            max={meta.max}
-                            step={meta.type === "float" ? (meta.step ?? 0.01) : 1}
-                            onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))}
-                          />
+                          <div className="flex items-center gap-1.5">
+                            {([0.5, 2] as const).map((mult) => {
+                              const base = draft[k].trim() !== "" ? Number(draft[k]) : original?.[k];
+                              const usable = base != null && Number.isFinite(base);
+                              return (
+                                <button
+                                  key={mult}
+                                  type="button"
+                                  className="rounded-lg border-2 border-line px-1.5 py-1 font-mono text-[11px] font-bold text-ink-muted transition hover:border-pal hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                                  disabled={!usable}
+                                  title={t("以目前值(未填則以原版值)為基準套倍率")}
+                                  onClick={() => {
+                                    if (!usable) return;
+                                    const raw = (base as number) * mult;
+                                    const v =
+                                      meta.type === "int"
+                                        ? Math.min(meta.max, Math.max(meta.min, Math.round(raw)))
+                                        : Math.min(meta.max, Math.max(meta.min, Number(raw.toFixed(2))));
+                                    setDraft((d) => ({ ...d, [k]: String(v) }));
+                                  }}
+                                >
+                                  ×{mult}
+                                </button>
+                              );
+                            })}
+                            <input
+                              type="number"
+                              className={`${inputCls} w-28 text-right`}
+                              value={draft[k]}
+                              placeholder={original?.[k] != null ? String(original[k]) : t("不覆寫")}
+                              title={original?.[k] != null ? t("原版數值:{v}(留空 = 不覆寫)", { v: String(original[k]) }) : undefined}
+                              min={meta.min}
+                              max={meta.max}
+                              step={meta.type === "float" ? (meta.step ?? 0.01) : 1}
+                              onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))}
+                            />
+                          </div>
                         </div>
                       );
                     })}
@@ -422,15 +474,32 @@ export function PalStatsTab({ client, instanceId }: { client: AgentClient; insta
                         </div>
                       </div>
                       <div className="flex flex-1 flex-wrap gap-1.5">
-                        {changed.map(([k, val]) => (
-                          <span
-                            key={k}
-                            className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] text-ink-muted"
-                          >
-                            {t(PAL_STAT_OPTIONS[k].label)}{" "}
-                            <span className="font-mono font-bold text-ink">{val}</span>
-                          </span>
-                        ))}
+                        {changed.map(([k, val]) => {
+                          const orig = defaults?.[r.row]?.[k];
+                          const pct =
+                            orig != null && orig !== 0 && orig !== val
+                              ? Math.round(((val - orig) / orig) * 100)
+                              : null;
+                          return (
+                            <span
+                              key={k}
+                              className="rounded-full bg-card-soft px-2 py-0.5 text-[11px] text-ink-muted"
+                            >
+                              {t(PAL_STAT_OPTIONS[k].label)}{" "}
+                              {orig != null && orig !== val && (
+                                <>
+                                  <span className="font-mono">{orig}</span> →{" "}
+                                </>
+                              )}
+                              <span className="font-mono font-bold text-ink">{val}</span>
+                              {pct != null && (
+                                <span className={`font-mono font-bold ${pct > 0 ? "text-grass" : "text-berry"}`}>
+                                  {" "}{pct > 0 ? "+" : ""}{pct}%
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </div>
                       {!locked && (
                         <button

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FiX, FiExternalLink, FiHeart, FiInstagram, FiMessageCircle } from "react-icons/fi";
 import { usePromoConfig } from "./promoConfig";
+import { useHiddenCards } from "./tabPrefs";
 import { t, useI18n } from "./i18n";
 import { card, btnSponsor, btnGhost } from "./ui";
 
@@ -18,6 +19,9 @@ export function Mascot() {
   useI18n();
   const [seen, setSeen] = useState(() => localStorage.getItem(SEEN_KEY) === "1");
   const [open, setOpen] = useState(false);
+  // 設定 → 「右下角貓貓」可整隻關掉(全域偏好,與卡片隱藏共用同一份清單)。
+  const [hiddenCards] = useHiddenCards();
+  if (hiddenCards.includes("mascot")) return null;
 
   const onClick = () => {
     if (!seen) {

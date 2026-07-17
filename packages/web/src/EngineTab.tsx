@@ -17,7 +17,7 @@ import { LaunchOptionsCard } from "./LaunchOptionsCard";
 import { usePromoConfig } from "./promoConfig";
 import { useHiddenCards } from "./tabPrefs";
 import { t, useI18n } from "./i18n";
-import { btn, btnGhost, card, errorCls, inputCls } from "./ui";
+import { EmptyState, btn, btnGhost, card, errorCls, inputCls } from "./ui";
 
 const KEYS = Object.keys(ENGINE_OPTIONS) as EngineOptionKey[];
 
@@ -82,10 +82,7 @@ export function EngineTab({
 
   if (!status.supported) {
     return (
-      <div className="rounded-(--radius-cute) border-2 border-dashed border-line px-6 py-12 text-center text-ink-muted">
-        <FiZap className="mx-auto mb-2 size-11" />
-        <p className="mt-1 text-[13px]">{status.reason}</p>
-      </div>
+      <EmptyState icon={<FiZap />}>{status.reason}</EmptyState>
     );
   }
 

@@ -1,10 +1,14 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import extractZip from "extract-zip";
 import type { ModComponent, ModsStatus } from "@palserver/shared";
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
+import { serverPlatform } from "./platform.js";
 import { serverRoot } from "./native.js";
+import * as dockerOps from "./docker.js";
+import { execInPod, readFileInPod, writeFileBytesInPod, makeDirInPod, deletePathInPod } from "./k8s-files.js";
 
 /**
  * Mod management for native instances (the v1 headline feature, rebuilt):
@@ -34,6 +38,33 @@ const GH_REPOS: Record<ModComponent, { repo: string; asset: RegExp; envUrl: stri
 };
 
 const win64Dir = (root: string) => path.join(root, "Pal", "Binaries", "Win64");
+
+/** Container/Pod 內的遊戲根目錄（docker/k8s Wine image = /palworld, 同 thijsvanloef 慣例）。 */
+const CONTAINER_INSTALL_DIR = "/palworld";
+const CONTAINER_WIN64_DIR = `${CONTAINER_INSTALL_DIR}/Pal/Binaries/Win64`;
+/** k8s writeFileInPod 需要 resolvePodPath 相對路徑（會加 /palworld 前綴）。 */
+const POD_WIN64_REL = "Pal/Binaries/Win64";
+
+/** docker/k8s 下用 exec 偵測檔案是否存在。 */
+async function fileExistsInRuntime(rec: InstanceRecord, filePath: string): Promise<boolean> {
+  if (rec.backend === "docker") {
+    try {
+      await dockerOps.execInContainer(rec, ["test", "-f", filePath]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (rec.backend === "k8s") {
+    try {
+      await execInPod(rec, ["test", "-f", filePath]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return fs.existsSync(filePath);
+}
 
 /** Cheap fs check of which enhancements are installed, for instance summaries. */
 export function installedEnhancements(root: string): string[] {
@@ -97,10 +128,45 @@ const DEFAULT_MOD_FILES: Record<ModComponent, string[]> = {
   ue4ss: ["UE4SS.dll", "UE4SS-settings.ini", "ue4ss", "Mods"],
 };
 
-export function getModsStatus(rec: InstanceRecord, ctx: DriverContext): ModsStatus {
-  const unsupported = (reason: string): ModsStatus => ({
+const DISABLED_SUFFIX = ".palserver-disabled";
+
+/** 各元件「停用時改名」的目標 DLL(相對 win64)。 */
+const DISABLE_TARGETS: Record<ModComponent, string[]> = {
+  ue4ss: ["UE4SS.dll", "ue4ss/UE4SS.dll", "UE4SS/UE4SS.dll"],
+  paldefender: ["PalDefender.dll"],
+};
+
+function componentState(root: string, component: ModComponent): { installed: boolean; enabled: boolean } {
+  let active = false;
+  let disabled = false;
+  for (const rel of DISABLE_TARGETS[component]) {
+    if (fs.existsSync(path.join(win64Dir(root), rel))) active = true;
+    if (fs.existsSync(path.join(win64Dir(root), rel + DISABLED_SUFFIX))) disabled = true;
+  }
+  return { installed: active || disabled, enabled: active };
+}
+
+/** 暫時停用/重新啟用(不刪任何檔):把主 DLL 改名加 .palserver-disabled 尾碼。
+ *  改版日的安全退路 —— 移除會連使用者的 Lua 模組一起刪,停用不會。
+ *  僅支援 native Windows(檔案就在本機);需伺服器停止(DLL 鎖定)。 */
+export function setModEnabled(rec: InstanceRecord, ctx: DriverContext, component: ModComponent, enabled: boolean): void {
+  if (rec.backend !== "native" || process.platform !== "win32") {
+    throw Object.assign(new Error("停用/啟用僅支援 Windows 原生模式"), { statusCode: 409 });
+  }
+  const root = serverRoot(rec, ctx);
+  for (const rel of DISABLE_TARGETS[component]) {
+    const active = path.join(win64Dir(root), rel);
+    const off = active + DISABLED_SUFFIX;
+    if (enabled && fs.existsSync(off)) fs.renameSync(off, active);
+    if (!enabled && fs.existsSync(active)) fs.renameSync(active, off);
+  }
+}
+
+export async function getModsStatus(rec: InstanceRecord, ctx: DriverContext): Promise<ModsStatus> {
+  const unsupported = (reason: string, serverInstalled = true): ModsStatus => ({
     supported: false,
     reason,
+    serverInstalled,
     ue4ss: { installed: false, version: null },
     paldefender: { installed: false, version: null },
     luaMods: [],
@@ -108,30 +174,48 @@ export function getModsStatus(rec: InstanceRecord, ctx: DriverContext): ModsStat
     pakMods: [],
   });
 
-  if (rec.backend !== "native") {
-    return unsupported("模組管理需要 Windows 原生模式(UE4SS/PalDefender 是 Windows DLL,在 Linux 容器/Pod 內無法載入)");
+  if (serverPlatform(rec) !== "windows") {
+    return unsupported("模組管理需要 Windows 伺服器(UE4SS/PalDefender 是 Windows DLL,在非 Windows binary 上無法載入)");
   }
   // Linux/macOS 原生模式:伺服器跑得起來,但 UE4SS/PalDefender 官方僅支援 Windows
   // 專用伺服器 —— 不擋在「未安裝」的誤導文案,明講平台限制。
-  if (process.platform !== "win32") {
+  if (rec.backend === "native" && process.platform !== "win32") {
     return unsupported("UE4SS/PalDefender 僅支援 Windows 伺服器,這台主機無法使用 DLL 模組(純內容 .pak 模組不受影響)");
   }
+
+  // docker/k8s: 容器/Pod 內 exec 偵測（host fs 看不到容器內的 Win64 目錄）。
+  if (rec.backend === "docker" || rec.backend === "k8s") {
+    const paldefenderInstalled = await fileExistsInRuntime(rec, `${CONTAINER_WIN64_DIR}/PalDefender.dll`);
+    const ue4ssInstalled =
+      await fileExistsInRuntime(rec, `${CONTAINER_WIN64_DIR}/ue4ss/UE4SS.dll`) ||
+      await fileExistsInRuntime(rec, `${CONTAINER_WIN64_DIR}/UE4SS.dll`);
+    return {
+      supported: true,
+      ue4ss: { installed: ue4ssInstalled, version: null },
+      paldefender: { installed: paldefenderInstalled, version: null },
+      luaMods: [],
+      luaModsDir: null,
+      pakMods: [],
+    };
+  }
+
   const root = serverRoot(rec, ctx);
   if (!fs.existsSync(win64Dir(root))) {
-    return unsupported("伺服器尚未安裝完成 — 先啟動一次讓 agent 下載伺服器");
+    return unsupported("伺服器尚未安裝完成 — 先啟動一次讓 agent 下載伺服器", false);
   }
 
   const marker = readMarker(root);
-  const ue4ssInstalled =
-    fs.existsSync(path.join(win64Dir(root), "ue4ss", "UE4SS.dll")) ||
-    fs.existsSync(path.join(win64Dir(root), "UE4SS.dll"));
-  const paldefenderInstalled = fs.existsSync(path.join(win64Dir(root), "PalDefender.dll"));
+  const ue4ssState = componentState(root, "ue4ss");
+  const paldefenderState = componentState(root, "paldefender");
+  const ue4ssInstalled = ue4ssState.installed;
+  const paldefenderInstalled = paldefenderState.installed;
 
   const modsDir = ue4ssModsDir(root);
   return {
     supported: true,
-    ue4ss: { installed: ue4ssInstalled, version: marker.ue4ss ?? null },
-    paldefender: { installed: paldefenderInstalled, version: marker.paldefender ?? null },
+    serverInstalled: true,
+    ue4ss: { installed: ue4ssInstalled, version: marker.ue4ss ?? null, enabled: ue4ssState.enabled },
+    paldefender: { installed: paldefenderInstalled, version: marker.paldefender ?? null, enabled: paldefenderState.enabled },
     luaMods: listLuaMods(root),
     luaModsDir: fs.existsSync(modsDir)
       ? path.relative(root, modsDir).split(path.sep).join("/")
@@ -213,6 +297,34 @@ interface GitRelease {
   assets: { name: string; browser_download_url: string }[];
 }
 
+/** 各元件的最新穩定版 tag(6 小時記憶體快取;查詢失敗回 null,不丟錯)。
+ *  給「有新版可更新」徽章用 —— 改版日玩家最需要知道模組能不能更了。 */
+const latestCache = new Map<ModComponent, { tag: string | null; at: number }>();
+const LATEST_TTL = 6 * 60 * 60 * 1000;
+export async function latestModVersions(): Promise<Record<ModComponent, string | null>> {
+  const out = {} as Record<ModComponent, string | null>;
+  for (const component of ["ue4ss", "paldefender"] as ModComponent[]) {
+    const hit = latestCache.get(component);
+    if (hit && Date.now() - hit.at < LATEST_TTL) {
+      out[component] = hit.tag;
+      continue;
+    }
+    try {
+      const { repo } = GH_REPOS[component];
+      const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { "user-agent": "palserver-gui", accept: "application/vnd.github+json" },
+      });
+      const tag = res.ok ? ((await res.json()) as GitRelease).tag_name : null;
+      latestCache.set(component, { tag, at: Date.now() });
+      out[component] = tag;
+    } catch {
+      latestCache.set(component, { tag: null, at: Date.now() });
+      out[component] = null;
+    }
+  }
+  return out;
+}
+
 async function resolveDownload(
   component: ModComponent,
   channel: "stable" | "beta",
@@ -254,25 +366,114 @@ export async function installComponent(
   component: ModComponent,
   channel: "stable" | "beta" = "stable",
 ): Promise<{ version: string }> {
-  const status = getModsStatus(rec, ctx);
+  const status = await getModsStatus(rec, ctx);
   if (!status.supported) {
     throw Object.assign(new Error(status.reason ?? "mods unsupported"), { statusCode: 409 });
   }
-  const root = serverRoot(rec, ctx);
-  const { version, url } = await resolveDownload(component, channel);
 
+  const { version, url } = await resolveDownload(component, channel);
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
-  // instanceDir may not exist yet for adopted installs that were never started
+  const zipBuffer = Buffer.from(await res.arrayBuffer());
+
+  // docker/k8s: download to host, extract, then transfer into container/Pod.
+  if (rec.backend === "docker" || rec.backend === "k8s") {
+    return installComponentInRuntime(rec, component, version, zipBuffer);
+  }
+
+  // native: extract directly on host fs.
+  const root = serverRoot(rec, ctx);
   fs.mkdirSync(ctx.instanceDir, { recursive: true });
   const zipPath = path.join(ctx.instanceDir, `${component}.zip`);
-  fs.writeFileSync(zipPath, Buffer.from(await res.arrayBuffer()));
-
-  // Both zips are laid out relative to Pal/Binaries/Win64.
+  fs.writeFileSync(zipPath, zipBuffer);
   const files = await extractZipTracked(zipPath, win64Dir(root));
   fs.rmSync(zipPath, { force: true });
   writeMarker(root, component, version, files);
   return { version };
+}
+
+/** Install a mod component into a docker container or k8s Pod via exec/archive. */
+async function installComponentInRuntime(
+  rec: InstanceRecord,
+  component: ModComponent,
+  version: string,
+  zipBuffer: Buffer,
+): Promise<{ version: string }> {
+  const containerWin64 = CONTAINER_WIN64_DIR;
+  // PVC = /palworld (entire install persisted); DLLs survive Pod restarts.
+  const persistentWin64 = containerWin64;
+  // Extract on host to a temp dir, then transfer each file via exec.
+  const tmpDir = path.join(os.tmpdir(), `palserver-mod-${component}-${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, `${component}.zip`), zipBuffer);
+  const files = await extractZipTracked(path.join(tmpDir, `${component}.zip`), tmpDir);
+  fs.rmSync(path.join(tmpDir, `${component}.zip`), { force: true });
+
+  // Ensure Win64 dir exists (DepotDownloader may still be running on first boot).
+  if (rec.backend === "docker") {
+    await dockerOps.execInContainer(rec, ["mkdir", "-p", persistentWin64]);
+  } else {
+    // k8s: retry until Win64 exists (DepotDownloader creates it).
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try {
+        const exists = await fileExistsInRuntime(rec, `${CONTAINER_WIN64_DIR}/PalServer-Win64-Shipping-Cmd.exe`);
+        if (exists) break;
+      } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 10000));
+    }
+    await execInPod(rec, ["mkdir", "-p", persistentWin64]);
+  }
+
+  // Transfer each extracted file/directory into the container/Pod.
+  for (const rel of files) {
+    const localPath = path.join(tmpDir, rel);
+    const remotePath = `${persistentWin64}/${rel}`;
+    if (fs.statSync(localPath).isDirectory()) {
+      if (rec.backend === "docker") {
+        await dockerOps.execInContainer(rec, ["mkdir", "-p", remotePath]);
+      } else {
+        await execInPod(rec, ["mkdir", "-p", remotePath]);
+      }
+      await transferDirToRuntime(rec, localPath, remotePath);
+    } else {
+      await transferFileToRuntime(rec, localPath, remotePath);
+    }
+  }
+
+  // Clean up host temp.
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  return { version };
+}
+
+async function transferFileToRuntime(rec: InstanceRecord, localPath: string, remotePath: string): Promise<void> {
+  const data = fs.readFileSync(localPath);
+  if (rec.backend === "docker") {
+    // docker: putArchive or base64 over exec. Base64 is simpler for small DLLs.
+    const b64 = data.toString("base64");
+    await dockerOps.execInContainer(rec, ["sh", "-c", `echo '${b64}' | base64 -d > '${remotePath}'`]);
+  } else {
+    // k8s: writeFileBytesInPod uses resolvePodPath (prepends /palworld).
+    const relPath = remotePath.replace(/^\/palworld\//, "");
+    await writeFileBytesInPod(rec, relPath, data);
+  }
+}
+
+async function transferDirToRuntime(rec: InstanceRecord, localDir: string, remoteDir: string): Promise<void> {
+  for (const entry of fs.readdirSync(localDir, { withFileTypes: true })) {
+    const localPath = path.join(localDir, entry.name);
+    const remotePath = `${remoteDir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (rec.backend === "docker") {
+        await dockerOps.execInContainer(rec, ["mkdir", "-p", remotePath]);
+      } else {
+        const relPath = remotePath.replace(/^\/palworld\//, "");
+        await makeDirInPod(rec, relPath);
+      }
+      await transferDirToRuntime(rec, localPath, remotePath);
+    } else {
+      await transferFileToRuntime(rec, localPath, remotePath);
+    }
+  }
 }
 
 /** Uninstall a component: remove the files its install extracted (tracked in
@@ -285,10 +486,30 @@ export async function removeComponent(
   ctx: DriverContext,
   component: ModComponent,
 ): Promise<void> {
-  const status = getModsStatus(rec, ctx);
+  const status = await getModsStatus(rec, ctx);
   if (!status.supported) {
     throw Object.assign(new Error(status.reason ?? "mods unsupported"), { statusCode: 409 });
   }
+
+  // docker/k8s: remove files inside container/Pod via exec.
+  if (rec.backend === "docker" || rec.backend === "k8s") {
+    const other: ModComponent = component === "ue4ss" ? "paldefender" : "ue4ss";
+    const keep = new Set(status[other].installed ? DEFAULT_MOD_FILES[other] : []);
+    const targets = DEFAULT_MOD_FILES[component].filter((f) => !keep.has(f));
+    for (const rel of targets) {
+      const remotePath = `${CONTAINER_WIN64_DIR}/${rel}`;
+      if (rec.backend === "docker") {
+        await dockerOps.execInContainer(rec, ["rm", "-rf", remotePath]).catch(() => {});
+      } else {
+        // deletePathInPod uses resolvePodPath (prepends /palworld); strip prefix.
+        const relPath = remotePath.replace(/^\/palworld\//, "");
+        await deletePathInPod(rec, relPath).catch(() => {});
+      }
+    }
+    return;
+  }
+
+  // native: remove on host fs.
   const root = serverRoot(rec, ctx);
   const w64 = win64Dir(root);
   const marker = readMarker(root);
@@ -303,7 +524,7 @@ export async function removeComponent(
 
   for (const rel of targets) {
     const p = path.resolve(w64, rel);
-    if (p === w64 || !p.startsWith(w64 + path.sep)) continue; // 安全:必須落在 Win64 之內
+    if (p === w64 || !p.startsWith(w64 + path.sep)) continue;
     fs.rmSync(p, { recursive: true, force: true });
   }
 

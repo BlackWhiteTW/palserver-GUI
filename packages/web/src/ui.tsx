@@ -1,9 +1,61 @@
-import { useState } from "react";
-import { FiChevronDown, FiStar, FiX } from "react-icons/fi";
+import { useState, type ReactNode } from "react";
+import { FiChevronDown, FiHeart, FiLock, FiStar, FiX } from "react-icons/fi";
 import type { InstanceStatus } from "@palserver/shared";
 import { STATUS_LABELS } from "./labels";
 import { t, useI18n } from "./i18n";
 import { useHiddenCards } from "./tabPrefs";
+import { usePromoConfig } from "./promoConfig";
+
+/** 贊助者專屬功能的鎖定提示:識別碼指引+Buy Me a Coffee 引導按鈕。 */
+export function SponsorLockNotice({ children }: { children?: ReactNode }) {
+  const { company } = usePromoConfig();
+  return (
+    <div className="flex flex-wrap items-center gap-2.5 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
+      <span className="inline-flex items-center gap-2">
+        <FiLock className="size-4 shrink-0" />
+        {children ?? t("這是贊助者專屬功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}
+      </span>
+      <a
+        className={`${btnSponsor} inline-flex items-center gap-1.5 px-3 py-1 text-xs`}
+        href={company.sponsor}
+        target="_blank"
+        rel="noreferrer"
+      >
+        <FiHeart className="size-3.5" /> {t("成為贊助者")}
+      </a>
+    </div>
+  );
+}
+
+/** 統一的空狀態/前置條件提示:虛線框、訊息置中,圖示與粗體標題可選。
+ *  compact 給卡片/清單內嵌用(小 padding、小圖示)。 */
+export function EmptyState({
+  icon,
+  title,
+  children,
+  compact = false,
+  className = "",
+}: {
+  icon?: ReactNode;
+  title?: ReactNode;
+  children?: ReactNode;
+  compact?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-cute border-2 border-dashed border-line text-center text-ink-muted ${
+        compact ? "px-4 py-6" : "px-6 py-10"
+      } ${className}`}
+    >
+      {icon && <div className={`mx-auto mb-2 w-fit ${compact ? "[&_svg]:size-8" : "[&_svg]:size-11"}`}>{icon}</div>}
+      {title && <p className="font-bold">{title}</p>}
+      {children != null && children !== "" && (
+        <div className={`text-[13px]${title || icon ? " mt-1" : ""}`}>{children}</div>
+      )}
+    </div>
+  );
+}
 
 export const btn =
   "rounded-full bg-pal px-5 py-2 text-sm font-extrabold text-white transition " +

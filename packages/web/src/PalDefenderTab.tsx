@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiAlertTriangle, FiFileText, FiMessageSquare, FiShield } from "react-icons/fi";
+import { FiAlertTriangle, FiFileText, FiMessageSquare, FiShield, FiSearch } from "react-icons/fi";
 import {
   PALDEFENDER_OPTIONS,
   PD_MOTD_MAX_LINES,
@@ -10,12 +10,14 @@ import {
   type PdOptionKey,
   type PdOptionMeta,
   type PdRestStatus,
+  type ModsStatus,
 } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { FileEditor } from "./FileManager";
+import { ModInstallCard } from "./ModInstallCard";
 import { RestStatusCard } from "./RestStatusCard";
 import { t, useI18n } from "./i18n";
-import { btn, btnGhost, card, errorCls, inputCls } from "./ui";
+import { EmptyState, btn, btnGhost, card, errorCls, inputCls } from "./ui";
 
 const KEYS = Object.keys(PALDEFENDER_OPTIONS) as PdOptionKey[];
 const RAW_PATH = "Pal/Binaries/Win64/PalDefender/Config.json";
@@ -47,15 +49,39 @@ export function PalDefenderTab({
   const [saving, setSaving] = useState(false);
   const [editingRaw, setEditingRaw] = useState<string | null>(null);
   const [rest, setRest] = useState<PdRestStatus | null>(null);
+  // 版本管理(從「模組」分頁移來):更新到最新版 / 安裝測試版
+  const [mods, setMods] = useState<ModsStatus | null>(null);
+  const [verBusy, setVerBusy] = useState<"stable" | "beta" | "toggle" | null>(null);
+  const [optSearch, setOptSearch] = useState("");
+
+  // 最新穩定版(「有新版」徽章)與停用/啟用
+  const [latest, setLatest] = useState<{ ue4ss: string | null; paldefender: string | null } | null>(null);
+  useEffect(() => {
+    client.modsLatest().then(setLatest).catch(() => {});
+  }, [client]);
+  const toggleEnabled = async () => {
+    if (!mods) return;
+    setVerBusy("toggle");
+    setError(null);
+    try {
+      setMods(await client.setModEnabled(instanceId, "paldefender", mods.paldefender.enabled === false));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerBusy(null);
+    }
+  };
 
   const refresh = useCallback(async () => {
     try {
-      const [next, restStatus] = await Promise.all([
+      const [next, restStatus, modStatus] = await Promise.all([
         client.palDefenderConfig(instanceId),
         client.palDefenderRest(instanceId).catch(() => null),
+        client.mods(instanceId).catch(() => null),
       ]);
       setStatus(next);
       setRest(restStatus);
+      setMods(modStatus);
       setDraft(Object.fromEntries(KEYS.map((k) => [k, effective(next.values, k)])));
       setMotdDraft(next.motd.join("\n"));
       setError(null);
@@ -79,14 +105,24 @@ export function PalDefenderTab({
 
   if (!status) return <p className="text-ink-muted">{error ?? t("載入中…")}</p>;
 
-  if (!status.supported) {
-    return (
-      <div className="rounded-(--radius-cute) border-2 border-dashed border-line px-6 py-12 text-center text-ink-muted">
-        <FiShield className="mx-auto mb-2 size-11" />
-        <p className="mt-1 text-[13px]">{status.reason}</p>
-      </div>
-    );
-  }
+
+  const installVersion = async (channel: "stable" | "beta") => {
+    if (channel === "beta" && !confirm(t("測試版(Beta)可能不穩定,但含較新的功能(例如玩家細節 API)。\n\n確定要安裝最新測試版嗎?"))) {
+      return;
+    }
+    setVerBusy(channel);
+    setError(null);
+    try {
+      await client.installMod(instanceId, "paldefender", channel);
+      setNotice(t("安裝或更新後,重啟伺服器才會生效。"));
+      setTimeout(() => setNotice(null), 3500);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerBusy(null);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -104,9 +140,46 @@ export function PalDefenderTab({
   };
 
   const grouped = new Map<string, PdOptionKey[]>();
+  const q = optSearch.trim().toLowerCase();
   for (const key of KEYS) {
+    // 搜尋:比對原始 key + 翻譯後標籤 + hint,留空顯示全部
+    if (q) {
+      const meta = PALDEFENDER_OPTIONS[key] as { label: string; hint?: string };
+      const hit =
+        key.toLowerCase().includes(q) ||
+        t(meta.label).toLowerCase().includes(q) ||
+        (meta.hint ? t(meta.hint).toLowerCase().includes(q) : false);
+      if (!hit) continue;
+    }
     const label = t(PD_CATEGORY_LABELS[PALDEFENDER_OPTIONS[key].category as PdOptionCategory]);
     grouped.set(label, [...(grouped.get(label) ?? []), key]);
+  }
+
+  const versionCard = (
+    <ModInstallCard
+      title={t("PalDefender 版本")}
+      installed={!!mods?.paldefender.installed}
+      version={mods?.paldefender.version}
+      running={running}
+      busy={verBusy !== null}
+      busyLabel={t("安裝中…")}
+      onInstall={() => void installVersion("stable")}
+      onInstallBeta={() => void installVersion("beta")}
+      enabled={mods?.paldefender.enabled}
+      onToggleEnabled={() => void toggleEnabled()}
+      latestVersion={latest?.paldefender}
+      note={<>{t("「玩家細節(查看帕魯/背包)」需要 v1.8.0 以上的測試版才支援。")}{t("安裝或更新後,重啟伺服器才會生效。")}</>}
+    />
+  );
+
+  if (!status.supported) {
+    return (
+      <div className="flex flex-col gap-4">
+        {error && <p className={errorCls}>{error}</p>}
+        {versionCard}
+        <EmptyState icon={<FiShield />}>{status.reason}</EmptyState>
+      </div>
+    );
   }
 
   return (
@@ -115,6 +188,9 @@ export function PalDefenderTab({
       {notice && (
         <p className="rounded-xl bg-grass/10 px-3 py-2 text-[13px] font-bold text-grass">{notice}</p>
       )}
+
+      {/* 版本管理(從「模組」分頁移來):放在編輯 Config.json 的標題卡上面 */}
+      {versionCard}
 
       <div className={`${card} flex flex-wrap items-center justify-between gap-2`}>
         <p className="inline-flex items-center gap-2 text-sm font-extrabold">
@@ -130,6 +206,7 @@ export function PalDefenderTab({
         </button>
       </div>
       {!status.exists && status.reason && <p className="text-[13px] text-sun">{status.reason}</p>}
+
 
       <RestStatusCard
         rest={rest}
@@ -186,6 +263,20 @@ export function PalDefenderTab({
           rows={4}
         />
       </div>
+
+      <label className="relative w-fit">
+        <FiSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-muted" />
+        <input
+          className={`${inputCls} w-56 py-1.5 pl-8 text-[13px]`}
+          value={optSearch}
+          placeholder={t("搜尋設定(名稱或原始 key)…")}
+          onChange={(e) => setOptSearch(e.target.value)}
+        />
+      </label>
+
+      {q && grouped.size === 0 && (
+        <p className="py-4 text-center text-[13px] text-ink-muted">{t("沒有符合「{q}」的設定。", { q: optSearch.trim() })}</p>
+      )}
 
       {[...grouped.entries()].map(([category, keys]) => (
         <div key={category} className={card}>

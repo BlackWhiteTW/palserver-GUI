@@ -3,7 +3,7 @@ import { FiCpu, FiActivity, FiClock, FiLayers, FiZap, FiHardDrive } from "react-
 import type { InstanceStats, LiveStatus } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { t, useI18n } from "./i18n";
-import { card } from "./ui";
+import { EmptyState, card } from "./ui";
 
 /** 走勢圖保留的取樣點數(約 5 分鐘,以 5 秒輪詢計)。 */
 const HISTORY = 60;
@@ -81,10 +81,7 @@ export function PerformanceTab({
 
   if (!running) {
     return (
-      <div className="rounded-(--radius-cute) border-2 border-dashed border-line px-6 py-12 text-center text-ink-muted">
-        <FiActivity className="mx-auto mb-2 size-11" />
-        <p className="text-[13px]">{t("伺服器未在運作中,啟動後即可看到即時效能。")}</p>
-      </div>
+      <EmptyState icon={<FiActivity />}>{t("伺服器未在運作中,啟動後即可看到即時效能。")}</EmptyState>
     );
   }
 

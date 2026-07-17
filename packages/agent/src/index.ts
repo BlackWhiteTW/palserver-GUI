@@ -197,6 +197,23 @@ await app.listen({ host: HOST, port: PORT });
 
 startUpdateChecker(updateOps);
 
+// 標記了「自動啟動」的伺服器:agent 一起來就開服(搭配登入自啟 = 主機開機即開服)。
+// 逐台嘗試,單台失敗(埠占用/檔案問題)寫日誌但不影響其他台。
+void (async () => {
+  for (const rec of store.list()) {
+    if (!rec.autoStart) continue;
+    const driver = rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver;
+    try {
+      const { status } = await driver.status(rec, { instanceDir: store.instanceDir(rec.id) });
+      if (status === "running" || status === "restarting" || status === "installing") continue;
+      app.log.info(`自動啟動伺服器:${rec.name}`);
+      await driver.start(rec, { instanceDir: store.instanceDir(rec.id) });
+    } catch (err) {
+      app.log.warn(`自動啟動 ${rec.name} 失敗:${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+})();
+
 // 贊助者識別碼:啟動時驗證一次,之後定期重驗(內部有 12h 節流;訂閱到期/取消會在此收斂)。
 void refreshLicense(true).catch(() => {});
 setInterval(() => void refreshLicense().catch(() => {}), 6 * 60 * 60 * 1000).unref();
@@ -210,7 +227,12 @@ if (willOpen) openBrowser(`${scheme}://localhost:${PORT}`);
 
 // 背景那份(主控台已隱藏)顯示系統匣圖示,作為「引擎運作中」的提示與控制入口。
 if (process.env.PALSERVER_TRAY_CHILD) {
-  const tray = startTray({ url: `${scheme}://localhost:${PORT}`, code: pairingCode });
+  const tray = startTray({
+    url: `${scheme}://localhost:${PORT}`,
+    code: pairingCode,
+    // 與網頁 favicon 同款(web 靜態檔的 logo.png);純 API 模式(無前端)就用預設圖示。
+    iconPng: webDist ? path.join(webDist, "logo.png") : null,
+  });
   if (tray) {
     const stopTray = () => {
       try {
@@ -268,6 +290,7 @@ function openBrowser(url: string): void {
 function resolveWebDist(): string | null {
   const candidates: string[] = [];
   if (process.env.PALSERVER_WEB_DIR) candidates.push(process.env.PALSERVER_WEB_DIR);
+  recoverStrandedWeb(path.dirname(process.execPath));
   candidates.push(path.join(path.dirname(process.execPath), "web"));
   try {
     candidates.push(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"));
@@ -278,6 +301,26 @@ function resolveWebDist(): string | null {
     if (c && fs.existsSync(path.join(c, "index.html"))) return c;
   }
   return null;
+}
+
+/** 自我更新換檔失敗的自癒:web/ 缺失但旁邊留著 web.old-<ts>(換檔中途失敗的
+ *  殘留)時,把最新的一份改名回 web/,避免重啟後前端永遠 404。 */
+function recoverStrandedWeb(dir: string): void {
+  try {
+    const web = path.join(dir, "web");
+    if (fs.existsSync(path.join(web, "index.html"))) return;
+    const stranded = fs
+      .readdirSync(dir)
+      .filter((n) => /^web\.old-\d+$/.test(n))
+      .sort()
+      .at(-1);
+    if (stranded && fs.existsSync(path.join(dir, stranded, "index.html"))) {
+      fs.rmSync(web, { recursive: true, force: true });
+      fs.renameSync(path.join(dir, stranded), web);
+    }
+  } catch {
+    /* 自癒失敗就維持原狀(API-only) */
+  }
 }
 
 /** 收集本機各網卡的 IPv4,標出可能是 VPN(Tailscale / Radmin / Hamachi)的位址。 */

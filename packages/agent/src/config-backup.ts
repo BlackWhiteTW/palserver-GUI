@@ -10,15 +10,13 @@ import type {
 import type { DriverContext } from "./driver.js";
 import type { InstanceRecord } from "./store.js";
 import { serverRoot } from "./native.js";
+import { configPlatformDir } from "./platform.js";
 import { makeDirInPod, readFileInPod, writeFileInPod } from "./k8s-files.js";
 
 /** The on-disk directory is deliberately local to one instance. */
 export const CONFIG_BACKUPS_DIR = "config-backups";
 export const CONFIG_SNAPSHOT_FILES = ["PalWorldSettings.ini", "Engine.ini"] as const;
 
-const NATIVE_PLATFORM_DIR = process.platform === "win32" ? "WindowsServer" : "LinuxServer";
-const NATIVE_CONFIG_DIR = ["Pal", "Saved", "Config", NATIVE_PLATFORM_DIR];
-const K8S_CONFIG_DIR = "Pal/Saved/Config/LinuxServer";
 const SNAPSHOT_ID = /^[a-z0-9]+-[a-f0-9]{16}$/;
 
 type SnapshotFiles = ConfigSnapshot["files"];
@@ -187,13 +185,13 @@ export function readConfigSnapshot(ctx: DriverContext, id: string): ConfigSnapsh
 /** docker bind-mount: ${instanceDir}/saved = Pal/Saved, so config is under saved/Config/... */
 function nativeConfigFile(rec: InstanceRecord, ctx: DriverContext, name: ConfigSnapshotFileName): string {
   if (rec.backend === "docker") {
-    return path.join(ctx.instanceDir, "saved", "Config", NATIVE_PLATFORM_DIR, name);
+    return path.join(ctx.instanceDir, "saved", "Config", configPlatformDir(rec), name);
   }
-  return path.join(serverRoot(rec, ctx), ...NATIVE_CONFIG_DIR, name);
+  return path.join(serverRoot(rec, ctx), "Pal", "Saved", "Config", configPlatformDir(rec), name);
 }
 
-function k8sConfigFile(name: ConfigSnapshotFileName): string {
-  return `${K8S_CONFIG_DIR}/${name}`;
+function k8sConfigFile(rec: InstanceRecord, name: ConfigSnapshotFileName): string {
+  return `Pal/Saved/Config/${configPlatformDir(rec)}/${name}`;
 }
 
 function noPod(message: string): Error & { statusCode: number } {
@@ -222,7 +220,7 @@ async function readConfigFiles(rec: InstanceRecord, ctx: DriverContext): Promise
   let noPodFound = false;
   for (const name of CONFIG_SNAPSHOT_FILES) {
     try {
-      files[name] = await readFileInPod(rec, k8sConfigFile(name));
+      files[name] = await readFileInPod(rec, k8sConfigFile(rec, name));
     } catch (error) {
       if (isNoPodError(error)) noPodFound = true;
       files[name] = null;
@@ -246,11 +244,11 @@ async function writeConfigFiles(rec: InstanceRecord, ctx: DriverContext, files: 
     return;
   }
 
-  await makeDirInPod(rec, K8S_CONFIG_DIR);
+  await makeDirInPod(rec, `Pal/Saved/Config/${configPlatformDir(rec)}`);
   for (const name of CONFIG_SNAPSHOT_FILES) {
     try {
       if (files[name] === null) continue;
-      await writeFileInPod(rec, k8sConfigFile(name), files[name]);
+      await writeFileInPod(rec, k8sConfigFile(rec, name), files[name]);
     } catch (error) {
       if (isNoPodError(error)) throw noPod("還原設定快照");
       throw error;

@@ -5,6 +5,7 @@ import type { InstanceRecord } from "./store.js";
 
 /** The game-server image mounts its persistent data at this fixed directory. */
 export const POD_ROOT = "/palworld";
+const POD_TMP_ROOT = "/tmp/palserver-health";
 
 function badPath(): Error & { statusCode: number } {
   return Object.assign(new Error("路徑不合法"), { statusCode: 400 });
@@ -59,7 +60,7 @@ export function loadKubeConfig(): k8s.KubeConfig {
   return kc;
 }
 
-/** Find the first Pod backing a StatefulSet via its `app=<sts>` label. */
+/** Find the newest non-terminating Running Pod backing a StatefulSet. */
 export async function findPodName(
   coreApi: k8s.CoreV1Api,
   namespace: string,
@@ -69,7 +70,27 @@ export async function findPodName(
     namespace,
     labelSelector: `app=${statefulSet}`,
   });
-  return pods.items[0]?.metadata?.name ?? null;
+  const running = pods.items
+    .filter((pod) => pod.status?.phase === "Running" && !pod.metadata?.deletionTimestamp)
+    .sort((a, b) => {
+      const timestamp = (value: Date | string | undefined): number =>
+        value instanceof Date ? value.getTime() : Date.parse(value ?? "") || 0;
+      const aTime = timestamp(a.metadata?.creationTimestamp);
+      const bTime = timestamp(b.metadata?.creationTimestamp);
+      return bTime - aTime;
+    });
+  return running[0]?.metadata?.name ?? null;
+}
+
+function safeTempName(value: string): string {
+  if (!/^[A-Za-z0-9_.-]+$/.test(value)) throw badPath();
+  return value;
+}
+
+function resolveHealthTempPath(dirName: string, fileName = ""): string {
+  const dir = safeTempName(dirName);
+  const file = fileName ? safeTempName(fileName) : "";
+  return file ? `${POD_TMP_ROOT}/${dir}/${file}` : `${POD_TMP_ROOT}/${dir}`;
 }
 
 type PodTarget = {
@@ -122,7 +143,16 @@ async function execBuffer(rec: InstanceRecord, command: string[], input?: Uint8A
         (status) => {
           const error = Buffer.concat(stderrChunks).toString("utf8");
           if (status.status === "Failure" || error) {
-            reject(new Error(error || "exec failed"));
+            let statusText = "unknown";
+            try {
+              statusText = JSON.stringify(status);
+            } catch {
+              // Keep the original failure even if the Kubernetes status is unusual.
+            }
+            reject(new Error(
+              error ||
+                `exec failed: status=${statusText}; pod=${podName}; container=${containerName}; command=${command.join(" ")}`,
+            ));
           } else {
             resolve();
           }
@@ -205,9 +235,17 @@ export async function uploadFileInPod(
 }
 
 /** Pack a directory below /palworld into a tar.gz byte stream. */
-export async function tarDirInPod(rec: InstanceRecord, relPath: string): Promise<Buffer> {
+export async function tarDirInPod(rec: InstanceRecord, relPath: string, excludes: string[] = []): Promise<Buffer> {
   const fullPath = resolvePodPath(relPath);
-  return execInPodBuffer(rec, ["tar", "czf", "-", "-C", fullPath, "."]);
+  return execInPodBuffer(rec, [
+    "tar",
+    "czf",
+    "-",
+    "-C",
+    fullPath,
+    ...excludes.flatMap((entry) => ["--exclude", entry]),
+    ".",
+  ]);
 }
 
 /** Extract a tar.gz byte stream into a directory below /palworld. */
@@ -215,4 +253,34 @@ export async function untarIntoPod(rec: InstanceRecord, relPath: string, archive
   const fullPath = resolvePodPath(relPath);
   await makeDirInPod(rec, relPath);
   await execBuffer(rec, ["tar", "xzf", "-", "-C", fullPath], archive);
+}
+
+/** Temporary workspace for tools that must execute inside the game Pod. */
+export async function makeHealthTempDirInPod(rec: InstanceRecord, dirName: string): Promise<void> {
+  await execInPod(rec, ["mkdir", "-p", resolveHealthTempPath(dirName)]);
+}
+
+/** Upload a file into the protected health-check temporary workspace. */
+export async function writeHealthTempFileInPod(
+  rec: InstanceRecord,
+  dirName: string,
+  fileName: string,
+  content: Uint8Array,
+): Promise<void> {
+  const fullPath = resolveHealthTempPath(dirName, fileName);
+  await execBuffer(rec, ["sh", "-c", 'cat > "$1"', "palserver-health-write", fullPath], content);
+}
+
+/** Read a file from the protected health-check temporary workspace. */
+export async function readHealthTempFileInPod(
+  rec: InstanceRecord,
+  dirName: string,
+  fileName: string,
+): Promise<Buffer> {
+  return execInPodBuffer(rec, ["cat", resolveHealthTempPath(dirName, fileName)]);
+}
+
+/** Remove a health-check temporary workspace. */
+export async function deleteHealthTempDirInPod(rec: InstanceRecord, dirName: string): Promise<void> {
+  await execInPod(rec, ["rm", "-rf", resolveHealthTempPath(dirName)]);
 }

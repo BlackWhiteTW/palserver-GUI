@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiAward, FiDollarSign, FiHelpCircle, FiHome, FiLock, FiRefreshCw, FiTrendingUp, FiUserPlus, FiUsers, FiZap } from "react-icons/fi";
+import { FiAward, FiDollarSign, FiHelpCircle, FiHome, FiRefreshCw, FiTrendingUp, FiUserPlus, FiUsers, FiZap } from "react-icons/fi";
 import type { AutoScanSetting, SaveScanStats, SaveScanGuildStat, SaveScanPlayerStat } from "@palserver/shared";
 import { guildScore, hasFeature, topPalScore } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { displayName, palIconUrl, useGameData, type GameData } from "./gameData";
 import { t, useI18n } from "./i18n";
-import { btnGhost, card, errorCls } from "./ui";
+import { SponsorLockNotice, EmptyState, btnGhost, card, errorCls } from "./ui";
 
 /**
  * 排行榜分頁 — 存檔掃描統計歷史(save-stats-history)驅動。
@@ -89,11 +89,15 @@ export function LeaderboardTab({ client, instanceId }: { client: AgentClient; in
 
   return (
     <div className="flex flex-col gap-4">
+      {/* 無法取得快照(note)且不能掃描時整列收起,虛線提示框與其他分頁一樣貼齊頂部 */}
+      {(latest || !note || (canScan && !locked)) && (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-ink-muted">
           {latest
             ? t("資料來自存檔掃描(掃描於 {when})。", { when: new Date(latest.scannedAt).toLocaleString() })
-            : t("尚未掃描過存檔。點「從存檔刷新」建立快照。")}
+            : note
+              ? "" // 無法取得快照時只顯示下方的提示框,不重複「尚未掃描」
+              : t("尚未掃描過存檔。點「從存檔刷新」建立快照。")}
         </p>
         {canScan && !locked && (
           <div className="flex flex-wrap items-center gap-2">
@@ -124,16 +128,11 @@ export function LeaderboardTab({ client, instanceId }: { client: AgentClient; in
           </div>
         )}
       </div>
+      )}
 
       {error && <p className={errorCls}>{error}</p>}
-      {note && !scanning && <p className="text-[13px] text-ink-muted">{note}</p>}
-
-      {locked && (
-        <div className="inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
-          <FiLock className="size-4 shrink-0" />
-          {t("這是贊助者專屬功能。到「設定 → 贊助者識別碼」輸入識別碼即可使用。")}
-        </div>
-      )}
+      {locked && <SponsorLockNotice />}
+      {note && !scanning && <EmptyState icon={<FiAward />}>{note}</EmptyState>}
 
       {!locked && latest && (
         <>
@@ -207,10 +206,9 @@ export function LeaderboardTab({ client, instanceId }: { client: AgentClient; in
       )}
 
       {!locked && history && history.length === 0 && (
-        <div className="rounded-cute border-2 border-dashed border-line px-6 py-10 text-center text-ink-muted">
-          <FiAward className="mx-auto mb-2 size-11" />
+        <EmptyState icon={<FiAward />}>
           {t("還沒有排行榜資料。掃描一次存檔就會出現(掃描也會更新健檢與玩家/公會快照)。")}
-        </div>
+        </EmptyState>
       )}
     </div>
   );
@@ -523,7 +521,7 @@ function Board({
         {hint && <HelpTip text={hint} />}
       </p>
       {rows.length === 0 ? (
-        <p className="text-[13px] text-ink-muted">{t("沒有資料")}</p>
+        <EmptyState compact>{t("沒有資料")}</EmptyState>
       ) : (
         <ol className="flex flex-col gap-1.5">
           {rows.map((r, i) => (

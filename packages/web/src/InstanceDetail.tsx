@@ -909,7 +909,7 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
           on={translate}
           onChange={(v) => entitled === true && prefs.setTranslate(v)}
           disabled={entitled !== true}
-          icon={<FiStar className="size-4 text-pal" />}
+          icon={<FiStar className={`size-4 ${translate ? "" : "text-pal"}`} />}
           label={t("翻譯")}
           title={entitled === true ? undefined : t("翻譯為贊助者專屬功能")}
         />

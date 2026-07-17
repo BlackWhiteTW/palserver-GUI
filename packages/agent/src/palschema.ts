@@ -59,6 +59,14 @@ const ue4ssDir = (root: string) => {
 };
 const ue4ssModsDir = (root: string) => path.join(ue4ssDir(root), "Mods");
 const palSchemaDir = (root: string) => path.join(ue4ssModsDir(root), "PalSchema");
+/** 停用時的存放處(UE4SS 只掃 Mods/,搬出來就一定不載入;內容原封不動)。 */
+const palSchemaDisabledDir = (root: string) => path.join(ue4ssDir(root), "Mods-disabled", "PalSchema");
+/** 讀取用:回傳 mod 實際所在(啟用中優先)與啟用狀態。 */
+function palSchemaWhere(root: string): { dir: string | null; enabled: boolean } {
+  if (fs.existsSync(palSchemaDir(root))) return { dir: palSchemaDir(root), enabled: true };
+  if (fs.existsSync(palSchemaDisabledDir(root))) return { dir: palSchemaDisabledDir(root), enabled: false };
+  return { dir: null, enabled: false };
+}
 const ourModDir = (root: string) => path.join(palSchemaDir(root), "mods", OUR_MOD_NAME);
 const rawDir = (root: string) => path.join(ourModDir(root), "raw");
 const statsFile = (root: string) => path.join(rawDir(root), "pal-stats.json");
@@ -125,13 +133,14 @@ export async function getPalSchemaStatus(rec: InstanceRecord, ctx: DriverContext
     return { supported: false, reason: "伺服器尚未安裝完成 — 先啟動一次讓 agent 下載伺服器", ue4ss: false, installed: false, version: null };
   }
   const marker = readMarker(root);
-  const installed = fs.existsSync(palSchemaDir(root));
+  const where = palSchemaWhere(root);
   return {
     supported: true,
     ue4ss: ue4ssInstalled(root),
-    installed,
+    installed: where.dir !== null,
     version: marker.palschema ?? null,
-    autoReload: installed && readAutoReload(root),
+    autoReload: where.enabled && readAutoReload(root),
+    enabled: where.dir !== null ? where.enabled : undefined,
   };
 }
 
@@ -257,6 +266,12 @@ export async function installPalSchema(rec: InstanceRecord, ctx: DriverContext):
   if (guid) await createBackup(rec, ctx, guid).catch(() => {});
 
   fs.mkdirSync(ctx.instanceDir, { recursive: true });
+  // 停用中就先搬回啟用位置,更新直接蓋在上面(不留兩份)
+  try {
+    setPalSchemaEnabled(rec, ctx, true);
+  } catch {
+    /* k8s 等不支援停用的路徑:忽略 */
+  }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "palschema-"));
   try {
     // 1) UE4SS fork(experimental-palworld;非 zDev 開發版)。內容相對 Win64 佈局。
@@ -449,6 +464,23 @@ async function enableAutoReloadRuntime(rec: InstanceRecord, ctx: DriverContext, 
   await runtimeWriteText(rec, ctx, CONFIG_REL(ue4ss), JSON.stringify(cfg, null, 2));
 }
 
+/** 暫時停用/啟用 PalSchema(不刪檔):整個資料夾搬進/搬出 Mods-disabled/。 */
+export function setPalSchemaEnabled(rec: InstanceRecord, ctx: DriverContext, enabled: boolean): void {
+  if (rec.backend !== "native" || process.platform !== "win32") {
+    throw Object.assign(new Error("停用/啟用僅支援 Windows 原生模式"), { statusCode: 409 });
+  }
+  const root = serverRoot(rec, ctx);
+  const active = palSchemaDir(root);
+  const off = palSchemaDisabledDir(root);
+  if (enabled && !fs.existsSync(active) && fs.existsSync(off)) {
+    fs.renameSync(off, active);
+  } else if (!enabled && fs.existsSync(active)) {
+    fs.mkdirSync(path.dirname(off), { recursive: true });
+    fs.rmSync(off, { recursive: true, force: true }); // 清掉舊殘留,避免 rename 失敗
+    fs.renameSync(active, off);
+  }
+}
+
 function scaffoldOurMod(root: string): void {
   fs.mkdirSync(rawDir(root), { recursive: true });
   const meta = path.join(ourModDir(root), "metadata.json");
@@ -502,8 +534,11 @@ export async function removePalSchema(rec: InstanceRecord, ctx: DriverContext): 
 /* ── 數值讀寫 ── */
 
 function readStatsRaw(root: string): Record<string, unknown> {
+  const where = palSchemaWhere(root);
+  if (!where.dir) return {};
   try {
-    return JSON.parse(fs.readFileSync(statsFile(root), "utf8")) as Record<string, unknown>;
+    const file = path.join(where.dir, "mods", OUR_MOD_NAME, "raw", "pal-stats.json");
+    return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -573,6 +608,9 @@ export async function writePalStats(
     return { supported: true, schema: await getPalSchemaStatus(rec, ctx), rows: rowsFromRaw(merged) };
   }
   const root = serverRoot(rec, ctx);
+  if (schema.enabled === false) {
+    throw Object.assign(new Error("PalSchema 目前已停用 — 先按「啟用」再修改數值"), { statusCode: 409 });
+  }
   scaffoldOurMod(root); // 確保 raw/ 目錄存在(安裝後理應已在)
   try {
     enableAutoReload(root); // 舊安裝補開;失敗不擋寫入
@@ -599,6 +637,9 @@ export async function clearPalStats(rec: InstanceRecord, ctx: DriverContext): Pr
     return { supported: true, schema, rows: rowsFromRaw(raw) };
   }
   const root = serverRoot(rec, ctx);
+  if (schema.enabled === false) {
+    throw Object.assign(new Error("PalSchema 目前已停用 — 先按「啟用」再刪除調整"), { statusCode: 409 });
+  }
   scaffoldOurMod(root);
   const raw = readStatsRaw(root);
   delete raw[PAL_STATS_TABLE];

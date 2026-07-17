@@ -56,7 +56,7 @@ import { getModsStatus, installComponent, latestModVersions, setModEnabled, inst
 import { checkPorts, udpPortFree } from "./port-check.js";
 import { runtimePortFree } from "./runtime-port-check.js";
 import * as pakMods from "./pak-mods.js";
-import { clearPalStats, getPalSchemaStatus, getPalStats, installPalSchema, removePalSchema, writePalStats } from "./palschema.js";
+import { clearPalStats, getPalSchemaStatus, getPalStats, installPalSchema, removePalSchema, writePalStats, setPalSchemaEnabled } from "./palschema.js";
 import { getModerationLists, moderation } from "./moderation.js";
 import { getLiveStatus, rest } from "./restapi.js";
 import * as files from "./files.js";
@@ -1519,6 +1519,17 @@ export function registerRoutes(
     }
     const { version } = await installPalSchema(rec, ctxOf(rec));
     return { installed: "palschema", version, applied: "on-next-restart" };
+  });
+
+  /** 暫時停用/啟用 PalSchema(不刪檔:整個資料夾搬出/搬回 Mods/)。 */
+  app.post("/api/instances/:id/palschema/enabled", async (req, reply) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    if (rec.backend === "native" && await isRunning(rec)) {
+      return reply.code(409).send({ error: "請先停止伺服器再停用或啟用 PalSchema(執行中時檔案被鎖定)" });
+    }
+    setPalSchemaEnabled(rec, ctxOf(rec), enabled);
+    return getPalStats(rec, ctxOf(rec));
   });
 
   app.post("/api/instances/:id/palschema/uninstall", async (req, reply) => {

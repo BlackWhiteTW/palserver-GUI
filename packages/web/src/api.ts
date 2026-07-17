@@ -561,6 +561,14 @@ export class AgentClient {
     return this.request(`/api/instances/${id}/palschema/uninstall`, { method: "POST" });
   }
 
+  /** 暫時停用/啟用 PalSchema(不刪檔);回傳最新 pal-stats 狀態。 */
+  setPalSchemaEnabled(id: string, enabled: boolean): Promise<PalStatsStatus> {
+    return this.request(`/api/instances/${id}/palschema/enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   /** 物種數值(PalSchema DataTable patch)目前狀態 + 各 row 已寫入的值。 */
   palStats(id: string): Promise<PalStatsStatus> {
     return this.request(`/api/instances/${id}/pal-stats`);

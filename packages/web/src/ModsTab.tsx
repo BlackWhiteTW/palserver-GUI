@@ -69,24 +69,6 @@ export function ModsTab({
     }
   };
 
-  const uninstall = async (component: ModComponent) => {
-    const label = component === "paldefender" ? "PalDefender" : "UE4SS";
-    if (!confirm(t("確定要移除 {label} 嗎?\n\n會刪除它安裝的檔案({extra}也會一併移除)。此動作無法復原,重啟後生效。", { label, extra: label === "UE4SS" ? t("含 Lua 模組") : t("含設定檔") }))) {
-      return;
-    }
-    setBusy(component);
-    setError(null);
-    try {
-      await client.uninstallMod(instanceId, component);
-      await refresh();
-      onModsChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const setComponentEnabled = async (component: ModComponent, enabled: boolean) => {
     setBusy(component);
     setError(null);
@@ -161,7 +143,6 @@ export function ModsTab({
         busy={busy === "ue4ss"}
         onInstall={() => void install("ue4ss")}
         onInstallBeta={() => void install("ue4ss", "beta")}
-        onUninstall={() => void uninstall("ue4ss")}
         enabled={mods.ue4ss.enabled}
         onToggleEnabled={() => void setComponentEnabled("ue4ss", mods.ue4ss.enabled === false)}
         latestVersion={latest?.ue4ss}

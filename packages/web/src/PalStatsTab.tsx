@@ -162,22 +162,6 @@ export function PalStatsTab({
     }
   };
 
-  const uninstall = async () => {
-    if (!confirm(t("確定要移除 PalSchema 嗎?已寫入的物種數值調整也會一併移除,此動作無法復原,重啟後生效。"))) {
-      return;
-    }
-    setInstalling(true);
-    setError(null);
-    try {
-      await client.uninstallPalSchema(instanceId);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setInstalling(false);
-    }
-  };
-
   const save = async () => {
     if (!row) return;
     setSaving(true);
@@ -256,7 +240,24 @@ export function PalStatsTab({
           installLabel={t("安裝 PalSchema")}
           updateLabel={t("更新 PalSchema")}
           installTitle={t("重新下載最新版 PalSchema 與相依的 UE4SS(遊戲改版後模組失效時先做這個)")}
-          onUninstall={uninstall}
+          enabled={status.schema.enabled}
+          onToggleEnabled={
+            status.schema.enabled !== undefined
+              ? () => {
+                  void (async () => {
+                    setInstalling(true);
+                    setError(null);
+                    try {
+                      setStatus(await client.setPalSchemaEnabled(instanceId, status.schema.enabled === false));
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setInstalling(false);
+                    }
+                  })();
+                }
+              : undefined
+          }
         >
           {!status.schema.installed && (
             <div className="mt-2">

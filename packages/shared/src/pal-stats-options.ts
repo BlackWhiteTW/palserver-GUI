@@ -106,6 +106,8 @@ export interface PalSchemaStatus {
   /** PalSchema 的 enableAutoReload 是否已開(開了 → 運行中改數值即熱重載)。
    *  舊版 agent 沒有此欄位。 */
   autoReload?: boolean;
+  /** false = 已暫時停用(資料夾搬出 Mods/,檔案保留);undefined = 不支援停用(k8s)或舊 agent。 */
+  enabled?: boolean;
 }
 
 /** 我們的 PalSchema mod 目前管理的一列數值。 */

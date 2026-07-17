@@ -1,4 +1,4 @@
-import { FiCheck, FiDownload, FiTrash2 } from "react-icons/fi";
+import { FiCheck, FiDownload, FiPower } from "react-icons/fi";
 import { t, useI18n } from "./i18n";
 import { btn, btnGhost, card } from "./ui";
 
@@ -22,8 +22,6 @@ export function ModInstallCard({
   updateLabel,
   installTitle,
   onInstallBeta,
-  onUninstall,
-  uninstallLabel,
   enabled,
   onToggleEnabled,
   latestVersion,
@@ -49,8 +47,6 @@ export function ModInstallCard({
   installTitle?: string;
   /** 測試版按鈕(有 beta 通道的元件才給)。 */
   onInstallBeta?: () => void;
-  onUninstall?: () => void;
-  uninstallLabel?: string;
   /** 已安裝時的啟用狀態(false=已停用;undefined=不支援/舊 agent,不顯示)。 */
   enabled?: boolean;
   /** 停用/啟用切換(不刪檔,改名主 DLL)。 */
@@ -127,20 +123,11 @@ export function ModInstallCard({
                   : t("暫時停用不刪檔:改版後模組不相容時的安全退路,Lua/設定檔都會保留")
             }
           >
+            <FiPower className="size-4" />
             {busy ? t("處理中…") : enabled === false ? t("啟用") : t("停用")}
           </button>
         )}
-        {installed && onUninstall && (
-          <button
-            className={`${btnGhost} inline-flex items-center gap-1.5 text-berry hover:border-berry`}
-            onClick={onUninstall}
-            disabled={busy || running}
-            title={running ? t("請先停止伺服器") : t("移除此模組")}
-          >
-            <FiTrash2 className="size-4" />
-            {busy ? t("處理中…") : uninstallLabel ?? t("移除")}
-          </button>
-        )}
+
       </div>
       {desc && <p className="w-full text-[13px] text-ink-muted">{desc}</p>}
       {children && <div className="w-full">{children}</div>}

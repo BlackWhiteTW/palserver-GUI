@@ -1490,5 +1490,12 @@
   "反作弊插件": "Anti-cheat plugin",
   "版本更新與測試版安裝已移至「反作弊插件」分頁。": "Version updates and beta installs have moved to the \"Anti-cheat plugin\" tab.",
   "PalDefender 版本": "PalDefender version",
-  "贊助者專屬": "Sponsor-only"
+  "贊助者專屬": "Sponsor-only",
+  "伺服器意外停止了(不是你按的)。最常見原因:模組與遊戲版本不相容、世界設定檔損壞、或記憶體不足。": "The server stopped unexpectedly (you didn't stop it). Most common causes: mods incompatible with the game version, corrupted world settings, or out of memory.",
+  "知道了": "Got it",
+  "伺服器連續崩潰達上限,自動重啟已暫停。請先查日誌排除原因(常見:模組不相容、存檔損壞),再手動啟動。": "The server crashed repeatedly and hit the limit — auto-restart is paused. Check the logs to fix the cause (common: incompatible mods, corrupted save), then start manually.",
+  "重啟設定": "Restart settings",
+  "錯誤與警告": "Errors & warnings",
+  "聊天與事件": "Chat & events",
+  "{n} 行新日誌,跳到最新": "{n} new lines — jump to latest"
 }

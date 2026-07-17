@@ -94,12 +94,46 @@ export function InstanceDetailPage({
   const [palDefender, setPalDefender] = useState(false);
   // 非 null 時代表正在倒數(數字為剩餘秒數),用來鎖按鈕與顯示提示。
   const [countdown, setCountdown] = useState<number | null>(null);
+  // 意外停止偵測:上次輪詢還是 running、這次變 stopped、且使用者沒按過停止/重啟
+  // → 幾乎都是閃退(壞 ini / 模組衝突),要明講而不是默默變「已停止」。
+  const stopRequested = useRef(false);
+  const prevStatus = useRef<string | null>(null);
+  const [unexpectedStop, setUnexpectedStop] = useState(false);
+  // 連續崩潰達上限 → supervisor 停止自動重啟:這件事不能只埋在重啟紀錄裡
+  const [restartHalted, setRestartHalted] = useState(false);
   // 啟動前偵測到埠被占用 → 開修改面板(新手最常見的開不起來原因)
   const [portConflict, setPortConflict] = useState<PortsCheckResult | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setDetail(await client.getInstance(instanceId));
+      const d = await client.getInstance(instanceId);
+      if (prevStatus.current === "running" && d.status === "exited" && !stopRequested.current) {
+        setUnexpectedStop(true);
+      }
+      if (d.status === "running") {
+        stopRequested.current = false;
+        setUnexpectedStop(false);
+        setRestartHalted(false);
+      }
+      // 停止狀態時查一次重啟紀錄:最新事件若是「崩潰達上限」就浮出橫幅
+      if (d.status === "exited" && prevStatus.current !== "exited") {
+        client
+          .restartPolicy(instanceId)
+          .then(({ events }) => {
+            const last = events[0];
+            if (
+              last &&
+              last.reason === "crash" &&
+              !last.ok &&
+              Date.now() - new Date(last.at).getTime() < 24 * 60 * 60 * 1000
+            ) {
+              setRestartHalted(true);
+            }
+          })
+          .catch(() => {});
+      }
+      prevStatus.current = d.status;
+      setDetail(d);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -128,6 +162,8 @@ export function InstanceDetailPage({
   }, [refresh]);
 
   const act = async (action: "start" | "stop" | "restart", skipPortCheck = false) => {
+    if (action === "stop" || action === "restart") stopRequested.current = true;
+    if (action === "start") setUnexpectedStop(false);
     // 啟動前先檢查五種埠(遊戲/查詢/REST/RCON/PalDefender)有沒有被其他程式占走;
     // 有衝突就開修改面板,而不是讓伺服器啟動失敗留下天書錯誤。
     if (action === "start" && !skipPortCheck && detail && detail.status !== "running") {
@@ -336,7 +372,53 @@ export function InstanceDetailPage({
       {notice && (
         <p className="rounded-xl bg-grass/10 px-3 py-2 text-[13px] font-bold text-grass">{notice}</p>
       )}
-      {error && <p className={errorCls}>{error}</p>}
+      {error && (
+        <p className={`${errorCls} inline-flex flex-wrap items-center gap-2`}>
+          <span className="min-w-0 break-all">{error}</span>
+          <button
+            className="shrink-0 underline underline-offset-2 hover:opacity-80"
+            onClick={() => setShowLogs(true)}
+          >
+            {t("查看日誌")}
+          </button>
+        </p>
+      )}
+
+      {restartHalted && (
+        <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
+          <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {t("伺服器連續崩潰達上限,自動重啟已暫停。請先查日誌排除原因(常見:模組不相容、存檔損壞),再手動啟動。")}{" "}
+            <button className="underline underline-offset-2 hover:opacity-80" onClick={() => setShowLogs(true)}>
+              {t("查看日誌")}
+            </button>{" "}
+            <button className="underline underline-offset-2 hover:opacity-80" onClick={() => setTab("restart")}>
+              {t("重啟設定")}
+            </button>
+          </span>
+        </p>
+      )}
+
+      {unexpectedStop && (
+        <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
+          <FiAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {t("伺服器意外停止了(不是你按的)。最常見原因:模組與遊戲版本不相容、世界設定檔損壞、或記憶體不足。")}{" "}
+            <button
+              className="underline underline-offset-2 hover:opacity-80"
+              onClick={() => setShowLogs(true)}
+            >
+              {t("查看日誌")}
+            </button>{" "}
+            <button
+              className="underline underline-offset-2 hover:opacity-80"
+              onClick={() => setUnexpectedStop(false)}
+            >
+              {t("知道了")}
+            </button>
+          </span>
+        </p>
+      )}
 
       {detail.installError && (
         <p className={`${errorCls} inline-flex flex-wrap items-start gap-2`}>
@@ -765,9 +847,25 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
     })();
   }, [entitled, prefs.translate, prefs.format, lines, client]);
 
+  // 只看重點:錯誤/警告過濾(重用 classifyLine 分類);聊天=chat/join/leave/death/capture
+  const [logFilter, setLogFilter] = useState<"all" | "issues" | "chat">("all");
+  // 智慧跟捲:使用者在底部才自動捲;往上回看時暫停,顯示「N 行新日誌」浮動按鈕
+  const atBottomRef = useRef(true);
+  const [pendingLines, setPendingLines] = useState(0);
+  const scrollBoxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (atBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      setPendingLines(0);
+    } else {
+      setPendingLines((n) => n + 1);
+    }
   }, [lines]);
+  const jumpToLatest = () => {
+    atBottomRef.current = true;
+    setPendingLines(0);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const highlight = prefs.highlight; // 免費
   const format = prefs.format; // 免費
@@ -815,6 +913,26 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
           label={t("翻譯")}
           title={entitled === true ? undefined : t("翻譯為贊助者專屬功能")}
         />
+        <span className="mx-1 h-5 w-0.5 rounded bg-line" />
+        {(
+          [
+            { id: "all", label: "全部" },
+            { id: "issues", label: "錯誤與警告" },
+            { id: "chat", label: "聊天與事件" },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.id}
+            className={
+              logFilter === f.id
+                ? "rounded-full bg-pal px-3 py-1 text-[12px] font-extrabold text-white"
+                : "rounded-full border-2 border-line bg-card-soft px-3 py-1 text-[12px] font-extrabold text-ink-muted transition hover:border-pal"
+            }
+            onClick={() => setLogFilter(f.id)}
+          >
+            {t(f.label)}
+          </button>
+        ))}
       </div>
       {entitled === false && (
         <p className="inline-flex items-center gap-2 rounded-cute border-2 border-sun/40 bg-sun/10 px-3 py-2 text-xs font-bold text-sun">
@@ -823,10 +941,23 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
         </p>
       )}
 
-      <div className="h-[440px] overflow-auto rounded-(--radius-cute) bg-[#1c1927] p-4 font-mono text-sm">
+      <div className="relative">
+      <div
+        ref={scrollBoxRef}
+        className="h-[440px] overflow-auto rounded-(--radius-cute) bg-[#1c1927] p-4 font-mono text-sm"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          atBottomRef.current = atBottom;
+          if (atBottom) setPendingLines(0);
+        }}
+      >
         {lines.length ? (
           lines.map((line, i) => {
-            const color = highlight ? categoryColor(classifyLine(line)) : "#cfd6df";
+            const cat = classifyLine(line);
+            if (logFilter === "issues" && cat !== "warn" && cat !== "error") return null;
+            if (logFilter === "chat" && (cat === null || cat === "warn" || cat === "error")) return null;
+            const color = highlight ? categoryColor(cat) : "#cfd6df";
             let text = line;
             if (format) {
               const ev = formatLine(line);
@@ -855,6 +986,15 @@ function LogsTab({ client, instanceId }: { client: AgentClient; instanceId: stri
           <span className="text-[#cfd6df]">{t("(尚無日誌)")}</span>
         )}
         <div ref={bottomRef} />
+      </div>
+      {pendingLines > 0 && (
+        <button
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-pal px-4 py-1.5 text-[12px] font-extrabold text-white shadow-lg transition hover:bg-pal-strong"
+          onClick={jumpToLatest}
+        >
+          {t("{n} 行新日誌,跳到最新", { n: pendingLines })}
+        </button>
+      )}
       </div>
 
       {/* 廣播訊息(從玩家分頁移來):貼在日誌下方,聊天訊息在上面滾,回話就在手邊。 */}

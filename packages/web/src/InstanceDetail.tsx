@@ -155,11 +155,6 @@ export function InstanceDetailPage({
       .catch(() => setPalDefender(false));
   }, [client, instanceId]);
   useEffect(() => checkPalDefender(), [checkPalDefender]);
-  // 移除 PalDefender 時人正停在該分頁 → 退回總覽(帕魯數值不依賴 PalDefender,不在此列)
-  useEffect(() => {
-    // 強化(modded)實例例外:autoEnhance 會裝 PalDefender,分頁常駐(裝好前顯示原因)
-    if (tab === "paldefender" && !palDefender && detail?.flavor !== "modded") setTab("overview");
-  }, [tab, palDefender, detail]);
 
   useEffect(() => {
     void refresh();
@@ -458,11 +453,13 @@ export function InstanceDetailPage({
       )}
 
       {(() => {
-        // 依每實例自訂順序排列,再套 gating(PalDefender 裝了才有、贊助旗標)
+        // 依每實例自訂順序排列,再套 gating(贊助旗標)。
+        // 注意:paldefender 不做「裝了才有」的 gate——安裝入口就在該分頁裡
+        // (版本管理卡),濾掉會讓新伺服器完全沒有安裝 PalDefender 的路徑。
+        // 未安裝時分頁預設隱藏(tabPrefs),從「＋」面板開啟;裝了自動顯示。
         const orderedTabs = tabOrder
           .map((id) => TABS.find((tb) => tb.id === id))
           .filter((tb): tb is (typeof TABS)[number] => !!tb)
-          .filter((tb) => tb.id !== "paldefender" || palDefender || detail.flavor === "modded")
           .filter((tb) => tb.id !== "palstats" || SHOW_SPONSOR_FEATURES);
         const visibleTabs = orderedTabs.filter((tb) => LOCKED_TABS.includes(tb.id) || !hiddenTabs.includes(tb.id));
         const manageable = orderedTabs.filter((tb) => !LOCKED_TABS.includes(tb.id));

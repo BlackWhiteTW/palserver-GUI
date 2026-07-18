@@ -6,10 +6,11 @@
 - **待實機驗證(Windows 測試機 + 真玩家)**:UE4SS 安裝路徑實效、模組回報實際落檔、真玩家打頭目的活→死→活轉變、座標配對命中率(mapdata vs 實際 spawner 偏差)。目前僅 mock 三態(鎖定/未裝/已裝)playwright 截圖 + 純函式單元測試(shared 15 + agent 70 全過)。
 - 可調參數:`BOSS_MATCH_MAP_RADIUS=60`(配對半徑)、`DEFAULT_BOSS_RESPAWN_SECONDS=3600`、`CONTINUITY_SEC=45`(Lua 連續性門檻)。地城頭目(DungeonSaveData)日後可另做。
 
-## 配種計算(PR #43 已合併 + 收尾)
-- feat:PalCalc 配種計算分頁(UCKETX,PR #43):存檔掃描全服帕魯→最短配種路線樹狀圖。
-- 已納入贊助者功能(breeding-calc);審查後修正:計算中提示真的會顯示(雙層 rAF)、改條件清舊結果、掃描輪詢斷線停止+unmount 清理、配方 2.3MB 模組級快取、機率性遺傳免責文案、EmptyState 統一、四語 README 同步。
-- 已補:pals.json 302 筆(屋久島/泰拉瑞亞聯動 12 筆含四語名+圖示);新分頁對自訂過清單的使用者也預設隱藏(knownTabs 遷移)。待辦:同步求解未來可移 Web Worker;self-only 物種無解提示可再精準。
+v2.5.0 已發布(2026-07-19:兩個贊助者新功能 —— 公開地圖(服主一鍵把伺服器地圖公開成全網唯讀連結、
+細項隱私設定、viewer 對齊管理員地圖呈現+官網品牌外框+四語、部署到 stats worker + Zeabur /map)、
+配種計算(PalCalc,PR#43 UCKETX,存檔掃全服帕魯算最短配種路線);pals.json 補屋久島 12 物種;
+分頁顯示修正(反作弊 tab、新分頁預設隱藏);官網下載按鈕依平台直連+更新日誌頁。
+**頭目重生時間已 commit 但用 SHOW_BOSS_RESPAWN=false 隱藏,本版不對外開放**(見下方,待 Windows 驗證))。
 
 v2.4.1 已發布(2026-07-18:玩家頁改 WebSocket 推播 PR#39(LilaS-tw,含審查後 4 修:新鮮 rec/刪除收攤/輪詢兜底/錯誤字串化);反作弊插件 tab 消失修復(PalDefender 已安裝→分頁預設顯示))。
 

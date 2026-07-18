@@ -1368,6 +1368,7 @@
   "等待聊天訊息…": "Waiting for chat messages...",
   "伺服器未執行，暫時無法接收聊天訊息。": "Server is not running; cannot receive chat messages.",
   "PalDefender 未安裝或 logChat 未啟用 — 玩家聊天對話不會在此顯示。": "PalDefender not installed or logChat not enabled \u2014 player chat will not appear here.",
+  "目錄瀏覽僅限區域網路使用": "Directory browsing is only available on the local network",
   "BOSS(頭目)版本": "BOSS (Alpha) variant",
   "歡迎環境": "WoRld PreSeTs",
   "Kubernetes(beta)": "Kubernetes (beta)",

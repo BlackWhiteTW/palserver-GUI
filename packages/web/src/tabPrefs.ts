@@ -16,15 +16,13 @@ export type Tab =
   | "breeding"
   | "saves"
   | "restart"
-  | "instance"
-  | "chat";
+  | "instance";
 
 /** 分頁顯示順序與標籤(label 會過 i18n)。「設定」刻意排在「日誌」右邊。 */
 export const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "總覽" },
   { id: "performance", label: "效能分析" },
   { id: "players", label: "玩家" },
-  { id: "chat", label: "聊天" },
   { id: "guilds", label: "公會" },
   { id: "leaderboard", label: "排行榜" },
   { id: "map", label: "線上地圖" },

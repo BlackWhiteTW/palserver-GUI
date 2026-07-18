@@ -42,6 +42,7 @@ import {
   type AuthContext,
   extractToken,
   isLoopback,
+  isPrivateNetwork,
   pairingCodeMatches,
   rotatePairingCode,
   tokenMatches,
@@ -2346,6 +2347,10 @@ export function registerRoutes(
   }
 
   app.get("/api/host/list-dir", async (req) => {
+    // 目錄瀏覽僅限區域網路使用，防止外網持有 token 者瀏覽主機檔案系統
+    if (!isPrivateNetwork(req.ip)) {
+      throw Object.assign(new Error("目錄瀏覽僅限區域網路使用"), { statusCode: 403 });
+    }
     const { path: dirPath } = HostDirQuery.parse(req.query);
     const target = dirPath.trim();
 
@@ -2395,6 +2400,9 @@ export function registerRoutes(
   });
 
   app.post("/api/host/mkdir", async (req, reply) => {
+    if (!isPrivateNetwork(req.ip)) {
+      throw Object.assign(new Error("目錄瀏覽僅限區域網路使用"), { statusCode: 403 });
+    }
     const { path: dirPath } = z.object({ path: z.string().min(1).max(1000) }).parse(req.body);
     if (!path.isAbsolute(dirPath)) {
       throw Object.assign(new Error("請輸入絕對路徑"), { statusCode: 400 });
@@ -2405,7 +2413,8 @@ export function registerRoutes(
       throw Object.assign(new Error("路徑已存在"), { statusCode: 409 });
     } catch (err: any) {
       if (err.statusCode === 409) throw err; // 路徑已存在
-      // ENOENT: 路徑不存在 → 可以建立
+      // 只放行 ENOENT（不存在），其他錯誤如 EACCES/EPERM 直接拋出
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
     await fs.promises.mkdir(resolved, { recursive: true });
     reply.code(201);

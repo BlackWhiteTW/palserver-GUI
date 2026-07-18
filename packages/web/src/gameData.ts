@@ -89,9 +89,9 @@ export function findCharacter(d: GameData | null, id: string): CharacterHit | un
     const pal2 =
       d.palById.get(cleaned) ??
       d.palByIdLower.get(cleaned.toLowerCase());
-    if (pal2) return { entity: pal2, iconUrl: pal2.icon ? palIconUrl(pal2.icon) : undefined };
+    if (pal2) return { entity: pal2, iconUrl: pal2.icon ? palIconUrl(pal2.icon) : undefined, unknown: true };
     const human2 = d.humanByIdLower.get(cleaned.toLowerCase());
-    if (human2) return { entity: human2, iconUrl: human2.icon ? humanIconUrl(human2.icon) : undefined };
+    if (human2) return { entity: human2, iconUrl: human2.icon ? humanIconUrl(human2.icon) : undefined, unknown: true };
   }
   // 真的找不到：回退成自訂實體，至少顯示一個可讀名稱
   const fallbackName = cleaned || id.replace(/_\d+$/, "");

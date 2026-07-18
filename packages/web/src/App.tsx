@@ -863,16 +863,26 @@ function CreateDialog({
                 {backend === "native" && (
                   <label className={labelCls}>
                     {t("伺服器路徑(選填)")}
-                    <input
-                      className={inputCls}
-                      value={serverDir}
-                      onChange={(e) => setServerDir(e.target.value)}
-                      placeholder={
-                        platform === "win32"
-                          ? t("例:{path}", { path: "D:\\palworld\\my-server" })
-                          : t("例:{path}", { path: "/opt/palworld/my-server" })
-                      }
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        className={`${inputCls} flex-1`}
+                        value={serverDir}
+                        onChange={(e) => setServerDir(e.target.value)}
+                        placeholder={
+                          platform === "win32"
+                            ? t("例:{path}", { path: "D:\\palworld\\my-server" })
+                            : t("例:{path}", { path: "/opt/palworld/my-server" })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className={`${btnGhost} inline-flex items-center gap-1.5 px-3`}
+                        onClick={() => setShowDirPicker(true)}
+                        title={t("瀏覽資料夾")}
+                      >
+                        <FiFolder className="size-4" />
+                      </button>
+                    </div>
                     <span className="text-xs font-normal opacity-70">
                       {t("留空 = 安裝到 agent 資料夾。填既有 PalServer 安裝目錄會直接採用;填空資料夾或新路徑則會下載安裝到那裡。")}
                     </span>
@@ -897,34 +907,6 @@ function CreateDialog({
             </details>
           </>
         )}
-        {backend === "native" && (
-          <label className={labelCls}>
-            {t("伺服器路徑(選填)")}
-            <div className="flex gap-2">
-              <input
-                className={`${inputCls} flex-1`}
-                value={serverDir}
-                onChange={(e) => setServerDir(e.target.value)}
-                placeholder={
-                  platform === "win32"
-                    ? t("例:{path}", { path: "D:\\palworld\\my-server" })
-                    : t("例:{path}", { path: "/opt/palworld/my-server" })
-                }
-              />
-              <button
-                type="button"
-                className={`${btnGhost} inline-flex items-center gap-1.5 px-3`}
-                onClick={() => setShowDirPicker(true)}
-                title={t("瀏覽資料夾")}
-              >
-                <FiFolder className="size-4" />
-              </button>
-            </div>
-            <span className="text-xs font-normal opacity-70">
-              {t("留空 = 安裝到 agent 資料夾。填既有 PalServer 安裝目錄會直接採用;填空資料夾或新路徑則會下載安裝到那裡。")}
-            </span>
-          </label>
-        )}
         {showDirPicker && (
           <DirectoryPicker
             client={client}
@@ -935,46 +917,6 @@ function CreateDialog({
             }}
             onClose={() => setShowDirPicker(false)}
           />
-        )}
-        <label className={labelCls}>
-          {t("遊戲埠(UDP)")}
-          <input
-            className={inputCls}
-            type="number"
-            value={gamePort}
-            onChange={(e) => setGamePort(e.target.value)}
-          />
-        </label>
-        <label className={labelCls}>
-          {t("最大玩家數")}
-          <input
-            className={inputCls}
-            type="number"
-            value={maxPlayers}
-            onChange={(e) => setMaxPlayers(Number(e.target.value))}
-            min={1}
-            max={99}
-          />
-        </label>
-        <label className={labelCls}>
-          {t("伺服器密碼(選填)")}
-          <input
-            className={inputCls}
-            value={serverPassword}
-            onChange={(e) => setServerPassword(e.target.value)}
-          />
-        </label>
-        {backend === "native" && (
-          <p className="inline-flex items-start gap-2 rounded-xl border-2 border-pal/30 bg-pal/5 px-3 py-2 text-xs text-ink-muted">
-            <FiDownload className="mt-0.5 size-4 shrink-0 text-pal" />
-            <span>
-              {t("首次安裝會下載 Palworld 伺服器檔案,")}
-              <b className="text-ink">{t("容量很大(數十 GB)")}</b>
-              {t(",需要一段時間,請耐心等候 —— 建立後可在")}
-              <b className="text-ink">{t("日誌")}</b>
-              {t("分頁看安裝進度。(填既有安裝目錄則會直接採用、跳過下載。)")}
-            </span>
-          </p>
         )}
 
         {/* 精靈:步驟 1 (玩法),步驟 2 (模組) */}

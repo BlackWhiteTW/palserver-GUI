@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getMapDict, pickLocalizedName, type MapLang } from './i18n';
-import type { MapSnapshotV1, MapWorld, OreData, StaticBoss, StaticLandmark } from './types';
+import type { MapSnapshotV1, MapWorld, StaticBoss, StaticLandmark } from './types';
 import { bossMarkerIcon, baseMarkerIcon, hashColor, nameLabelHtml, playerAvatarIcon, PLAYER_AVATAR_SIZE } from './markerIcon';
 
 // 底圖與座標邊界:原樣抄自 packages/web/src/MapTab.tsx:36-52(GUI 本體的即時地圖用
@@ -39,14 +39,11 @@ export default function LeafletMap({
   treeLandmarks,
   bosses,
   treeBosses,
-  ores,
-  treeOres,
   showPlayers,
   showOffline,
   showBases,
   showLandmarks,
   showBosses,
-  showOres,
   showNames,
   showGuildNames,
   lang,
@@ -57,14 +54,11 @@ export default function LeafletMap({
   treeLandmarks: StaticLandmark[];
   bosses: StaticBoss[];
   treeBosses: StaticBoss[];
-  ores: OreData | null;
-  treeOres: OreData | null;
   showPlayers: boolean;
   showOffline: boolean;
   showBases: boolean;
   showLandmarks: boolean;
   showBosses: boolean;
-  showOres: boolean;
   showNames: boolean;
   showGuildNames: boolean;
   lang: MapLang;
@@ -74,8 +68,6 @@ export default function LeafletMap({
   const mapRef = useRef<L.Map | null>(null);
   const boundsRef = useRef<L.LatLngBounds>(IMAGE_BOUNDS);
   const markersRef = useRef<L.LayerGroup | null>(null);
-  const oresGroupRef = useRef<L.LayerGroup | null>(null);
-  const oresRendererRef = useRef<L.Canvas | null>(null);
 
   // 建圖(只跑一次):CRS.Simple + 空的 marker layer group,底圖交給下面的 world effect。
   useEffect(() => {
@@ -88,9 +80,6 @@ export default function LeafletMap({
       maxZoom: 4,
     });
     map.setView(IMAGE_BOUNDS.getCenter(), -2);
-    // 礦物層獨立一組 canvas 渲染器,~3.9k 個點扛不住 DOM marker(同 GUI MapTab 的作法)。
-    oresRendererRef.current = L.canvas({ padding: 0.3 });
-    oresGroupRef.current = L.layerGroup().addTo(map);
     markersRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
@@ -113,8 +102,6 @@ export default function LeafletMap({
       map.remove();
       mapRef.current = null;
       markersRef.current = null;
-      oresGroupRef.current = null;
-      oresRendererRef.current = null;
     };
   }, []);
 
@@ -135,35 +122,6 @@ export default function LeafletMap({
       map.removeLayer(overlay);
     };
   }, [world]);
-
-  // 礦物層:每點一個 canvas 圓點,顏色分礦種,「大型」礦脈畫大顆;白色描邊呼應徽章體系
-  // 的描邊語言。抄自 packages/web/src/MapTab.tsx 的同名 effect。預設關(3.9k 點,手機效能)。
-  useEffect(() => {
-    const group = oresGroupRef.current;
-    const renderer = oresRendererRef.current;
-    if (!group || !renderer) return;
-    group.clearLayers();
-    const data = world === 'tree' ? treeOres : ores;
-    if (!showOres || !data) return;
-    for (const s of data.spots) {
-      const ty = data.types[s.t];
-      if (!ty) continue;
-      const name = pickLocalizedName(ty.name, lang);
-      L.circleMarker([s.y, s.x], {
-        renderer,
-        radius: ty.big ? 6 : 3.5,
-        color: '#ffffff',
-        weight: 1,
-        fillColor: ty.color,
-        fillOpacity: 0.95,
-      })
-        .bindTooltip(`<div style="font-weight:800">${escapeHtml(name)}</div>`, {
-          direction: 'top',
-          className: 'pmap2-tooltip',
-        })
-        .addTo(group);
-    }
-  }, [ores, treeOres, showOres, lang, world]);
 
   // 畫標記:玩家(在線/離線)、公會據點、野外頭目、靜態地標。快照數量小(<100),
   // DOM marker 就夠。
@@ -200,16 +158,19 @@ export default function LeafletMap({
       }
     }
 
-    // 野外頭目(Alpha Pal):紅框頭像 + 皇冠徽章 + 等級,對齊 GUI 的 pmap-boss。
+    // 頭目:依 kind 分野外頭目(Alpha Pal,紅框皇冠)與封印領域(Sealed Realm,紫框傳送門),
+    // 對齊 GUI 的 pmap-boss 系列;舊資料沒有 kind 一律當野外頭目(field)處理。
     if (showBosses) {
       for (const b of curBosses) {
         const iconUrl = b.icon ? palAvatarUrl(b.icon) : null;
-        const icon = bossMarkerIcon(iconUrl, b.lv);
+        const kind = b.kind ?? 'field';
+        const icon = bossMarkerIcon(iconUrl, b.lv, kind);
         const name = pickLocalizedName(b.name, lang);
+        const kindLabel = kind === 'sealed' ? d.sealedRealm : d.alphaPal;
         L.marker([b.y, b.x], { icon, riseOnHover: true })
           .bindTooltip(
             `<div style="font-weight:800">${escapeHtml(name)}</div>` +
-              `<div>${escapeHtml(d.fieldBoss)}${b.lv ? ` · Lv.${b.lv}` : ''}</div>`,
+              `<div>${escapeHtml(kindLabel)}${b.lv ? ` · Lv.${b.lv}` : ''}</div>`,
             { direction: 'top', className: 'pmap2-tooltip' },
           )
           .addTo(group);

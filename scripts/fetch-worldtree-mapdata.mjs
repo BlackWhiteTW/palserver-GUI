@@ -74,7 +74,10 @@ en.forEach((e, i) => {
   const { x, y } = toTreeMap(e.pos.X, e.pos.Y);
   if (e.type === "Alpha Pal") {
     const species = e.id ? palByLower.get(e.id.replace(/^BOSS_/i, "").toLowerCase()) : undefined;
-    bosses.push({ name: names(i), x, y, ...(e.lv ? { lv: e.lv } : {}), ...(species?.icon ? { icon: species.icon } : {}) });
+    // 頭目種類:與主世界一致(comment:"Dungeon"=封印領域 sealed,其餘 field)。
+    // 世界樹目前全部是 Field,但保留判斷讓日後 paldb 若加封印領域資料能自動分類。
+    const kind = e.comment === "Dungeon" ? "sealed" : "field";
+    bosses.push({ name: names(i), x, y, kind, ...(e.lv ? { lv: e.lv } : {}), ...(species?.icon ? { icon: species.icon } : {}) });
   } else if (LANDMARK_TYPES.has(e.type)) {
     landmarks.push({ type: e.type, x, y, name: names(i), ...(e.lv ? { lv: e.lv } : {}) });
   } else if (e.type === "Paloxite") {

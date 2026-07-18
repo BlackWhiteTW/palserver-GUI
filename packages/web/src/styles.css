@@ -565,3 +565,18 @@ body {
   border: 1.5px solid var(--color-card);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
 }
+
+/* Sealed Realm boss markers: same layout as field-boss markers, but a violet
+   frame + diamond/portal badge instead of the red frame + crown, so the two
+   kinds read apart on the map at a glance. */
+.pmap-boss.pmap-boss-sealed {
+  border-color: #9b5de5;
+  box-shadow: 0 0 0 2px rgb(155 93 229 / 0.35), 0 1px 5px rgb(0 0 0 / 0.5);
+}
+.pmap-boss-badge.pmap-boss-badge-sealed {
+  background: #9b5de5;
+  color: #f3e8ff;
+}
+.pmap-boss-lv.pmap-boss-lv-sealed {
+  background: #9b5de5;
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FiRefreshCw, FiMap, FiX, FiHome, FiUsers, FiStar, FiMoon, FiMapPin, FiExternalLink, FiZap, FiGlobe } from "react-icons/fi";
-import { GiCrownedSkull, GiMinerals } from "react-icons/gi";
+import { GiCrownedSkull } from "react-icons/gi";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -98,14 +98,9 @@ interface Boss {
   lv?: number;
   /** Pal portrait filename within game-data/pals/, if we have artwork. */
   icon?: string;
-}
-
-/** Ore/mineral nodes (from paldb.cc's map data via scripts/fetch-map-ores.mjs).
- * ~3.9k points — far too many for DOM markers, so the layer renders them as
- * canvas circle markers coloured per ore type; names/colours ride in the file. */
-interface OreData {
-  types: Record<string, { name: { en: string; zh: string; ja: string; zhCN?: string }; icon: string; color: string; big?: boolean }>;
-  spots: { t: string; x: number; y: number }[];
+  /** "field" (Alpha Pal, wild-spawn boss) or "sealed" (Sealed Realm boss).
+   * Missing/older data is treated as "field" for backward compatibility. */
+  kind?: "field" | "sealed";
 }
 
 /** Same deterministic "random Pal" avatar as the player list (PlayerAvatar):
@@ -174,12 +169,9 @@ export function MapTab({
   const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [showBosses, setShowBosses] = useState(false);
   const [bosses, setBosses] = useState<Boss[]>([]);
-  const [showOres, setShowOres] = useState(false);
-  const [ores, setOres] = useState<OreData | null>(null);
   // 世界樹的靜態圖層資料(worldtree-*.json;缺檔=舊資料包,圖層開關自動消失)
   const [treeLandmarks, setTreeLandmarks] = useState<Landmark[]>([]);
   const [treeBosses, setTreeBosses] = useState<Boss[]>([]);
-  const [treeOres, setTreeOres] = useState<OreData | null>(null);
   const [guildHint, setGuildHint] = useState(false);
   // 快速傳送全開(贊助者):寫入所有玩家存檔;需伺服器停止,agent 會先整世界備份
   const [unlocking, setUnlocking] = useState(false);
@@ -233,10 +225,6 @@ export function MapTab({
       .then((r) => (r.ok ? (r.json() as Promise<Boss[]>) : []))
       .then((d) => setBosses(Array.isArray(d) ? d : []))
       .catch(() => setBosses([]));
-    fetch("/game-data/ores.json")
-      .then((r) => (r.ok ? (r.json() as Promise<OreData>) : null))
-      .then((d) => setOres(d && Array.isArray(d.spots) ? d : null))
-      .catch(() => setOres(null));
     fetch("/game-data/worldtree-landmarks.json")
       .then((r) => (r.ok ? (r.json() as Promise<Landmark[]>) : []))
       .then((d) => setTreeLandmarks(Array.isArray(d) ? d : []))
@@ -245,10 +233,6 @@ export function MapTab({
       .then((r) => (r.ok ? (r.json() as Promise<Boss[]>) : []))
       .then((d) => setTreeBosses(Array.isArray(d) ? d : []))
       .catch(() => setTreeBosses([]));
-    fetch("/game-data/worldtree-ores.json")
-      .then((r) => (r.ok ? (r.json() as Promise<OreData>) : null))
-      .then((d) => setTreeOres(d && Array.isArray(d.spots) ? d : null))
-      .catch(() => setTreeOres(null));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -282,7 +266,6 @@ export function MapTab({
 
   const curLandmarks = world === "tree" ? treeLandmarks : landmarks;
   const curBosses = world === "tree" ? treeBosses : bosses;
-  const curOres = world === "tree" ? treeOres : ores;
 
   const baseCount = guilds.reduce((s, g) => s + g.bases.length, 0);
   const offlineCount = pdPlayers.filter(
@@ -364,7 +347,7 @@ export function MapTab({
                 className={`${btnGhost} inline-flex items-center gap-1.5 ${showBosses ? "border-pal text-pal" : "opacity-60"}`}
                 onClick={() => setShowBosses((v) => !v)}
               >
-                <GiCrownedSkull className="size-4" /> {t("野外頭目")}
+                <GiCrownedSkull className="size-4" /> {t("頭目")}
                 <FiStar className="size-3.5 text-pal" />
               </button>
             ) : (
@@ -373,26 +356,7 @@ export function MapTab({
                 title={t("此功能為贊助者專屬功能,可在設定頁輸入贊助者識別碼解鎖。")}
                 onClick={() => setGuildHint((v) => !v)}
               >
-                <GiCrownedSkull className="size-4" /> {t("野外頭目")}
-                <FiStar className="size-3.5 text-pal" />
-              </button>
-            ))}
-          {curOres && curOres.spots.length > 0 &&
-            (guildsUnlocked ? (
-              <button
-                className={`${btnGhost} inline-flex items-center gap-1.5 ${showOres ? "border-pal text-pal" : "opacity-60"}`}
-                onClick={() => setShowOres((v) => !v)}
-              >
-                <GiMinerals className="size-4" /> {t("礦物")}
-                <FiStar className="size-3.5 text-pal" />
-              </button>
-            ) : (
-              <button
-                className={`${btnGhost} inline-flex items-center gap-1.5 opacity-70`}
-                title={t("此功能為贊助者專屬功能,可在設定頁輸入贊助者識別碼解鎖。")}
-                onClick={() => setGuildHint((v) => !v)}
-              >
-                <GiMinerals className="size-4" /> {t("礦物")}
+                <GiCrownedSkull className="size-4" /> {t("頭目")}
                 <FiStar className="size-3.5 text-pal" />
               </button>
             ))}
@@ -433,7 +397,6 @@ export function MapTab({
           pdPlayers={pdPlayers}
           landmarks={curLandmarks}
           bosses={curBosses}
-          ores={curOres}
           focus={focus}
           lang={lang}
           showPlayers={showPlayers}
@@ -441,7 +404,6 @@ export function MapTab({
           showBases={showBases}
           showLandmarks={showLandmarks}
           showBosses={showBosses}
-          showOres={showOres}
           gameData={gameData}
           onGuildClick={(id) => {
             // 免費用戶:REST 公會詳情被 agent 端 403(guild-map),直接走存檔版
@@ -830,7 +792,6 @@ function PlayerMap({
   pdPlayers,
   landmarks,
   bosses,
-  ores,
   focus,
   lang,
   showPlayers,
@@ -838,7 +799,6 @@ function PlayerMap({
   showBases,
   showLandmarks,
   showBosses,
-  showOres,
   gameData,
   onGuildClick,
   onPlayerClick,
@@ -851,7 +811,6 @@ function PlayerMap({
   pdPlayers: PdPlayerSummary[];
   landmarks: Landmark[];
   bosses: Boss[];
-  ores: OreData | null;
   /** 公會詳情點成員後要跳到的地圖座標(n 為 nonce,同點重點也會觸發)。 */
   focus: { x: number; y: number; n: number } | null;
   lang: "zh" | "zh-CN" | "en" | "ja";
@@ -860,7 +819,6 @@ function PlayerMap({
   showBases: boolean;
   showLandmarks: boolean;
   showBosses: boolean;
-  showOres: boolean;
   gameData: GameData | null;
   onGuildClick?: (guildId: string) => void;
   /** Open the full player-detail view (same as the player list). */
@@ -871,10 +829,6 @@ function PlayerMap({
   /** 目前底圖邊界(applySize 與 world 切換共用) */
   const boundsRef = useRef<L.LatLngBounds>(IMAGE_BOUNDS);
   const markersRef = useRef<L.LayerGroup | null>(null);
-  // 礦物層獨立一組:~3.9k 個 canvas 圓點,只在資料/開關變化時重畫,
-  // 不跟著 5 秒一次的即時資料重繪循環走。
-  const oresGroupRef = useRef<L.LayerGroup | null>(null);
-  const oresRendererRef = useRef<L.Canvas | null>(null);
   const onGuildClickRef = useRef(onGuildClick);
   onGuildClickRef.current = onGuildClick;
   const onPlayerClickRef = useRef(onPlayerClick);
@@ -892,9 +846,6 @@ function PlayerMap({
     map.setView(IMAGE_BOUNDS.getCenter(), -2); // provisional view; applySize refits properly
     el.style.background = "transparent"; // let the card bg show past the image instead of Leaflet's grey
     // 底圖與邊界由 world effect 掛(主世界/世界樹切換共用同一條路徑)
-    // canvas 圓點畫在 overlay pane,天然壓在 divIcon 類 marker(markerPane)之下。
-    oresRendererRef.current = L.canvas({ padding: 0.3 });
-    oresGroupRef.current = L.layerGroup().addTo(map);
     markersRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
@@ -921,8 +872,6 @@ function PlayerMap({
       map.remove();
       mapRef.current = null;
       markersRef.current = null;
-      oresGroupRef.current = null;
-      oresRendererRef.current = null;
     };
   }, []);
 
@@ -933,7 +882,7 @@ function PlayerMap({
     const bounds = world === "tree" ? TREE_IMAGE_BOUNDS : IMAGE_BOUNDS;
     boundsRef.current = bounds;
     const overlay = L.imageOverlay(world === "tree" ? TREE_MAP_IMAGE : MAP_IMAGE, bounds).addTo(map);
-    overlay.bringToBack(); // 壓在礦物/標記層之下
+    overlay.bringToBack(); // 壓在標記層之下
     map.setMaxBounds(bounds.pad(0.3));
     if (map.getSize().y > 0) {
       map.setMinZoom(map.getBoundsZoom(bounds) - 1);
@@ -950,33 +899,6 @@ function PlayerMap({
     if (!map || !focus) return;
     map.flyTo([focus.y, focus.x], Math.max(map.getZoom(), 1), { duration: 0.8 });
   }, [focus]);
-
-  // 礦物層:每點一個 canvas 圓點,顏色分礦種,「大型」礦脈畫大顆;hover 顯示名稱。
-  useEffect(() => {
-    const group = oresGroupRef.current;
-    const renderer = oresRendererRef.current;
-    if (!group || !renderer) return;
-    group.clearLayers();
-    if (!showOres || !ores) return;
-    for (const s of ores.spots) {
-      const ty = ores.types[s.t];
-      if (!ty) continue;
-      const name = (lang === "zh-CN" ? ty.name.zhCN : ty.name[lang]) || ty.name.en;
-      L.circleMarker([s.y, s.x], {
-        renderer,
-        radius: ty.big ? 6 : 3.5,
-        color: "#ffffff",
-        weight: 1,
-        fillColor: ty.color,
-        fillOpacity: 0.95,
-      })
-        .bindTooltip(`<div style="font-weight:800">${escapeHtml(name)}</div>`, {
-          direction: "top",
-          className: "pmap-detail",
-        })
-        .addTo(group);
-    }
-  }, [ores, showOres, lang, world]);
 
   useEffect(() => {
     const group = markersRef.current;
@@ -1053,12 +975,16 @@ function PlayerMap({
       }
     }
 
-    // Field bosses (Alpha Pals): a distinct red-framed Pal portrait with a
-    // crown badge + level — deliberately unlike the round guild-ringed player
-    // avatars (no ping) and separate from the landmark layer.
+    // Bosses: a distinct framed Pal portrait with a badge + level —
+    // deliberately unlike the round guild-ringed player avatars (no ping) and
+    // separate from the landmark layer. Two kinds, styled so they read apart
+    // on the map at a glance (like palworld.gg): field-spawn Alpha Pals get
+    // the original red frame + crown badge; Sealed Realm bosses get a violet
+    // frame + a diamond/portal badge instead of the crown.
     if (showBosses) {
       const BS = 36;
       for (const b of bosses) {
+        const sealed = b.kind === "sealed";
         const iconUrl = b.icon ? palIconUrl(b.icon) : null;
         const icon = L.divIcon({
           className: "pmap-boss-wrap",
@@ -1066,10 +992,14 @@ function PlayerMap({
           iconAnchor: [BS / 2, BS / 2],
           tooltipAnchor: [0, -BS / 2],
           html:
-            `<span class="pmap-boss" style="width:${BS}px;height:${BS}px">` +
+            `<span class="pmap-boss${sealed ? " pmap-boss-sealed" : ""}" style="width:${BS}px;height:${BS}px">` +
             (iconUrl ? `<img src="${escapeHtml(iconUrl)}" alt="" />` : "") +
-            `<span class="pmap-boss-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M4 17l-2-10 5.5 4L12 4l4.5 7L22 7l-2 10z"/></svg></span>` +
-            (b.lv ? `<span class="pmap-boss-lv">${b.lv}</span>` : "") +
+            `<span class="pmap-boss-badge${sealed ? " pmap-boss-badge-sealed" : ""}">` +
+            (sealed
+              ? `<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 2 22 12 12 22 2 12z"/></svg>`
+              : `<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M4 17l-2-10 5.5 4L12 4l4.5 7L22 7l-2 10z"/></svg>`) +
+            `</span>` +
+            (b.lv ? `<span class="pmap-boss-lv${sealed ? " pmap-boss-lv-sealed" : ""}">${b.lv}</span>` : "") +
             `</span>`,
         });
         L.marker([b.y, b.x], { icon, riseOnHover: true })
@@ -1077,7 +1007,7 @@ function PlayerMap({
             `<div style="font-weight:800">${escapeHtml(
               (lang === "zh-CN" ? b.name["zh-CN"] ?? b.name.zhCN : b.name[lang]) || b.name.en,
             )}</div>` +
-              `<div>${t("野外頭目")}${b.lv ? ` · Lv.${b.lv}` : ""}</div>`,
+              `<div>${t(sealed ? "封印領域" : "阿爾法")}${b.lv ? ` · Lv.${b.lv}` : ""}</div>`,
             { direction: "top", className: "pmap-detail" },
           )
           .addTo(group);

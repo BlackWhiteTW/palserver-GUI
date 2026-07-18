@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// /map viewer 頁需要的底圖/地標/礦物/頭目/頭像素材,單一素材來源是 packages/web/public
+// /map viewer 頁需要的底圖/地標/頭目/頭像素材,單一素材來源是 packages/web/public
 // (GUI 本體也用同一份)。這支腳本在 dev/build 前(見 package.json 的 predev/prebuild)把
 // 需要的檔案複製到 website/public/map-assets/ —— 該目錄現在直接進 git(見
 // website/.gitignore 的說明:實測 Zeabur 建置環境拿不到 sibling packages/,素材缺了就得
-// 先 commit),所以 packages/web 的底圖/地標/礦物/圖鑑更新後,記得在本機重跑這支腳本並把
+// 先 commit),所以 packages/web 的底圖/地標/圖鑑更新後,記得在本機重跑這支腳本並把
 // website/public/map-assets/ 的變動一併 commit。
 //
 // 為什麼不讓 Next.js 直接讀 ../packages/web/public:App Router 靜態匯出只會打包
@@ -29,8 +29,6 @@ const FILES = [
   ['game-data/landmark-icons/tower.png', 'landmark-icons/tower.png'],
   ['game-data/landmark-icons/dungeon.png', 'landmark-icons/dungeon.png'],
   ['game-data/landmark-icons/palbox.webp', 'landmark-icons/palbox.webp'],
-  ['game-data/ores.json', 'ores.json'],
-  ['game-data/worldtree-ores.json', 'worldtree-ores.json'],
   ['game-data/bosses.json', 'bosses.json'],
   ['game-data/worldtree-bosses.json', 'worldtree-bosses.json'],
 ];

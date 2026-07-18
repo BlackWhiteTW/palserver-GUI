@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { brandHref, getMapDict, pickMapLang, readStoredMapLang, storeMapLang, type MapLang } from './i18n';
 import MapNav from './MapNav';
-import type { MapSnapshotV1, MapWorld, OreData, SnapshotApiResponse, StaticBoss, StaticLandmark } from './types';
+import type { MapSnapshotV1, MapWorld, SnapshotApiResponse, StaticBoss, StaticLandmark } from './types';
 
 const LeafletMap = dynamic(() => import('./LeafletMap'), { ssr: false });
 
@@ -78,20 +78,16 @@ export default function MapPageClient() {
   const [showOffline, setShowOffline] = useState(false);
   const [showBases, setShowBases] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(true);
-  // 野外頭目預設關:主世界有 83 個 Alpha,紅框頭像全開會鋪滿整張圖、蓋掉玩家/據點,
-  // 使用者要看再自己開(呈現方式仍與 GUI 一致,只是預設收合)。
+  // 頭目層預設關:主世界有 83 個頭目(野外頭目 Alpha Pal + 封印領域 Sealed Realm 合計),
+  // 全開會鋪滿整張圖、蓋掉玩家/據點,使用者要看再自己開(呈現方式仍與 GUI 一致,只是預設收合)。
   const [showBosses, setShowBosses] = useState(false);
-  // 礦物層預設關:~3.9k 個點,手機效能考量,使用者要看再自己開。
-  const [showOres, setShowOres] = useState(false);
 
   const [landmarks, setLandmarks] = useState<StaticLandmark[]>([]);
   const [treeLandmarks, setTreeLandmarks] = useState<StaticLandmark[]>([]);
   const [bosses, setBosses] = useState<StaticBoss[]>([]);
   const [treeBosses, setTreeBosses] = useState<StaticBoss[]>([]);
-  const [ores, setOres] = useState<OreData | null>(null);
-  const [treeOres, setTreeOres] = useState<OreData | null>(null);
 
-  // 靜態地標/野外頭目/礦物(隨網站一起打包,只載一次;缺檔就當沒有這個圖層)。
+  // 靜態地標/野外頭目(隨網站一起打包,只載一次;缺檔就當沒有這個圖層)。
   useEffect(() => {
     fetch('/map-assets/landmarks.json')
       .then((r) => (r.ok ? (r.json() as Promise<StaticLandmark[]>) : []))
@@ -109,14 +105,6 @@ export default function MapPageClient() {
       .then((r) => (r.ok ? (r.json() as Promise<StaticBoss[]>) : []))
       .then((v) => setTreeBosses(Array.isArray(v) ? v : []))
       .catch(() => setTreeBosses([]));
-    fetch('/map-assets/ores.json')
-      .then((r) => (r.ok ? (r.json() as Promise<OreData>) : null))
-      .then((v) => setOres(v && Array.isArray(v.spots) ? v : null))
-      .catch(() => setOres(null));
-    fetch('/map-assets/worldtree-ores.json')
-      .then((r) => (r.ok ? (r.json() as Promise<OreData>) : null))
-      .then((v) => setTreeOres(v && Array.isArray(v.spots) ? v : null))
-      .catch(() => setTreeOres(null));
   }, []);
 
   // 快照輪詢:第一次立即抓,之後每 20 秒;拿過資料後,之後的輪詢失敗不清畫面,
@@ -175,7 +163,6 @@ export default function MapPageClient() {
   const showGuildNames = snapshot?.show?.guildNames !== false;
   const landmarksAvailable = landmarks.length > 0 || treeLandmarks.length > 0;
   const bossesAvailable = bosses.length > 0 || treeBosses.length > 0;
-  const oresAvailable = (ores?.spots.length ?? 0) > 0 || (treeOres?.spots.length ?? 0) > 0;
 
   if (status === 'missing-id') {
     return <StateScreen lang={lang} title={d.missingIdTitle} body={d.missingIdBody} />;
@@ -220,11 +207,10 @@ export default function MapPageClient() {
           <ToggleBtn active={showLandmarks} onClick={() => setShowLandmarks((v) => !v)} label={d.landmarks} />
         )}
         {bossesAvailable && (
-          <ToggleBtn active={showBosses} onClick={() => setShowBosses((v) => !v)} label={d.fieldBoss} />
+          <ToggleBtn active={showBosses} onClick={() => setShowBosses((v) => !v)} label={d.boss} />
         )}
-        {oresAvailable && <ToggleBtn active={showOres} onClick={() => setShowOres((v) => !v)} label={d.ores} />}
         {/* 世界切換恆在:即使快照裡沒有任何 m:"tree" 的動態標記(伺服器上沒人在世界樹),
-            世界樹底圖本身、靜態地標(landmarks.json)與礦物層都還是看得到,不該被鎖住。 */}
+            世界樹底圖本身、靜態地標(landmarks.json)都還是看得到,不該被鎖住。 */}
         <div className="map2-worldswitch">
           <button
             className={world === 'main' ? 'map2-wbtn map2-wbtn-on' : 'map2-wbtn'}
@@ -250,14 +236,11 @@ export default function MapPageClient() {
             treeLandmarks={treeLandmarks}
             bosses={bosses}
             treeBosses={treeBosses}
-            ores={ores}
-            treeOres={treeOres}
             showPlayers={showPlayers}
             showOffline={showOffline}
             showBases={showBases}
             showLandmarks={showLandmarks}
             showBosses={showBosses}
-            showOres={showOres}
             showNames={showNames}
             showGuildNames={showGuildNames}
             lang={lang}

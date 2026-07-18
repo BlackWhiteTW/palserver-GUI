@@ -216,13 +216,19 @@ async function fillLandmarksAndBossesZhCN() {
   const markers = parseMapMarkers(mapJs);
   const byTypeXY = new Map();
   const byXYAlphaPal = new Map();
+  // Alpha Pal 的 comment 區分頭目種類:"Field"=野外真頭目、"Dungeon"=封印領域(Sealed Realm)
+  // 裡的頭目。對齊 palworld.gg 的 Alpha Pals / Sealed Realm 分類。座標(ipos)當 join key。
+  const commentByXYAlphaPal = new Map();
   for (const m of markers) {
     if (!m.type || !m.ipos) continue;
     const x = m.ipos.X;
     const y = m.ipos.Y;
     const item = typeof m.item === "string" ? m.item : "";
     byTypeXY.set(`${m.type}|${x}|${y}`, item);
-    if (m.type === "Alpha Pal") byXYAlphaPal.set(`${x}|${y}`, item);
+    if (m.type === "Alpha Pal") {
+      byXYAlphaPal.set(`${x}|${y}`, item);
+      commentByXYAlphaPal.set(`${x}|${y}`, m.comment);
+    }
   }
 
   // landmarks.json:{type,x,y,lv?,name:{en,zh,ja}}
@@ -278,6 +284,9 @@ async function fillLandmarksAndBossesZhCN() {
       } else if (!entry.name.zhCN) {
         missing++;
       }
+      // 頭目種類:封印領域(comment:"Dungeon")→ sealed,其餘 → field。座標配不到就當 field。
+      const comment = commentByXYAlphaPal.get(`${entry.x}|${entry.y}`);
+      entry.kind = comment === "Dungeon" ? "sealed" : "field";
     }
     const ordered = catalog.map((e) => {
       const { en, zh, ja, zhCN, ...restName } = e.name;

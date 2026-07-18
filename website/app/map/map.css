@@ -424,8 +424,9 @@ nav .lang button.on {
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.4));
 }
 
-/* ── 野外頭目(Alpha Pal):對齊 .pmap-boss 系列(styles.css:509-567)── 紅框圓形頭像 +
-   金色皇冠徽章 + 等級藥丸,刻意跟玩家頭像/據點都不一樣。 */
+/* ── 頭目(野外頭目 Alpha Pal / 封印領域 Sealed Realm):對齊 .pmap-boss 系列
+   (styles.css:509-567)── 紅框圓形頭像 + 金色皇冠徽章 + 等級藥丸,刻意跟玩家頭像/
+   據點都不一樣。封印領域的紫框變體見下方 .pmap2-boss--sealed。 */
 .leaflet-div-icon.pmap2-boss-wrap {
   background: transparent;
   border: none;
@@ -482,6 +483,20 @@ nav .lang button.on {
   border-radius: 9999px;
   border: 1.5px solid var(--card);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+
+/* ── 封印領域(Sealed Realm):與野外頭目(上方紅框皇冠)刻意區分 —— 紫框 + 傳送門/
+   菱形徽章。修飾詞覆寫框色/暈色/徽章底色,其餘尺寸與 layout 沿用 .pmap2-boss。 */
+.pmap2-boss.pmap2-boss--sealed {
+  border-color: #9b6bef;
+  box-shadow: 0 0 0 2px rgb(155 107 239 / 0.35), 0 1px 5px rgb(0 0 0 / 0.5);
+}
+.pmap2-boss-badge.pmap2-boss-badge--sealed {
+  background: #9b6bef;
+  color: #f1e6ff;
+}
+.pmap2-boss-lv.pmap2-boss-lv--sealed {
+  background: #9b6bef;
 }
 
 .pmap2-label {

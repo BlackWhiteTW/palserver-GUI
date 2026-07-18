@@ -98,26 +98,40 @@ export function baseMarkerIcon(color: string): L.DivIcon {
   });
 }
 
-// ── 野外頭目(Alpha Pal)—— 對齊 MapTab.tsx 的 pmap-boss 系列 ──
+// ── 頭目 —— 對齊 MapTab.tsx 的 pmap-boss 系列,依 kind 分兩種樣式 ──
 // GUI 原始參數(MapTab.tsx:1058-1087、styles.css:509-567):36x36 圓形、2.5px 紅框
 // (#e05b5b)、box-shadow 雙層(紅色暈 + 黑色陰影)、hover scale(1.12)、頭像
 // object-fit:cover、頂端皇冠徽章(16x16 圓形、紅底金色 svg)、底部等級藥丸
-// (紅底白字)。svg path 與尺寸原樣照抄。
+// (紅底白字)。svg path 與尺寸原樣照抄 —— 這是 'field'(野外頭目/Alpha Pal)的樣式。
+//
+// 'sealed'(封印領域/Sealed Realm)是本站新增、GUI 端沒有對應物:同樣 36x36 圓形頭像 +
+// 等級藥丸,但改紫色框(#9b6bef)與傳送門/菱形徽章,讓兩種頭目在地圖上一眼可分辨
+// (對齊 palworld.gg 的分類方式)。class 前綴沿用 pmap2-boss,用 pmap2-boss--sealed
+// 修飾詞覆寫框色/暈色,徽章另開 pmap2-boss-badge--sealed 換圖示與底色。
 
 export const BOSS_MARKER_SIZE = 36;
 
-export function bossMarkerIcon(iconUrl: string | null, lv: number | undefined): L.DivIcon {
+export function bossMarkerIcon(iconUrl: string | null, lv: number | undefined, kind?: 'field' | 'sealed'): L.DivIcon {
   const BS = BOSS_MARKER_SIZE;
+  const sealed = kind === 'sealed';
+  const wrapCls = sealed ? 'pmap2-boss pmap2-boss--sealed' : 'pmap2-boss';
+  const badgeCls = sealed ? 'pmap2-boss-badge pmap2-boss-badge--sealed' : 'pmap2-boss-badge';
+  const lvCls = sealed ? 'pmap2-boss-lv pmap2-boss-lv--sealed' : 'pmap2-boss-lv';
+  // 皇冠(field):照抄 GUI 原樣。傳送門/菱形(sealed):同心菱形輪廓,暗示「封印門」,
+  // 不用 emoji、不借用皇冠造型,一眼跟 field 區分開。
+  const badgeSvg = sealed
+    ? `<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M12 2L22 12L12 22L2 12Z"/><path d="M12 8L16 12L12 16L8 12Z" fill="currentColor" stroke="none"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M4 17l-2-10 5.5 4L12 4l4.5 7L22 7l-2 10z"/></svg>`;
   return L.divIcon({
     className: 'pmap2-boss-wrap',
     iconSize: [BS, BS],
     iconAnchor: [BS / 2, BS / 2],
     tooltipAnchor: [0, -BS / 2],
     html:
-      `<span class="pmap2-boss" style="width:${BS}px;height:${BS}px">` +
+      `<span class="${wrapCls}" style="width:${BS}px;height:${BS}px">` +
       (iconUrl ? `<img src="${escapeAttr(iconUrl)}" alt="" />` : '') +
-      `<span class="pmap2-boss-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M4 17l-2-10 5.5 4L12 4l4.5 7L22 7l-2 10z"/></svg></span>` +
-      (lv ? `<span class="pmap2-boss-lv">${lv}</span>` : '') +
+      `<span class="${badgeCls}">${badgeSvg}</span>` +
+      (lv ? `<span class="${lvCls}">${lv}</span>` : '') +
       `</span>`,
   });
 }

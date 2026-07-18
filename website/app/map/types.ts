@@ -68,8 +68,9 @@ export interface StaticLandmark {
   lv?: number;
 }
 
-/** 野外頭目(Alpha Pal):抄自 packages/web/src/MapTab.tsx 的 Boss 形狀,資料來源
- * game-data/bosses.json / worldtree-bosses.json(scripts/copy-map-assets.mjs 同步)。 */
+/** 頭目:抄自 packages/web/src/MapTab.tsx 的 Boss 形狀,資料來源
+ * game-data/bosses.json / worldtree-bosses.json(scripts/copy-map-assets.mjs 同步)。
+ * 依 kind 區分野外頭目(Alpha Pal)與封印領域(Sealed Realm),對齊 palworld.gg 的分類。 */
 export interface StaticBoss {
   name: { en: string; zh: string; 'zh-CN'?: string; zhCN?: string; ja: string };
   x: number;
@@ -77,20 +78,9 @@ export interface StaticBoss {
   lv?: number;
   /** 帕魯圖鑑頭像裸檔名(game-data/pals/ 內),沒有就不畫圖只留框。 */
   icon?: string;
+  /** 'field' = 野外頭目(Alpha Pal,紅框皇冠);'sealed' = 封印領域(紫框傳送門)。
+   * 選填,舊資料(沒有這個欄位)一律當 'field' 處理。 */
+  kind?: 'field' | 'sealed';
 }
 
 export type MapWorld = 'main' | 'tree';
-
-/** 礦物靜態圖層:抄自 packages/web/src/MapTab.tsx 的 OreData 形狀,資料來源
- * game-data/ores.json / worldtree-ores.json(scripts/copy-map-assets.mjs 同步)。 */
-export interface OreType {
-  name: { en: string; zh: string; 'zh-CN'?: string; zhCN?: string; ja: string };
-  icon: string;
-  color: string;
-  big?: boolean;
-}
-
-export interface OreData {
-  types: Record<string, OreType>;
-  spots: { t: string; x: number; y: number }[];
-}

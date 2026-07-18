@@ -38,7 +38,6 @@ export interface MapDict {
   offlinePlayers: string;
   bases: string;
   landmarks: string;
-  ores: string;
   mainWorld: string;
   worldTree: string;
   lv: string;
@@ -46,7 +45,12 @@ export interface MapDict {
   fastTravel: string;
   tower: string;
   dungeon: string;
-  fieldBoss: string;
+  /** 頭目圖層 toggle 標籤(同時涵蓋野外頭目 + 封印領域兩種 kind)。 */
+  boss: string;
+  /** 頭目 tooltip 用:kind === 'field' 時顯示。 */
+  alphaPal: string;
+  /** 頭目 tooltip 用:kind === 'sealed' 時顯示。 */
+  sealedRealm: string;
   raidWarning: string;
   noPlayers: string;
   poweredBy: string;
@@ -73,7 +77,6 @@ const dict: Record<MapLang, MapDict> = {
     offlinePlayers: '離線玩家',
     bases: '公會據點',
     landmarks: '地標',
-    ores: '礦物',
     mainWorld: '主世界',
     worldTree: '世界樹',
     lv: 'Lv.',
@@ -81,7 +84,9 @@ const dict: Record<MapLang, MapDict> = {
     fastTravel: '快速旅行',
     tower: '頭目塔',
     dungeon: '地牢',
-    fieldBoss: '野外頭目',
+    boss: '頭目',
+    alphaPal: '阿爾法',
+    sealedRealm: '封印領域',
     raidWarning: '靠近他人據點',
     noPlayers: '目前沒有玩家在線上',
     poweredBy: 'palserver GUI 公開地圖',
@@ -105,7 +110,6 @@ const dict: Record<MapLang, MapDict> = {
     offlinePlayers: '离线玩家',
     bases: '公会据点',
     landmarks: '地标',
-    ores: '矿物',
     mainWorld: '主世界',
     worldTree: '世界树',
     lv: 'Lv.',
@@ -113,7 +117,9 @@ const dict: Record<MapLang, MapDict> = {
     fastTravel: '快速旅行',
     tower: '头目塔',
     dungeon: '地牢',
-    fieldBoss: '野外头目',
+    boss: '头目',
+    alphaPal: '阿尔法',
+    sealedRealm: '封印领域',
     raidWarning: '靠近他人据点',
     noPlayers: '目前没有玩家在线上',
     poweredBy: 'palserver GUI 公开地图',
@@ -137,7 +143,6 @@ const dict: Record<MapLang, MapDict> = {
     offlinePlayers: 'Offline players',
     bases: 'Guild bases',
     landmarks: 'Landmarks',
-    ores: 'Ores',
     mainWorld: 'Main World',
     worldTree: 'World Tree',
     lv: 'Lv.',
@@ -145,7 +150,9 @@ const dict: Record<MapLang, MapDict> = {
     fastTravel: 'Fast Travel',
     tower: 'Tower',
     dungeon: 'Dungeon',
-    fieldBoss: 'Field Boss',
+    boss: 'Boss',
+    alphaPal: 'Alpha Pal',
+    sealedRealm: 'Sealed Realm',
     raidWarning: "Near another guild's base",
     noPlayers: 'No players online right now',
     poweredBy: 'Public map by palserver GUI',
@@ -169,7 +176,6 @@ const dict: Record<MapLang, MapDict> = {
     offlinePlayers: 'オフラインプレイヤー',
     bases: 'ギルド拠点',
     landmarks: 'ランドマーク',
-    ores: '鉱石',
     mainWorld: 'メインワールド',
     worldTree: '世界樹',
     lv: 'Lv.',
@@ -177,7 +183,9 @@ const dict: Record<MapLang, MapDict> = {
     fastTravel: '高速移動',
     tower: 'タワー',
     dungeon: 'ダンジョン',
-    fieldBoss: 'フィールドボス',
+    boss: 'ボス',
+    alphaPal: 'アルファパル',
+    sealedRealm: '封印領域',
     raidWarning: '他ギルドの拠点に接近',
     noPlayers: '現在オンラインのプレイヤーはいません',
     poweredBy: 'palserver GUI 公開マップ',
@@ -204,7 +212,7 @@ export const mapLocaleName: Record<MapLang, string> = {
   ja: '日本語',
 };
 
-/** marker 名稱(礦物/地標/頭目)依 viewer 語言挑一個:簡體優先 zh-CN→zhCN→繁中→英文,
+/** marker 名稱(地標/頭目)依 viewer 語言挑一個:簡體優先 zh-CN→zhCN→繁中→英文,
  * 其餘語言直接取對應鍵、缺就退回英文。資料來源(paldb)不一定每筆都有各語系名。 */
 export function pickLocalizedName(
   name: { en?: string; zh?: string; 'zh-CN'?: string; zhCN?: string; ja?: string },

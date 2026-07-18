@@ -13,6 +13,7 @@ export type Tab =
   | "mods"
   | "paldefender"
   | "palstats"
+  | "breeding"
   | "saves"
   | "restart"
   | "instance";
@@ -30,6 +31,7 @@ export const TABS: { id: Tab; label: string }[] = [
   { id: "mods", label: "模組" },
   { id: "paldefender", label: "反作弊插件" },
   { id: "palstats", label: "帕魯數值調整" },
+  { id: "breeding", label: "配種計算" },
   { id: "saves", label: "存檔備份" },
   { id: "restart", label: "伺服器重啟" },
   { id: "instance", label: "設定" },

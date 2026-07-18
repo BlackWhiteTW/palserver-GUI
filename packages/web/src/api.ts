@@ -45,6 +45,7 @@ import type {
   RestartStatus,
   AutoScanSetting,
   SaveGuild,
+  SaveBreedingSnapshot,
   SaveHealthStatus,
   SavePlayerProfile,
   SavePlayersSummary,
@@ -718,6 +719,11 @@ export class AgentClient {
   playersSnapshot(id: string, worldGuid?: string): Promise<SavePlayersSummary & { worldGuid: string }> {
     const q = worldGuid ? `?worldGuid=${encodeURIComponent(worldGuid)}` : "";
     return this.request(`/api/instances/${id}/saves/players-snapshot${q}`);
+  }
+
+  breedingSnapshot(id: string, worldGuid?: string): Promise<SaveBreedingSnapshot> {
+    const q = worldGuid ? `?worldGuid=${encodeURIComponent(worldGuid)}` : "";
+    return this.request(`/api/instances/${id}/saves/breeding-snapshot${q}`);
   }
 
   /** 帕魯歸屬過戶:把共玩殘留 uid 名下的帕魯過戶給指定玩家(需停服,會先強制備份)。 */

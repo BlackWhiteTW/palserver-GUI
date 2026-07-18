@@ -71,6 +71,7 @@ import {
 } from "./k8s-file-browser.js";
 import * as saves from "./saves.js";
 import {
+  getBreedingSnapshot,
   getGuildsSnapshot,
   getHealthStatus,
   getPlayerProfile,
@@ -2102,6 +2103,17 @@ export function registerRoutes(
       return { worldGuid, profile };
     }
     return getPlayersSummary(ctxOf(rec), worldGuid);
+  });
+
+  // 配種計算器專用輕量快照:一次取得全服帕魯,不夾帶玩家背包等無關資料。
+  app.get("/api/instances/:id/saves/breeding-snapshot", async (req) => {
+    const rec = getOr404((req.params as { id: string }).id);
+    const q = z
+      .object({ worldGuid: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "世界 GUID 格式不合法").optional() })
+      .parse(req.query);
+    const worldGuid = q.worldGuid ?? (await saves.activeWorldGuidAsync(rec, ctxOf(rec)));
+    if (!worldGuid) throw Object.assign(new Error("找不到啟用中的世界"), { statusCode: 404 });
+    return getBreedingSnapshot(ctxOf(rec), worldGuid);
   });
 
   // ── 掃描統計歷史(每次健檢追加一筆;排行榜/週報分頁讀這裡)──

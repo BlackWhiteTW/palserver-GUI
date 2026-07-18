@@ -11,6 +11,7 @@ import type {
   SaveHealthReport,
   SaveHealthStatus,
   SaveHealthPhase,
+  SaveBreedingSnapshot,
   SavePlayerProfile,
   SavePlayersSnapshot,
   SavePlayersSummary,
@@ -205,6 +206,18 @@ function readSnapshots(ctx: DriverContext): Record<string, SavePlayersSnapshot> 
   } catch {
     return {};
   }
+}
+
+/** 配種工具只需要個體與主人,不回傳背包/公會等大型玩家檔案。 */
+export function getBreedingSnapshot(ctx: DriverContext, worldGuid: string): SaveBreedingSnapshot {
+  const snapshot = readSnapshots(ctx)[worldGuid];
+  return {
+    worldGuid,
+    generatedAt: snapshot?.generatedAt ?? null,
+    pals: (snapshot?.players ?? []).flatMap((player) =>
+      player.pals.map((pal) => ({ ...pal, ownerUid: player.uid, ownerName: player.name })),
+    ),
+  };
 }
 
 function writeSnapshot(ctx: DriverContext, snapshot: SavePlayersSnapshot): void {

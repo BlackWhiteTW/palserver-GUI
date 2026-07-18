@@ -11,6 +11,7 @@ import { SettingsEditor } from "./SettingsEditor";
 import { ModsTab } from "./ModsTab";
 import { PalDefenderTab } from "./PalDefenderTab";
 import { PalStatsTab } from "./PalStatsTab";
+import { BreedingTab } from "./BreedingTab";
 import { PlayersTab } from "./PlayersTab";
 import { GuildsTab } from "./GuildsTab";
 import { LeaderboardTab } from "./LeaderboardTab";
@@ -607,6 +608,7 @@ export function InstanceDetailPage({
         <PalDefenderTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
       {tab === "palstats" && <PalStatsTab client={client} instanceId={detail.id} running={detail.status === "running"} />}
+      {tab === "breeding" && <BreedingTab client={client} instanceId={detail.id} />}
       {tab === "saves" && (
         <SavesTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}

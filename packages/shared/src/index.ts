@@ -827,6 +827,18 @@ export interface SavePlayersSummary {
   players: Omit<SavePlayerProfile, "pals">[];
 }
 
+/** 配種計算器使用的輕量存檔快照。保留個體來源,方便玩家回到正確的帕魯箱找雙親。 */
+export interface SaveBreedingPal extends SavePalRow {
+  ownerUid: string;
+  ownerName: string;
+}
+
+export interface SaveBreedingSnapshot {
+  worldGuid: string;
+  generatedAt: string | null;
+  pals: SaveBreedingPal[];
+}
+
 /** 每次掃描落地的精簡統計(排行榜/週報用;存 save-stats-history.json,追加不覆蓋)。 */
 export interface SaveScanTopPal {
   characterId: string;

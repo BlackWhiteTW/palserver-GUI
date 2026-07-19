@@ -4,7 +4,8 @@
     "website": "https://iosoftware.ai/",
     "instagram": "https://www.instagram.com/iosoftware.ai/",
     "discord": "https://discord.gg/sgMMdUZd3V",
-    "sponsor": "https://buymeacoffee.com/dalufish"
+    "sponsor": "https://buymeacoffee.com/dalufish",
+    "afdian": ""
   },
   "ipService": {
     "name": "IP 直連設定服務",
@@ -67,6 +68,7 @@
         "url": "https://www.youtube.com/@PXJ"
       }
     ],
-    "donate": "https://buymeacoffee.com/dalufish"
+    "donate": "https://buymeacoffee.com/dalufish",
+    "donateAfdian": ""
   }
 }

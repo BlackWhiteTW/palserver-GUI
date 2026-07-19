@@ -21,6 +21,15 @@ export interface Env {
   ADMIN_TOKEN?: string;
   /** Buy Me a Coffee webhook 簽章密鑰(wrangler secret put BMC_WEBHOOK_SECRET)。 */
   BMC_WEBHOOK_SECRET?: string;
+  /** 愛發電(Afdian/ifdian.net)開發者頁的 user_id 與 API Token。
+   *  webhook 本身沒有簽章,收到通知後必須用 Token 算 sign 回打 query-order 驗真,
+   *  兩者任一沒設,webhook 與 redeem 一律拒絕(避免無驗證發碼)。 */
+  AFDIAN_USER_ID?: string;
+  AFDIAN_TOKEN?: string;
+  /** 選填:逗號分隔的包月方案 plan_id 白名單;未設=所有常規方案(product_type=0)都算贊助。 */
+  AFDIAN_PLAN_IDS?: string;
+  /** 選填:愛發電開放 API 網域,預設 https://afdian.net;帳號在 ifdian.net 可覆寫成 https://ifdian.net。 */
+  AFDIAN_API_BASE?: string;
   /** Brevo(app.brevo.com)交易信 API key(wrangler secret put BREVO_API_KEY);沒設就不寄碼(仍會建碼)。 */
   BREVO_API_KEY?: string;
   /** 寄件信箱(需先在 Brevo 驗證寄件者/網域),預設 palserver-gui@iosoftware.ai。 */
@@ -73,6 +82,9 @@ export default {
     if (req.method === "POST" && url.pathname === "/api/license/reset") return handleLicenseReset(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/delete") return handleLicenseDelete(req, env);
     if (req.method === "POST" && url.pathname === "/api/license/bmc-webhook") return handleBmcWebhook(req, env);
+    // 愛發電(Afdian/ifdian.net):webhook 自動發碼/續期 + 自助查碼(無 email,靠訂單號換碼)
+    if (req.method === "POST" && url.pathname === "/api/license/afdian-webhook") return handleAfdianWebhook(req, env);
+    if (req.method === "GET" && url.pathname === "/api/license/afdian-redeem") return handleAfdianRedeem(req, env);
     // 管理後台(發碼 / 管理);頁面本身公開,操作靠頁內輸入 ADMIN_TOKEN。
     if (req.method === "GET" && (url.pathname === "/admin" || url.pathname === "/admin/")) {
       return new Response(ADMIN_HTML, {
@@ -784,4 +796,241 @@ async function handleBmcWebhook(req: Request, env: Env): Promise<Response> {
     }
   }
   return json({ error: "could not allocate code" }, 500);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * 愛發電(Afdian / ifdian.net,同一套系統)訂單 webhook -> 自動發碼/續期。
+ *  - 愛發電沒有 subscription 狀態:每筆贊助(不論包月自動續或手動再贊助)都是獨立 order,
+ *    各自推一次 webhook。用買家 user_id 認人,依 order.month 把同一張碼的效期往後累加
+ *    (找不到就發新碼),做到「同一張碼、自動延長效期」。
+ *  - webhook 沒有簽章,必須用 out_trade_no 回打 query-order API 驗真才發碼(防偽造)。
+ *  - payload 沒有 email,無法寄碼:交付走自助查碼頁(afdian-redeem,用訂單號換碼)。
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const AFDIAN_DAYS_PER_MONTH = 31; // 每月給 31 天(含小寬限),month 直接相乘
+
+/** Cloudflare Workers 的 crypto.subtle 以擴充形式支援 "MD5"。愛發電 sign 用 MD5。 */
+async function md5Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("MD5", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+interface AfdianOrder {
+  out_trade_no: string;
+  user_id?: string;
+  user_private_id?: string;
+  plan_id?: string;
+  month?: number;
+  status?: number;
+  product_type?: number;
+  remark?: string;
+}
+
+/** 用 out_trade_no 回打愛發電 query-order 驗真,回傳該訂單(驗不過/查無回 null)。
+ *  sign = md5(token + "params" + params + "ts" + ts + "user_id" + user_id)。 */
+async function afdianQueryOrder(env: Env, outTradeNo: string): Promise<AfdianOrder | null> {
+  if (!env.AFDIAN_USER_ID || !env.AFDIAN_TOKEN) return null;
+  const base = (env.AFDIAN_API_BASE ?? "https://afdian.net").replace(/\/+$/, "");
+  const params = JSON.stringify({ out_trade_no: outTradeNo });
+  const ts = Math.floor(Date.now() / 1000);
+  const sign = await md5Hex(
+    env.AFDIAN_TOKEN + "params" + params + "ts" + ts + "user_id" + env.AFDIAN_USER_ID,
+  );
+  try {
+    const res = await fetch(base + "/api/open/query-order", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_id: env.AFDIAN_USER_ID, params, ts, sign }),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { ec?: number; data?: { list?: AfdianOrder[] } };
+    if (j.ec !== 200) return null;
+    const list = j.data?.list ?? [];
+    return list.find((o) => o.out_trade_no === outTradeNo) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+type AfdianResult =
+  | { gated: true; reason: string }
+  | { gated?: false; code: string; expiresAt: string; action: "issued" | "renewed" | "already" };
+
+/** 核心:把一筆「已用 query-order 驗真」的愛發電訂單轉成發碼/續期。webhook 與 redeem 共用。
+ *  絕不可直接信任 webhook body,一律先過 afdianQueryOrder 再進來。 */
+async function processAfdianOrder(env: Env, order: AfdianOrder): Promise<AfdianResult> {
+  if (Number(order.status) !== 2) return { gated: true, reason: "order-not-paid" };
+  // 只認「常規/包月方案」訂單(product_type 0):排除售賣類一次性商品(product_type 1)。
+  if (Number(order.product_type) !== 0) return { gated: true, reason: "plan-not-eligible" };
+  const planId = String(order.plan_id ?? "");
+  if (env.AFDIAN_PLAN_IDS) {
+    // 有設白名單:只認名單內的 plan_id(通常就是你的包月方案)。
+    const allow = env.AFDIAN_PLAN_IDS.split(",").map((s) => s.trim()).filter(Boolean);
+    if (allow.length && !allow.includes(planId)) return { gated: true, reason: "plan-not-eligible" };
+  } else if (!planId) {
+    // 未設白名單:至少要求是「方案」訂單,擋掉自選金額打賞(plan_id 空)也被發碼。
+    return { gated: true, reason: "plan-not-eligible" };
+  }
+  const buyer = order.user_private_id || order.user_id;
+  if (!buyer || !order.out_trade_no) return { gated: true, reason: "invalid" };
+  const extId = "afdian:" + buyer;
+  const months = Math.min(Math.max(Math.floor(Number(order.month) || 1), 1), 120);
+  const addMs = months * AFDIAN_DAYS_PER_MONTH * 86400_000;
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+
+  // 冪等:先 claim 這個 out_trade_no。撞主鍵=這筆訂單已處理過 → 回既有結果,不重複續期。
+  let claimed = true;
+  try {
+    await env.DB.prepare(
+      "INSERT INTO afdian_orders (out_trade_no, ext_id, months, processed_at) VALUES (?1, ?2, ?3, ?4)",
+    )
+      .bind(order.out_trade_no, extId, months, nowIso)
+      .run();
+  } catch {
+    claimed = false;
+  }
+  if (!claimed) {
+    const done = await env.DB.prepare("SELECT code FROM afdian_orders WHERE out_trade_no = ?1")
+      .bind(order.out_trade_no)
+      .first<{ code: string | null }>();
+    if (done?.code) {
+      // 這筆訂單已完整處理過(afdian_orders 已回填 code)→ 冪等回既有碼,不重複續期。
+      const lic = await env.DB.prepare("SELECT expires_at FROM licenses WHERE code = ?1")
+        .bind(done.code)
+        .first<{ expires_at: string | null }>();
+      return { code: done.code, expiresAt: lic?.expires_at ?? nowIso, action: "already" };
+    }
+    // 有 claim row 但 code 仍為 null:前一次執行 claim 後、回填 code 前被中止(worker eviction 等)。
+    // 不能回 order-not-found 讓這筆永久卡死 —— 往下補跑發碼/續期,完成後回填 code 自救。
+    // (極少數情況下前次已延長效期才中止,補跑會多加一次月份 —— 偏向付費者且罕見,可接受。)
+  }
+
+  // 找同一買家既有的碼:有就從 max(now, 現有到期) 往後延長;沒有就發新碼。
+  const existing = await env.DB.prepare("SELECT code, expires_at FROM licenses WHERE ext_id = ?1")
+    .bind(extId)
+    .first<{ code: string; expires_at: string | null }>();
+
+  let code = "";
+  let expiresAt: string;
+  let action: "issued" | "renewed";
+  if (existing) {
+    const base = existing.expires_at && Date.parse(existing.expires_at) > now ? Date.parse(existing.expires_at) : now;
+    expiresAt = new Date(base + addMs).toISOString();
+    code = existing.code;
+    action = "renewed";
+    await env.DB.prepare("UPDATE licenses SET expires_at = ?1 WHERE code = ?2").bind(expiresAt, code).run();
+  } else {
+    expiresAt = new Date(now + addMs).toISOString();
+    action = "issued";
+    let ok = false;
+    for (let i = 0; i < 5 && !ok; i++) {
+      const candidate = generateCode();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO licenses (code, tier, features, sponsor, created_at, expires_at, ext_id, source)
+           VALUES (?1, 'sponsor', ?2, ?3, ?4, ?5, ?6, 'afdian')`,
+        )
+          .bind(candidate, JSON.stringify(["custom-pal"]), extId, nowIso, expiresAt, extId)
+          .run();
+        code = candidate;
+        ok = true;
+      } catch {
+        // 撞 ext_id 唯一索引(同買家並發首發)→ 改走續期;純撞 code 主鍵 → 迴圈換碼重試。
+        const dup = await env.DB.prepare("SELECT code, expires_at FROM licenses WHERE ext_id = ?1")
+          .bind(extId)
+          .first<{ code: string; expires_at: string | null }>();
+        if (dup) {
+          const base = dup.expires_at && Date.parse(dup.expires_at) > now ? Date.parse(dup.expires_at) : now;
+          expiresAt = new Date(base + addMs).toISOString();
+          code = dup.code;
+          action = "renewed";
+          await env.DB.prepare("UPDATE licenses SET expires_at = ?1 WHERE code = ?2").bind(expiresAt, code).run();
+          ok = true;
+        }
+      }
+    }
+    if (!ok || !code) return { gated: true, reason: "invalid" };
+  }
+
+  await env.DB.prepare("UPDATE afdian_orders SET code = ?1 WHERE out_trade_no = ?2")
+    .bind(code, order.out_trade_no)
+    .run();
+  return { code, expiresAt, action };
+}
+
+const AFDIAN_RATE_LIMIT = 60; // 同一 IP 每小時最多幾次「會回打 query-order」的請求
+const AFDIAN_RATE_WINDOW_MS = 60 * 60 * 1000;
+const AFDIAN_RATE_RETENTION_MS = 2 * 60 * 60 * 1000;
+
+/** 對「會回打愛發電 query-order」的公開路徑(webhook 驗真、redeem 未命中)做 per-IP 節流,
+ *  擋惡意刷爆我們對愛發電的查單子請求(燒 API 配額 / 觸發 token 被限流)。回 true=已超額該擋。
+ *  per-IP:攻擊者只限到自己 IP,愛發電推送與真實用戶查碼各自獨立不受影響。記本次並順手清過期。 */
+async function afdianRateLimited(req: Request, env: Env): Promise<boolean> {
+  const ip = req.headers.get("CF-Connecting-IP") ?? "unknown";
+  const ipHash = await sha256Hex("afdian:" + ip);
+  const now = Date.now();
+  const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM afdian_reg WHERE ip_hash = ?1 AND created_at >= ?2")
+    .bind(ipHash, now - AFDIAN_RATE_WINDOW_MS)
+    .first<{ n: number }>();
+  if ((c?.n ?? 0) >= AFDIAN_RATE_LIMIT) return true;
+  await env.DB.prepare("INSERT INTO afdian_reg (ip_hash, created_at) VALUES (?1, ?2)").bind(ipHash, now).run();
+  await env.DB.prepare("DELETE FROM afdian_reg WHERE created_at < ?1").bind(now - AFDIAN_RATE_RETENTION_MS).run();
+  return false;
+}
+
+async function handleAfdianWebhook(req: Request, env: Env): Promise<Response> {
+  const ack = () => json({ ec: 200, em: "" });
+  if (!env.AFDIAN_USER_ID || !env.AFDIAN_TOKEN) return json({ ec: 503, em: "webhook not configured" }, 503);
+  let evt: { data?: { type?: string; order?: { out_trade_no?: unknown } } };
+  try {
+    evt = (await req.json()) as typeof evt;
+  } catch {
+    return ack(); // 壞 body 也回 200,避免愛發電無限重推
+  }
+  if (evt.data?.type !== "order") return ack();
+  const outTradeNo = typeof evt.data.order?.out_trade_no === "string" ? evt.data.order.out_trade_no : "";
+  if (!outTradeNo) return ack();
+  // 節流:超額回 429 讓愛發電之後重推(per-IP,愛發電自己的 IP 幾乎不會觸及此上限)。
+  if (await afdianRateLimited(req, env)) return json({ ec: 429, em: "rate-limited" }, 429);
+
+  // 不信任 webhook body:一律用 out_trade_no 回打 query-order 驗真,驗過的真訂單才發碼。
+  // 一律回 200 ack:愛發電開發者頁「發送測試」送的是假訂單號,驗不過屬正常,不能因此回錯
+  // (否則測試顯示失敗)。驗不過(偽造/假測試/愛發電 API 暫時不通)就單純不發碼;真訂單若
+  // 因 API 暫時不通漏發,贊助者稍後用自助查碼頁(afdian-redeem)即可補發,不依賴 webhook 重試。
+  const order = await afdianQueryOrder(env, outTradeNo);
+  if (order) await processAfdianOrder(env, order);
+  return ack();
+}
+
+/** 自助查碼:贊助者付款後把愛發電訂單號貼進來換回自己的碼(愛發電無 email 可寄)。
+ *  已處理過的訂單直接回碼;沒處理過就當場驗真補發(webhook 漏收也能自救)。 */
+async function handleAfdianRedeem(req: Request, env: Env): Promise<Response> {
+  if (!env.AFDIAN_USER_ID || !env.AFDIAN_TOKEN) return json({ ok: false, reason: "not-configured" }, 503);
+  const outTradeNo = (new URL(req.url).searchParams.get("out_trade_no") ?? "").trim();
+  if (!outTradeNo || outTradeNo.length > 64 || !/^[0-9A-Za-z]+$/.test(outTradeNo)) {
+    return json({ ok: false, reason: "invalid" }, 400);
+  }
+  const done = await env.DB.prepare("SELECT code FROM afdian_orders WHERE out_trade_no = ?1")
+    .bind(outTradeNo)
+    .first<{ code: string | null }>();
+  if (done?.code) {
+    const lic = await env.DB.prepare("SELECT expires_at, tier FROM licenses WHERE code = ?1")
+      .bind(done.code)
+      .first<{ expires_at: string | null; tier: string }>();
+    return json({
+      ok: true,
+      code: done.code,
+      expiresAt: lic?.expires_at ?? null,
+      tier: lic?.tier ?? "sponsor",
+      action: "already",
+    });
+  }
+  // 未命中(要回打 query-order)才節流;已處理過的訂單走上面的純 DB 查詢,不擋真實用戶重複領。
+  if (await afdianRateLimited(req, env)) return json({ ok: false, reason: "rate-limited" }, 429);
+  const order = await afdianQueryOrder(env, outTradeNo);
+  if (!order) return json({ ok: false, reason: "order-not-found" }, 404);
+  const r = await processAfdianOrder(env, order);
+  if (r.gated) return json({ ok: false, reason: r.reason }, 400);
+  return json({ ok: true, code: r.code, expiresAt: r.expiresAt, tier: "sponsor", action: r.action });
 }

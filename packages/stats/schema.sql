@@ -37,13 +37,15 @@ CREATE TABLE IF NOT EXISTS licenses (
   bound_to TEXT,              -- 機器碼,首次啟用前為 null
   activated_at TEXT,
   email TEXT,                 -- BMC 會員的 email(月費續訂靠它找同一張碼)
-  source TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'bmc' | 'campaign'
+  ext_id TEXT,                -- 外部平台訂閱者唯一碼(如 'afdian:<user_id>');愛發電續期靠它找同一張碼
+  source TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'bmc' | 'campaign' | 'afdian'
   trial_days INTEGER          -- 試用碼:啟用當下才起算 N 天(activate 時寫入 expires_at);null=非試用
 );
 -- 已建好舊表的話,補欄位(第一次沒有這些欄時執行;已存在會報錯可忽略):
 --   ALTER TABLE licenses ADD COLUMN email TEXT;
 --   ALTER TABLE licenses ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
 --   ALTER TABLE licenses ADD COLUMN trial_days INTEGER;
+--   ALTER TABLE licenses ADD COLUMN ext_id TEXT;
 
 -- email 部分唯一索引:同一個 BMC email 永遠只有一張碼。這是 webhook 防重複發碼的
 -- 依靠(BMC 對同一次訂閱會連發多個事件,INSERT 走 ON CONFLICT(email) 變續期)。
@@ -57,6 +59,30 @@ CREATE TABLE IF NOT EXISTS licenses (
 --     ORDER BY (l.bound_to IS NOT NULL) DESC, l.created_at ASC, l.code ASC LIMIT 1);
 DROP INDEX IF EXISTS idx_licenses_email;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_email_unique ON licenses(email) WHERE email IS NOT NULL;
+
+-- ext_id 部分唯一索引:同一個外部平台訂閱者(如愛發電的 'afdian:<user_id>')永遠只有一張碼。
+-- 愛發電 webhook 每次收到該訂閱者的新訂單,靠這個索引找到同一張碼、延長效期(而非發新碼)。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_ext_id_unique ON licenses(ext_id) WHERE ext_id IS NOT NULL;
+
+-- 已處理過的愛發電訂單:做冪等(webhook 可能重推,同一 out_trade_no 只發/續一次),
+-- 同時當「訂單號 → 碼」的查詢表(自助查碼頁 afdian-redeem 用訂單號換回該訂閱者的碼)。
+-- code 在發/續完成後回填;months 記這筆訂單涵蓋幾個月(愛發電可一次預付多月)。
+CREATE TABLE IF NOT EXISTS afdian_orders (
+  out_trade_no TEXT PRIMARY KEY,
+  ext_id TEXT NOT NULL,
+  code TEXT,
+  months INTEGER NOT NULL,
+  processed_at TEXT NOT NULL
+);
+
+-- 愛發電 query-order 放大攻擊的 per-IP 節流(比照 map_reg):webhook 驗真、redeem 未命中會回打
+-- 愛發電查單 API,惡意刷會燒掉 API 配額 / 觸發 token 被限流。ip_hash 是 CF-Connecting-IP 的
+-- SHA-256;per-IP 計數,攻擊者只限到自己 IP,愛發電推送與真實用戶查碼各自獨立不受影響。逾期自動清。
+CREATE TABLE IF NOT EXISTS afdian_reg (
+  ip_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_afdian_reg_ip_created ON afdian_reg(ip_hash, created_at);
 
 -- 公開地圖快照:服主一鍵把伺服器地圖公開到全網,agent 每 60 秒推送最新快照,
 -- 公開 viewer 頁用 id(shareId)讀取。key_hash 只存 SHA-256 雜湊,不存明碼,

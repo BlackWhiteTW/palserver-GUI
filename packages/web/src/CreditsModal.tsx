@@ -8,7 +8,7 @@ import { Overlay, btnSponsor, card } from "./ui";
  * (遠端可改,見 promoConfig.ts),不用改版就能增減人員或換連結。
  */
 export function CreditsModal({ onClose }: { onClose: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const promo = usePromoConfig();
   return (
     <Overlay onClose={onClose}>
@@ -84,14 +84,26 @@ export function CreditsModal({ onClose }: { onClose: () => void }) {
           <p className="mb-2 text-[13px] text-ink-muted">
             {t("感謝每一位支持 palserver GUI 的贊助者,完整名單請見:")}
           </p>
-          <a
-            className={`${btnSponsor} inline-flex items-center gap-1.5`}
-            href={promo.credits.donate}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <FiCoffee className="size-4" /> Buy Me a Coffee
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              className={`${btnSponsor} inline-flex items-center gap-1.5`}
+              href={promo.credits.donate}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FiCoffee className="size-4" /> Buy Me a Coffee
+            </a>
+            {lang === "zh-CN" && promo.credits.donateAfdian && (
+              <a
+                className={`${btnSponsor} inline-flex items-center gap-1.5`}
+                href={promo.credits.donateAfdian}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <FiHeart className="size-4" /> {t("愛發電")}
+              </a>
+            )}
+          </div>
         </div>
 
         {/* 授權:原始碼公開,但禁止商業用途 —— 使用者看得到才算「標明」。 */}

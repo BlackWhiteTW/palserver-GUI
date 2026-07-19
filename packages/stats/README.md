@@ -69,6 +69,8 @@ npx wrangler secret put GITHUB_TOKEN   # 貼上 fine-grained PAT(只需 public r
 - `POST /api/license/reset {code}` — 解除綁定讓贊助者換機(需 `X-Admin-Token`)
 - `POST /api/license/delete {code}` — 撤銷(刪除)一張碼(需 `X-Admin-Token`)
 - `POST /api/license/bmc-webhook` — Buy Me a Coffee 月費會員 webhook(自動發碼/續期;信件依 BMC 語言中英日,fallback 英文)
+- `POST /api/license/afdian-webhook` — 愛發電(Afdian/ifdian.net)訂單 webhook(自動發碼/依 month 續期;無簽章,靠 query-order 回查驗真)
+- `GET  /api/license/afdian-redeem?out_trade_no=<訂單號>` — 愛發電自助查碼(公開;愛發電無 email,贊助者貼訂單號換碼)
 
 ### 管理後台 UI
 
@@ -105,6 +107,35 @@ curl -X POST https://palserver-stats.iosoftware.workers.dev/api/license/issue \
 流程:會員 `membership.started` → 建碼並 email 給贊助者;`membership.updated`(續訂)→ 延長效期;
 `cancelled` / `paused` → 不再續期,當期到期後停用。webhook 會先用 `x-signature-sha256`
 (HMAC-SHA256)驗簽,沒設 `BMC_WEBHOOK_SECRET` 一律拒絕。
+
+### 接愛發電(Afdian / ifdian.net)
+
+愛發電跟 BMC 不同:**沒有自動扣款**(「包月」是預付多月或每月手動再贊助,每筆都獨立推一次
+`type:order` webhook)、**webhook 沒有簽章**、**payload 沒有 email**。因此:發碼靠 webhook 用
+`out_trade_no` 回打 **query-order API 驗真**(防偽造)後,依買家 `user_id` 認人、依 `month`
+把**同一張碼**的效期往後累加(找不到才發新碼);交付走**自助查碼頁**(贊助者貼訂單號換碼)。
+
+1. 愛發電開發者頁(`https://ifdian.net/dashboard/dev` 或 `afdian.com`):
+   - **Webhook URL** 填 `https://<worker>/api/license/afdian-webhook`(可按「發送測試」,我方一律回 `{"ec":200}`;
+     測試用的是假訂單號,驗不過屬正常、不會發碼,顯示成功即代表端點通)。
+   - 記下 **user_id**、按「生成 Token」拿 **API Token**。
+2. 設 secrets:
+
+   ```bash
+   npx wrangler secret put AFDIAN_USER_ID   # 開發者頁的 user_id
+   npx wrangler secret put AFDIAN_TOKEN      # 開發者頁生成的 API Token
+   # 選填:只認特定包月方案(逗號分隔 plan_id);未設=所有常規方案(product_type=0)都算贊助
+   #   [vars] AFDIAN_PLAN_IDS = "planid1,planid2"
+   # 選填:API 網域,預設 https://afdian.net;帳號在 ifdian.net 若 afdian.net 不通可覆寫
+   #   [vars] AFDIAN_API_BASE = "https://ifdian.net"
+   ```
+
+3. 方案說明請引導贊助者:贊助後到 GUI **設定 → 贊助者識別碼 → 從愛發電領取識別碼**,貼上訂單號換碼
+   (前端此入口只在 UI 語言切到**簡體中文**時顯示)。
+
+> `AFDIAN_USER_ID` / `AFDIAN_TOKEN` 任一沒設,webhook 與 redeem 一律拒絕(不無驗證發碼)。
+> 新增 `ext_id` 欄與 `afdian_orders` / `afdian_reg` 表:舊 DB 跑 `pnpm db:schema` 補上(見 schema.sql)。
+> query-order 回查路徑(webhook 驗真、redeem 未命中)有 per-IP 節流(60 次/小時),擋惡意刷爆 API 配額。
 
 ### 管理 CLI(`manage.mjs`)
 

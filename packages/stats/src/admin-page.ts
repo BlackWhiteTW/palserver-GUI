@@ -79,6 +79,7 @@ export const ADMIN_HTML = `<!doctype html>
   th.sortable:hover{ color:var(--ink); }
   .src{ display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; font-weight:600; white-space:nowrap; }
   .src.bmc{ background:rgba(85,89,199,.1); color:var(--info); }
+  .src.afdian{ background:rgba(236,72,109,.12); color:#ec486d; }
   .src.campaign{ background:rgba(148,99,0,.1); color:var(--warn); }
   .src.manual{ background:var(--soft); color:var(--muted); }
   td .mail{ font-size:12px; color:var(--muted); }
@@ -207,7 +208,7 @@ export const ADMIN_HTML = `<!doctype html>
   // ── 清單狀態(全部抓回來,分類/搜尋/排序都在前端做)──
   var ALL = [];            // 上次 refresh 抓回的完整清單
   var stFilter = "all";    // all | active | unused | expiring | expired
-  var srcFilter = "all";   // all | bmc | campaign | manual
+  var srcFilter = "all";   // all | bmc | afdian | campaign | manual
   var sortKey = "created"; // created | expiry
   var sortAsc = false;
 
@@ -215,7 +216,7 @@ export const ADMIN_HTML = `<!doctype html>
     ["all","總數",""],["active","已啟用","c-green"],["unused","未使用",""],
     ["expiring","30 天內到期","c-amber"],["expired","已過期","c-red"]
   ];
-  var SRC_OPTS = [["all","全部來源"],["bmc","BMC 贊助"],["campaign","活動"],["manual","手動"]];
+  var SRC_OPTS = [["all","全部來源"],["bmc","BMC 贊助"],["afdian","愛發電"],["campaign","活動"],["manual","手動"]];
 
   function statusOf(l){
     if(l.expiresAt && new Date(l.expiresAt).getTime() < Date.now()) return "expired";

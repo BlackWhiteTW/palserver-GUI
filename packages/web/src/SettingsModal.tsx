@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiX, FiCopy, FiCheck, FiRefreshCw, FiSmartphone, FiKey, FiWifi, FiTrash2, FiStar, FiEye, FiEyeOff, FiSun, FiShield } from "react-icons/fi";
+import { FiX, FiCopy, FiCheck, FiRefreshCw, FiSmartphone, FiKey, FiWifi, FiTrash2, FiStar, FiEye, FiEyeOff, FiSun, FiShield, FiHeart } from "react-icons/fi";
 import type { LicenseStatus } from "@palserver/shared";
 import type { AgentClient, Connection, TelemetryStatus, AgentSettingsStatus, AgentSettingsPatch } from "./api";
 import { copyText } from "./clipboard";
@@ -9,6 +9,7 @@ import { useI18n } from "./i18n";
 import { SHOW_SPONSOR_FEATURES } from "./flags";
 import { ThemePicker } from "./ThemePicker";
 import { useHiddenCards } from "./tabPrefs";
+import { STATS_URL } from "./stats";
 import { Overlay, card, btn, btnGhost, inputCls } from "./ui";
 
 /**
@@ -25,7 +26,7 @@ export function SettingsModal({
   conn: Connection;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [code, setCode] = useState<string | null>(null);
   const [hiddenCards, setHiddenCards] = useHiddenCards();
   const [addrs, setAddrs] = useState<{ ip: string; vpn: string | null }[] | null>(null);
@@ -37,6 +38,9 @@ export function SettingsModal({
   const [licInput, setLicInput] = useState("");
   const [licBusy, setLicBusy] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
+  const [afdianNo, setAfdianNo] = useState("");
+  const [afdianBusy, setAfdianBusy] = useState(false);
+  const [afdianMsg, setAfdianMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     client.pairingCode().then((r) => setCode(r.pairingCode)).catch(() => setCode(null));
@@ -61,6 +65,28 @@ export function SettingsModal({
       setLic(await client.clearLicense());
     } finally {
       setLicBusy(false);
+    }
+  };
+
+  /** 愛發電不給 email,贊助者自助貼訂單號換碼:成功就把碼帶進 licInput,接著按「啟用」即可。 */
+  const redeemAfdian = async () => {
+    const no = afdianNo.trim();
+    if (!no) return;
+    setAfdianBusy(true);
+    setAfdianMsg(null);
+    try {
+      const res = await fetch(`${STATS_URL}/api/license/afdian-redeem?out_trade_no=${encodeURIComponent(no)}`);
+      const data = await res.json();
+      if (data?.ok) {
+        setLicInput(data.code ?? "");
+        setAfdianMsg({ ok: true, text: t("領取成功!識別碼已自動帶入下方欄位,請按「啟用」完成設定。") });
+      } else {
+        setAfdianMsg({ ok: false, text: afdianReason(t, data?.reason) });
+      }
+    } catch {
+      setAfdianMsg({ ok: false, text: t("查詢失敗,請確認網路連線後再試一次。") });
+    } finally {
+      setAfdianBusy(false);
     }
   };
 
@@ -211,6 +237,38 @@ export function SettingsModal({
                 <button className={`${btn} inline-flex items-center gap-1.5`} onClick={saveLicense} disabled={licBusy || !licInput.trim()}>
                   {licBusy ? t("驗證中…") : t("啟用")}
                 </button>
+              </div>
+            )}
+            {/* 愛發電只服務中國用戶(微信/支付寶),只在 UI 切到簡體中文時顯示領碼入口 */}
+            {!lic.hasKey && lang === "zh-CN" && (
+              <div className="mt-3 border-t border-line/60 pt-3">
+                <p className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted">
+                  <FiHeart className="size-3.5 text-pal" /> {t("從愛發電領取識別碼")}
+                </p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  {t("在愛發電完成贊助後,把訂單號貼在這裡即可自動換取識別碼。")}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    className={`${inputCls} min-w-0 flex-1 font-mono text-sm`}
+                    placeholder={t("愛發電訂單號")}
+                    value={afdianNo}
+                    onChange={(e) => setAfdianNo(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void redeemAfdian()}
+                  />
+                  <button
+                    className={`${btnGhost} inline-flex items-center gap-1.5`}
+                    onClick={redeemAfdian}
+                    disabled={afdianBusy || !afdianNo.trim()}
+                  >
+                    {afdianBusy ? t("查詢中…") : t("領取")}
+                  </button>
+                </div>
+                {afdianMsg && (
+                  <p className={`mt-1.5 text-xs font-bold ${afdianMsg.ok ? "text-grass" : "text-berry"}`}>
+                    {afdianMsg.text}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -580,6 +638,26 @@ function licReason(t: (s: string) => string, reason: string | null): string {
       return t("暫時連不上驗證伺服器(離線寬限期已過)");
     default:
       return t("驗證失敗");
+  }
+}
+
+/** 把愛發電查碼 API 回的失敗原因碼轉成友善說明。 */
+function afdianReason(t: (s: string) => string, reason: string | null | undefined): string {
+  switch (reason) {
+    case "not-configured":
+      return t("愛發電領碼功能尚未開放,請改用其他方式取得識別碼。");
+    case "order-not-found":
+      return t("查無此訂單,請確認訂單號是否輸入正確。");
+    case "order-not-paid":
+      return t("這筆訂單尚未完成付款。");
+    case "invalid":
+      return t("訂單號格式不正確。");
+    case "plan-not-eligible":
+      return t("這筆訂單不是可解鎖的贊助方案。");
+    case "rate-limited":
+      return t("查詢過於頻繁,請稍後再試。");
+    default:
+      return t("查詢失敗,請稍後再試。");
   }
 }
 

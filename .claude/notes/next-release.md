@@ -1,10 +1,17 @@
 # 下一版 release 草稿(尚未發布)
 
-## 頭目重生時間(贊助 feature `boss-respawn`,2026-07-18)
-- feat:新分頁「頭目重生」——安裝純伺服器端 UE4SS Lua 模組 `PalserverBossReporter`,每 15s 輪詢頭目 spawner 死活,寫 `Pal/Saved/palserver-boss-state.json`;agent 讀檔、web 拿 `bosses.json` 全 90 隻野外頭目做座標一對一配對,顯示死活 / 重生倒數(預設 60 分,實測到連續一輪後改用實測值)。玩家端不需安裝。安裝流程照 PalStatsTab(gating→ModInstallCard→清單),缺 UE4SS 自動裝標準版。
-- 對抗式審查已修 8 項:①座標配對改一對一 greedy(避免 Lyleen/Lyleen Noct 等 <60 單位鄰居誤配)②uninstall 一併刪狀態檔(防重裝復活舊時間)③實測重生間隔加觀測連續性守衛(卸載空窗不灌水)④風險警告登記進 DISMISSIBLE_WARNINGS(可從設定恢復)⑤bosses.json 載入前不顯示 counts 摘要 ⑥loadPrevState 逐物件解析、相容舊格式 ⑦三態還原 null≠已擊殺。
-- **待實機驗證(Windows 測試機 + 真玩家)**:UE4SS 安裝路徑實效、模組回報實際落檔、真玩家打頭目的活→死→活轉變、座標配對命中率(mapdata vs 實際 spawner 偏差)。目前僅 mock 三態(鎖定/未裝/已裝)playwright 截圖 + 純函式單元測試(shared 15 + agent 70 全過)。
-- 可調參數:`BOSS_MATCH_MAP_RADIUS=60`(配對半徑)、`DEFAULT_BOSS_RESPAWN_SECONDS=3600`、`CONTINUITY_SEC=45`(Lua 連續性門檻)。地城頭目(DungeonSaveData)日後可另做。
+(目前無草稿 —— 頭目重生已於 v2.6.0 對外發布,見下。)
+
+v2.6.0 已發布(2026-07-19:主打「頭目重生時間」贊助功能對外開放。伺服器端 UE4SS 模組
+PalserverBossReporter v1.3:野外+地城頭目死活/重生;**狀態黏著**(看過活的一直記活、擊殺後倒數
+不因玩家離開/spawner 卸載而停),已在 Windows 測試機實機驗證(重啟後 loadPrevState 保留 diedAt、
+bossCount 3→21 穩定)。頭目重生分頁(贊助 gating,未解鎖只顯示說明卡、不預覽內容)。GUI 地圖與
+公開地圖疊頭目重生 —— 地城頭目本就在 bosses.json 同座標,一個「頭目」開關一起疊(野外用
+state.bosses、地城用 state.dungeons)。**野外頭目重生綁「遊戲內時間」(下個遊戲日,非固定 1 小時**;
+測試機實測 FairyDragon respawnInterval=1170s 佐證;已移除錯誤的 DEFAULT_BOSS_RESPAWN_SECONDS=3600):
+有實測才給精準倒數,否則定性「約下個遊戲日重生」;地城頭目時間由遊戲內建、精準。另:兩張地圖
+移除礦物層、頭目改名並區分 Alpha/封印領域。研究/計畫:.claude/notes/wild-boss-respawn-research.md、
+boss-map-integration-plan.md;memory `boss-respawn-feature.md`。)
 
 v2.5.0 已發布(2026-07-19:兩個贊助者新功能 —— 公開地圖(服主一鍵把伺服器地圖公開成全網唯讀連結、
 細項隱私設定、viewer 對齊管理員地圖呈現+官網品牌外框+四語、部署到 stats worker + Zeabur /map)、

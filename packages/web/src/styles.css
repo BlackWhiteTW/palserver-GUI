@@ -580,3 +580,24 @@ body {
 .pmap-boss-lv.pmap-boss-lv-sealed {
   background: #9b5de5;
 }
+
+/* Dead / awaiting-respawn overlay (boss-respawn feature): grey out the marker,
+   mirroring the offline-avatar treatment .pmap-avatar.pmap-offline above. */
+.pmap-boss.pmap-boss-dead {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+}
+
+/* Dungeon-boss markers (fixed dungeons, dungeon-bosses.json): amber frame +
+   a gate badge, distinct from field (red) and sealed (violet) wild bosses. */
+.pmap-boss.pmap-boss-dungeon {
+  border-color: #e0a53f;
+  box-shadow: 0 0 0 2px rgb(224 165 63 / 0.35), 0 1px 5px rgb(0 0 0 / 0.5);
+}
+.pmap-boss-badge.pmap-boss-badge-dungeon {
+  background: #e0a53f;
+  color: #3a2a06;
+}
+.pmap-boss-lv.pmap-boss-lv-dungeon {
+  background: #e0a53f;
+}

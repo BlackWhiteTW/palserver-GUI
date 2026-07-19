@@ -5,12 +5,14 @@ import {
   type RestartEvent,
   type RestartPolicy,
   type RestartReason,
+  type WebhookEventType,
 } from "@palserver/shared";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import { rest } from "./restapi.js";
 import { getPalDefenderConfig } from "./paldefender-config.js";
 import { newestPalDefenderLogLines } from "./native.js";
+import { emitAgentEvent } from "./events.js";
 
 /**
  * Automatic restarts, three triggers:
@@ -148,6 +150,15 @@ export class RestartSupervisor {
     state.events.push(event);
     if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
     this.writeState(id, state);
+    // 這裡是所有重啟事件(crash / scheduled / memory / manual / startup-failure)的
+    // 唯一寫入點 —— 一處 emit 即覆蓋全部,推給 webhook。
+    const type: WebhookEventType =
+      event.reason === "crash"
+        ? "server.crash"
+        : event.reason === "startup-failure"
+          ? "server.startup_failure"
+          : "server.restart";
+    emitAgentEvent(type, id, { reason: event.reason, ok: event.ok, detail: event.detail });
   }
 
   /** Fixed times of day: fire once when the clock reaches HH:MM. */

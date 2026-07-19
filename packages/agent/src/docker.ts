@@ -202,6 +202,7 @@ export async function streamLogs(
   rec: InstanceRecord,
   onLine: (line: string) => void,
   onEnd: () => void,
+  replay = 200,
 ): Promise<() => void> {
   const container = await findContainer(rec);
   if (!container) {
@@ -212,7 +213,7 @@ export async function streamLogs(
     follow: true,
     stdout: true,
     stderr: true,
-    tail: 200,
+    tail: replay,
   });
   const out = new PassThrough();
   docker.modem.demuxStream(logStream, out, out);
@@ -351,5 +352,5 @@ export const dockerDriver: ServerDriver = {
   stats: (rec) => getStats(rec),
   // Container stdout carries everything; there are no separate sources.
   logSources: () => [{ id: "agent", label: "容器輸出", available: true }],
-  streamLogs: (rec, _ctx, onLine, onEnd) => streamLogs(rec, onLine, onEnd),
+  streamLogs: (rec, _ctx, onLine, onEnd, _source, replay) => streamLogs(rec, onLine, onEnd, replay),
 };

@@ -12,6 +12,8 @@ export * from "./world-presets.js";
 export * from "./boss-respawn.js";
 export * from "./map-helpers.js";
 export * from "./pal-avatars.generated.js";
+export * from "./log-events.js";
+export * from "./webhooks.js";
 
 /** Value type an option can hold at runtime. */
 export type WorldOptionValue = string | number | boolean;

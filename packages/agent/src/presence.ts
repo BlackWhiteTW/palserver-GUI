@@ -4,6 +4,7 @@ import type { KnownPlayer, PresenceEvent } from "@palserver/shared";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import { rest } from "./restapi.js";
 import { trackPlayers } from "./telemetry.js";
+import { emitAgentEvent } from "./events.js";
 
 /**
  * Tracks who is online by polling the game's REST API, and keeps a roster of
@@ -95,6 +96,12 @@ export class PresenceTracker {
         data.events.push({ at: now, type: "join", userId: p.userId, name: p.name });
         data.sessionStart[p.userId] = now;
         joined.push(p.userId);
+        emitAgentEvent("player.join", rec.id, {
+          userId: p.userId,
+          name: p.name,
+          level: p.level,
+          ping: p.ping,
+        });
       }
       data.known[p.userId] = {
         userId: p.userId,
@@ -123,6 +130,7 @@ export class PresenceTracker {
       };
       delete data.sessionStart[known.userId];
       data.events.push({ at: now, type: "leave", userId: known.userId, name: known.name });
+      emitAgentEvent("player.leave", rec.id, { userId: known.userId, name: known.name });
     }
 
     if (data.events.length > MAX_EVENTS) data.events = data.events.slice(-MAX_EVENTS);

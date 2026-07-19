@@ -6,6 +6,8 @@ import "leaflet/dist/leaflet.css";
 import {
   assignReportedBosses,
   bossRespawnInfo,
+  bossStateMapCoord,
+  dungeonBossInfo,
   guildColorFromId,
   hashSeed,
   isWorldTreeCoord,
@@ -14,6 +16,7 @@ import {
   savToWorldTreeMap,
   type BossRespawnState,
   type BossRespawnStatus,
+  type DungeonBossEntry,
   type LiveStatus,
   type RestPlayer,
   type PdGuild,
@@ -1015,12 +1018,30 @@ function PlayerMap({
       const reportedBosses = bossState?.bosses ?? [];
       const bossPool = reportedBosses.filter((e) => isWorldTreeCoord(e.x) === (world === "tree"));
       const bossAssign = assignReportedBosses(bosses, bossPool);
+      // 地下城頭目也在 bosses.json 內(與野外/封印頭目同座標);它們的重生時間來自 state.dungeons,
+      // 另外按座標近鄰配對疊到同一份 marker 上。野外配到就用野外,沒配到才看地下城。
+      const reportedDungeons = bossState?.dungeons ?? [];
       const nowSec = Math.floor(Date.now() / 1000);
+      const dungeonInfoFor = (bb: Boss) => {
+        let best: DungeonBossEntry | null = null;
+        let bd = 40;
+        for (const d of reportedDungeons) {
+          const m = bossStateMapCoord(d);
+          const dist = Math.hypot(m.x - bb.x, m.y - bb.y);
+          if (dist <= bd) {
+            bd = dist;
+            best = d;
+          }
+        }
+        return best ? dungeonBossInfo(best, nowSec) : null;
+      };
       for (const b of bosses) {
         const sealed = b.kind === "sealed";
         const iconUrl = b.icon ? palIconUrl(b.icon) : null;
-        const info = bossRespawnInfo(bossAssign.get(b) ?? null, nowSec);
-        const dead = info.status === "dead";
+        const wild = bossRespawnInfo(bossAssign.get(b) ?? null, nowSec);
+        const dungeon = wild.status === "unknown" ? dungeonInfoFor(b) : null;
+        const dead = wild.status === "dead" || dungeon?.status === "dead";
+        const secondsLeft = wild.status === "dead" ? wild.secondsLeft : dungeon?.secondsLeft ?? null;
         const icon = L.divIcon({
           className: "pmap-boss-wrap",
           iconSize: [BS, BS],
@@ -1045,8 +1066,8 @@ function PlayerMap({
               `<div>${t(sealed ? "封印領域" : "阿爾法")}${b.lv ? ` · Lv.${b.lv}` : ""}</div>` +
               (dead
                 ? `<div>${
-                    info.secondsLeft !== null && info.secondsLeft > 0
-                      ? t("重生倒數 {c}", { c: fmtCountdown(info.secondsLeft) })
+                    secondsLeft !== null && secondsLeft > 0
+                      ? t("重生倒數 {c}", { c: fmtCountdown(secondsLeft) })
                       : t("應已重生")
                   }</div>`
                 : ""),

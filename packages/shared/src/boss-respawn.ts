@@ -25,6 +25,9 @@ export const BOSS_STATE_STALE_SECONDS = 60;
 /** 世界座標轉地圖座標後,與 bosses.json 頭目配對的最大距離(地圖單位;吸收 mapdata 與
  *  實際 spawner 座標的偏差)。註:野外頭目地圖座標實測約 x∈[-1700,910]、y∈[-1980,840]。 */
 export const BOSS_MATCH_MAP_RADIUS = 60;
+/** 地下城入口座標轉地圖座標後,與 bosses.json 頭目(地城頭目也在其中,同座標)配對的最大距離。
+ *  地城位置固定、偏差小(實測 0~1),用較緊的半徑。 */
+export const DUNGEON_MATCH_MAP_RADIUS = 40;
 
 /** 模組寫到 state 檔的一筆 spawner 狀態。 */
 export interface BossStateEntry {
@@ -227,16 +230,17 @@ export function isBossStateStale(
 export type PublicBossCatalogEntry = { x: number; y: number };
 
 /**
- * 由模組回報的執行期狀態 + 主世界/世界樹兩份野外頭目 catalog,產出公開地圖快照要用的頭目狀態點。
- * 在 agent 端執行(agent 是 @palserver/shared 成員,可直接用這些純函式),讓雲端 viewer
- * 只需「按座標疊狀態」,不必自帶配對邏輯(viewer 非 workspace 成員)。
+ * 由模組回報的執行期狀態 + 主世界/世界樹兩份頭目 catalog(= bosses.json 的地圖座標,野外/封印/
+ * 地城頭目都在其中),產出公開地圖快照要用的頭目狀態點。在 agent 端執行(agent 是 @palserver/shared
+ * 成員,可直接用這些純函式),讓雲端 viewer 只需「按座標疊狀態」,不必自帶配對邏輯(viewer 非 workspace 成員)。
  *
- * 依世界分池(isWorldTreeCoord)→ assignReportedBosses 一對一 → bossRespawnInfo;
- * 只發 status ∈ {alive, dead}(unknown 略,viewer 對未知頭目維持預設樣式);
+ * 兩種重生來源都疊到同一份 catalog 頭目 marker 上(bosses.json 的 18 隻地城頭目與野外頭目同座標):
+ * - 野外/封印(state.bosses):依世界分池 → assignReportedBosses 一對一 → bossRespawnInfo(unknown 略)。
+ * - 地下城(state.dungeons):bossStateMapCoord 近鄰配 catalog → dungeonBossInfo(精準時間,ms=true 不標估算 *)。
  * 點座標用 catalog 的地圖座標(與 viewer 自帶 bosses.json 同源,可精確 `${x},${y}` 配對)。
+ * 同一座標若野外已產點就不再被地城覆蓋(理論上不同座標,防呆)。
  *
  * state 為 null(未安裝模組 / 尚無回報)→ 回空陣列,快照就不帶 bosses 欄位、viewer 開關不出現。
- * 註:地下城頭目不進地圖(頭目層已涵蓋),只在頭目重生分頁顯示。
  */
 export function buildPublicMapBossPoints(
   state: BossRespawnState | null,
@@ -246,6 +250,8 @@ export function buildPublicMapBossPoints(
   const bosses: PublicMapBossPoint[] = [];
   if (!state) return bosses;
 
+  const seen = new Set<string>();
+  // 野外/封印頭目:依世界分池後各自一對一指派。
   const reported = state.bosses ?? [];
   const worlds: { catalog: readonly PublicBossCatalogEntry[]; pool: BossStateEntry[]; m: PublicMapArea }[] = [
     { catalog: catalogs.field, pool: reported.filter((e) => !isWorldTreeCoord(e.x)), m: "world" },
@@ -262,7 +268,31 @@ export function buildPublicMapBossPoints(
         point.ms = info.measured;
       }
       bosses.push(point);
+      seen.add(`world:${cat.x},${cat.y}`);
     }
+  }
+
+  // 地下城頭目:reported 是世界座標,轉地圖座標後近鄰配主世界 catalog(地城頭目也在 bosses.json 內、同座標)。
+  for (const entry of state.dungeons ?? []) {
+    const mc = bossStateMapCoord(entry);
+    let best: PublicBossCatalogEntry | null = null;
+    let bestD = DUNGEON_MATCH_MAP_RADIUS;
+    for (const cat of catalogs.field) {
+      const d = Math.hypot(cat.x - mc.x, cat.y - mc.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = cat;
+      }
+    }
+    if (!best || seen.has(`world:${best.x},${best.y}`)) continue;
+    const info = dungeonBossInfo(entry, nowSec);
+    const point: PublicMapBossPoint = { x: best.x, y: best.y, m: "world", st: info.status };
+    if (info.status === "dead" && info.respawnAt != null) {
+      point.ra = info.respawnAt;
+      point.ms = true; // 地城重生時間是遊戲內建、精準,不標估算 *
+    }
+    bosses.push(point);
+    seen.add(`world:${best.x},${best.y}`);
   }
 
   return bosses;

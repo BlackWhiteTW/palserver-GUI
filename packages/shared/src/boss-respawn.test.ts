@@ -213,6 +213,10 @@ function mkState(patch: Partial<BossRespawnState>): BossRespawnState {
   };
 }
 
+function dungeonEntry(patch: Partial<DungeonBossEntry>): DungeonBossEntry {
+  return { name: "地城", level: 60, bossState: 0, respawnAt: -1, x: 0, y: 0, z: 0, ...patch };
+}
+
 test("buildPublicMapBossPoints:state=null → 空陣列", () => {
   assert.deepEqual(buildPublicMapBossPoints(null, { field: [{ x: 0, y: 0 }], tree: [] }, 5000), []);
 });
@@ -244,4 +248,23 @@ test("buildPublicMapBossPoints:世界樹 spawner 歸 tree 池、發 m=tree(不�
   assert.equal(r.length, 1);
   assert.equal(r[0].m, "tree");
   assert.equal(r[0].st, "alive");
+});
+
+test("buildPublicMapBossPoints:地城頭目 dead → 疊到同座標 catalog 點(精準時間 ms=true)", () => {
+  const state = mkState({ dungeons: [dungeonEntry({ x: MAIN_00.x, y: MAIN_00.y, bossState: 1, respawnAt: 9000 })] });
+  const r = buildPublicMapBossPoints(state, { field: [{ x: 0, y: 0 }], tree: [] }, 2000);
+  assert.deepEqual(r, [{ x: 0, y: 0, m: "world", st: "dead", ra: 9000, ms: true }]);
+});
+
+test("buildPublicMapBossPoints:野外+地城不同座標可同時疊", () => {
+  const state = mkState({
+    bosses: [entry({ x: MAIN_00.x, y: MAIN_00.y, alive: false, diedAt: 1000, respawnedAt: -1 })], // 地圖 (0,0)
+    dungeons: [dungeonEntry({ x: -123888, y: 158000 + 500 * 459, bossState: 1, respawnAt: 9000 })], // 地圖 (500,0)
+  });
+  const r = buildPublicMapBossPoints(state, { field: [{ x: 0, y: 0 }, { x: 500, y: 0 }], tree: [] }, 2000);
+  assert.equal(r.length, 2);
+  const byCoord = Object.fromEntries(r.map((p) => [`${p.x},${p.y}`, p]));
+  assert.equal(byCoord["0,0"].st, "dead");
+  assert.equal(byCoord["500,0"].st, "dead");
+  assert.equal(byCoord["500,0"].ms, true);
 });

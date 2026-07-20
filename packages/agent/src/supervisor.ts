@@ -2,15 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   DEFAULT_RESTART_POLICY,
+  type InstanceStatus,
   type RestartEvent,
   type RestartPolicy,
   type RestartReason,
+  type WebhookEventType,
 } from "@palserver/shared";
 import type { DriverContext, ServerDriver } from "./driver.js";
 import type { InstanceStore, InstanceRecord } from "./store.js";
 import { rest } from "./restapi.js";
 import { getPalDefenderConfig } from "./paldefender-config.js";
 import { newestPalDefenderLogLines } from "./native.js";
+import { cachedVersionSummary } from "./version.js";
+import { emitAgentEvent } from "./events.js";
 
 /**
  * Automatic restarts, three triggers:
@@ -77,6 +81,11 @@ export class RestartSupervisor {
   private timer: NodeJS.Timeout | null = null;
   /** instances currently mid-restart — skip them until they settle */
   private busy = new Set<string>();
+  /** 上次觀測到的狀態 —— 用來偵測 running/exited/starting 轉移並 emit 給 webhook。
+   *  只在記憶體(agent 重啟後以當下狀態重建基準,不會補發啟動時就已存在的狀態)。 */
+  private lastStatus = new Map<string, InstanceStatus>();
+  /** 上次觀測到的「有無可用更新」—— 只在 false→true(新版釋出)時 emit 一次,避免每 tick 重發。 */
+  private lastUpdate = new Map<string, boolean>();
 
   constructor(
     private store: InstanceStore,
@@ -148,6 +157,39 @@ export class RestartSupervisor {
     state.events.push(event);
     if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
     this.writeState(id, state);
+    // 這裡是所有重啟事件(crash / scheduled / memory / manual / startup-failure)的
+    // 唯一寫入點 —— 一處 emit 即覆蓋全部,推給 webhook。
+    const type: WebhookEventType =
+      event.reason === "crash"
+        ? "server.crash"
+        : event.reason === "startup-failure"
+          ? "server.startup_failure"
+          : "server.restart";
+    emitAgentEvent(type, id, { reason: event.reason, ok: event.ok, detail: event.detail });
+  }
+
+  /** 狀態轉移 → 生命週期 webhook(running / starting / exited)。首次觀測只建基準不 emit,
+   *  避免 agent 一啟動就對「本來就在跑」的伺服器發假的「已上線」。crash/排程重啟另有專屬
+   *  事件(見 record),這裡是給一般手動開/關/重啟用的通用訊號,最多延遲一個 tick(~30s)。 */
+  private emitStatusTransition(id: string, status: InstanceStatus): void {
+    const prev = this.lastStatus.get(id);
+    this.lastStatus.set(id, status);
+    if (prev === undefined || prev === status) return;
+    if (status === "running") emitAgentEvent("server.running", id, {});
+    else if (status === "starting" || status === "restarting") emitAgentEvent("server.starting", id, {});
+    else if (status === "exited") emitAgentEvent("server.exited", id, {});
+  }
+
+  /** 遊戲伺服器有新版可更新 → emit 一次(只在 false→true;null/未知不動)。快取由 agent 週期
+   *  fetchLatest 刷新(見 index.ts),故新版釋出後最多一個 tick 內就會偵測到。 */
+  private emitUpdateTransition(rec: InstanceRecord, ctx: DriverContext): void {
+    const { updateAvailable, gameVersion } = cachedVersionSummary(rec, ctx);
+    if (typeof updateAvailable !== "boolean") return; // null=未知(非 native/無快取)→ 不動
+    const prev = this.lastUpdate.get(rec.id);
+    this.lastUpdate.set(rec.id, updateAvailable);
+    if (prev === false && updateAvailable === true) {
+      emitAgentEvent("server.update_available", rec.id, { current: gameVersion ?? "", latest: "" });
+    }
   }
 
   /** Fixed times of day: fire once when the clock reaches HH:MM. */
@@ -185,6 +227,8 @@ export class RestartSupervisor {
     const state = this.readState(rec.id);
     const now = new Date();
     const { status } = await driver.status(rec, ctx);
+    this.emitStatusTransition(rec.id, status);
+    this.emitUpdateTransition(rec, ctx);
 
     if (status !== "running") {
       // Crashed if we saw it running before and nobody asked us to stop it.

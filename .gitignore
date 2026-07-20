@@ -15,8 +15,3 @@ deperated/
 
 # TypeScript incremental build 產物
 *.tsbuildinfo
-
-# Generated message-card renderer assets
-packages/web/public/.bridge-card-renderer/
-__pycache__/
-*.pyc

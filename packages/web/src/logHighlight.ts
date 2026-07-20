@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { parseLogEvent } from "@palserver/shared";
 import { t, getLang, type Lang } from "./i18n";
 
 /**
@@ -52,24 +53,28 @@ export function formatLine(raw: string): string | null {
   const line = raw.replace(/[\s﻿]+$/, ""); // 去尾端空白/CR,讓 $ 錨點正常匹配
   const tm = line.match(TIME_RE);
   const pre = tm ? `${tm[1]}  ` : "";
-  let m: RegExpMatchArray | null;
-  if ((m = line.match(/\[Chat::(\w+)\]\['([^']+)'[^\]]*\]:\s?(.*)$/)))
-    return pre + t("{name}〔{ch}〕{msg}", { name: m[2], ch: m[1], msg: m[3] });
-  if ((m = line.match(/'([^']+)'[^)]*\) has logged in/)))
-    return pre + t("{name} 加入伺服器", { name: m[1] });
-  if ((m = line.match(/'([^']+)'[^)]*\) has logged out/)))
-    return pre + t("{name} 離開伺服器", { name: m[1] });
-  if ((m = line.match(/(steam_\w+) \('[^']*'\) connected to the server/)))
-    return pre + t("{id} 連線中…", { id: m[1] });
-  if ((m = line.match(/'([^']+)'[^)]*\) was attacked by a wild '([^']+)'.*died/)))
-    return pre + t("{name} 被野生 {pal} 擊殺", { name: m[1], pal: m[2] });
-  if ((m = line.match(/'([^']+)'[^)]*\) died to (.+?)\.?$/)))
-    return pre + t("{name} 死亡:{cause}", { name: m[1], cause: m[2] });
-  if ((m = line.match(/'([^']+)'[^)]*\) has captured Pal '([^']+)'/)))
-    return pre + t("{name} 捕捉了 {pal}", { name: m[1], pal: m[2] });
-  if ((m = line.match(/'([^']+)'[^)]*\) has build a (.+?)\.?$/)))
-    return pre + t("{name} 建造了 {what}", { name: m[1], what: m[2] });
-  return null;
+  // 結構化欄位抽取共用 @palserver/shared 的 parseLogEvent(與 agent webhook 同一份 regex);
+  // 這裡只負責依介面語言套版。
+  const ev = parseLogEvent(line);
+  if (!ev) return null;
+  switch (ev.type) {
+    case "chat":
+      return pre + t("{name}〔{ch}〕{msg}", { name: ev.name, ch: ev.channel!, msg: ev.message! });
+    case "join":
+      return pre + t("{name} 加入伺服器", { name: ev.name });
+    case "leave":
+      return pre + t("{name} 離開伺服器", { name: ev.name });
+    case "connect":
+      return pre + t("{id} 連線中…", { id: ev.name });
+    case "death":
+      return ev.pal
+        ? pre + t("{name} 被野生 {pal} 擊殺", { name: ev.name, pal: ev.pal })
+        : pre + t("{name} 死亡:{cause}", { name: ev.name, cause: ev.cause! });
+    case "capture":
+      return pre + t("{name} 捕捉了 {pal}", { name: ev.name, pal: ev.pal! });
+    case "build":
+      return pre + t("{name} 建造了 {what}", { name: ev.name, what: ev.built! });
+  }
 }
 
 /**

@@ -13,6 +13,7 @@ import { PalDefenderTab } from "./PalDefenderTab";
 import { PalStatsTab } from "./PalStatsTab";
 import { BossRespawnTab } from "./BossRespawnTab";
 import { BreedingTab } from "./BreedingTab";
+import { WebhookSettingsTab } from "./WebhookSettingsTab";
 import { PlayersTab } from "./PlayersTab";
 import { GuildsTab } from "./GuildsTab";
 import { LeaderboardTab } from "./LeaderboardTab";
@@ -26,7 +27,6 @@ import { InstanceSettingsTab } from "./InstanceSettingsTab";
 import { SHOW_SPONSOR_FEATURES, SHOW_BOSS_RESPAWN } from "./flags";
 import { PerformanceTab } from "./PerformanceTab";
 import { EngineTab } from "./EngineTab";
-import { MessageBridgeTab } from "./MessageBridgeCard";
 import { maskSteamIdsInText } from "./SteamId";
 import { hasFeature } from "@palserver/shared";
 import { classifyLine, categoryColor, formatLine, genericLine, translateTarget, useLogPrefs } from "./logHighlight";
@@ -618,7 +618,7 @@ export function InstanceDetailPage({
         <SavesTab client={client} instanceId={detail.id} running={detail.status === "running"} />
       )}
       {tab === "restart" && <RestartCard client={client} instanceId={detail.id} />}
-      {tab === "bridge" && <MessageBridgeTab client={client} instanceId={detail.id} />}
+      {tab === "webhooks" && <WebhookSettingsTab client={client} instanceId={detail.id} />}
       {tab === "instance" && (
         <InstanceSettingsTab client={client} detail={detail} onChanged={refresh} onDeleted={onDeleted} />
       )}

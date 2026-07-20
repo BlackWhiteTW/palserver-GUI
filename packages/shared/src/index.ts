@@ -12,6 +12,8 @@ export * from "./world-presets.js";
 export * from "./boss-respawn.js";
 export * from "./map-helpers.js";
 export * from "./pal-avatars.generated.js";
+export * from "./log-events.js";
+export * from "./webhooks.js";
 
 /** Value type an option can hold at runtime. */
 export type WorldOptionValue = string | number | boolean;
@@ -192,62 +194,6 @@ export interface InstanceDetail extends InstanceSummary {
   effectiveServerDir: string | null;
 }
 
-/* ── Group chat ↔ game message bridge ── */
-
-export type MessageBridgePlatform = "onebot" | "discord" | "telegram" | "webhook";
-export type MessageBridgeLanguage = "zh-TW" | "zh-CN" | "en" | "ja";
-export { localizePalName } from "./pal-names.generated.js";
-
-export interface MessageBridgeRules {
-  relayGroupToGame: boolean;
-  relayGameToGroup: boolean;
-  notifyJoinLeave: boolean;
-  notifyCapture: boolean;
-  notifyDeath: boolean;
-  /** 頭目擊殺 / 重生(需頭目回報模組)。 */
-  notifyBoss: boolean;
-  /** 伺服器開機/關機/崩潰重啟中,以及偵測到新版本可更新。 */
-  notifyServerStatus: boolean;
-  /** 排程備份完成 / 失敗。 */
-  notifyBackup: boolean;
-  relayPrefix: string;
-  commandPrefix: string;
-}
-
-interface MessageBridgeChannelBase extends MessageBridgeRules {
-  id: string;
-  platform: MessageBridgePlatform;
-  enabled: boolean;
-  adminIds: string[];
-  language: MessageBridgeLanguage;
-}
-
-export type MessageBridgeChannelConfig =
-  | (MessageBridgeChannelBase & { platform: "onebot"; wsUrl: string; groupId: string; accessTokenSet: boolean })
-  | (MessageBridgeChannelBase & { platform: "discord"; channelId: string; proxyEnabled: boolean; proxyUrlSet: boolean; tokenSet: boolean })
-  | (MessageBridgeChannelBase & { platform: "telegram"; chatId: string; tokenSet: boolean })
-  | (MessageBridgeChannelBase & { platform: "webhook"; url: string; secretSet: boolean });
-
-export interface MessageBridgeConfig {
-  channels: MessageBridgeChannelConfig[];
-}
-
-/** Secrets are write-only. Omit or send an empty string to preserve the saved value. */
-export type MessageBridgeChannelPatch =
-  | (MessageBridgeChannelBase & { platform: "onebot"; wsUrl: string; groupId: string; accessToken?: string })
-  | (MessageBridgeChannelBase & { platform: "discord"; channelId: string; proxyEnabled: boolean; proxyUrl?: string; token?: string })
-  | (MessageBridgeChannelBase & { platform: "telegram"; chatId: string; token?: string })
-  | (MessageBridgeChannelBase & { platform: "webhook"; url: string; secret?: string });
-
-export interface MessageBridgePatch {
-  channels: MessageBridgeChannelPatch[];
-}
-
-export interface MessageBridgeStatus {
-  running: boolean;
-  channels: Record<string, { connected: boolean; error: string | null }>;
-}
-
 export interface InstanceStats {
   /** null when a backend has not collected two valid samples yet. */
   cpuPercent: number | null;
@@ -285,24 +231,6 @@ export type ModComponent = "ue4ss" | "paldefender";
 
 /* ── PalDefender REST API: player detail (pals & inventory) ── */
 
-export interface PdPalIvs {
-  /** 生命 / HP */
-  hp?: number;
-  /** 攻击(含近战与射击,具体维度看 PalDefender 返回) */
-  attack?: number;
-  /** 防御 */
-  defense?: number;
-  /** 工作速度(部分 PD 版本) */
-  workSpeed?: number;
-}
-
-export interface PdPalSouls {
-  hp?: number;
-  attack?: number;
-  defense?: number;
-  workSpeed?: number;
-}
-
 export interface PdPal {
   instanceId: string;
   palId: string;
@@ -312,23 +240,6 @@ export interface PdPal {
   shiny: boolean;
   /** which group it's in */
   location: "team" | "palbox" | "basecamp";
-  /** PalDefender 较新版本才会返回的字段;老版本可能缺失。 */
-  /** 个体值(IV / Talent)。 */
-  ivs?: PdPalIvs;
-  /** 词条 / 被动技能 ID 列表(顺序按重要度)。 */
-  passives?: string[];
-  /** 主动技能 ID 列表。 */
-  activeSkills?: string[];
-  /** 浓缩星数(0=未浓缩,1-4=对应星星数)。 */
-  rank?: number;
-  /** 浓缩已消耗的帕鲁数(PalDefender CondensedPals)。 */
-  condensedPals?: number;
-  /** 灵魂强化等级。 */
-  souls?: PdPalSouls;
-  /** 头目 / 塔主标记:从 palId 前缀或 PD 字段推断。 */
-  isBoss?: boolean;
-  /** 是否塔主 boss(与 isBoss 区分,部分版本单独标记)。 */
-  isTower?: boolean;
 }
 
 export interface PdItemSlot {

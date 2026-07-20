@@ -23,13 +23,17 @@ export interface ServerDriver {
   /** Tear down runtime state (container / process). Never deletes saves. */
   remove(rec: InstanceRecord, ctx: DriverContext): Promise<void>;
   stats(rec: InstanceRecord, ctx: DriverContext): Promise<InstanceStats | null>;
-  /** Follow logs line by line; resolves to a cleanup fn. */
+  /** Follow logs line by line; resolves to a cleanup fn.
+   * `replay` = how many existing trailing lines to emit on attach (default 200,
+   * for the UI). Background consumers that only want *new* lines (e.g. the
+   * webhook log-event tracker) pass 0 so old events aren't re-fired. */
   streamLogs(
     rec: InstanceRecord,
     ctx: DriverContext,
     onLine: (line: string) => void,
     onEnd: () => void,
     source?: LogSourceId,
+    replay?: number,
   ): Promise<() => void>;
 
   /** Which log streams this instance can serve. */

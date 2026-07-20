@@ -24,6 +24,9 @@ import { PresenceTracker } from "./presence.js";
 import { BackupScheduler } from "./backup-scheduler.js";
 import { RestartSupervisor } from "./supervisor.js";
 import { PublicMapPublisher } from "./public-map.js";
+import { WebhooksService } from "./webhooks.js";
+import { LogEventTracker } from "./log-event-tracker.js";
+import { BossEventTracker } from "./boss-event-tracker.js";
 import { fetchLatest } from "./version.js";
 import { isInstalling, nativeDriver } from "./native.js";
 import { dockerDriver } from "./docker.js";
@@ -35,7 +38,6 @@ import { announceBoot, trackPlayers } from "./telemetry.js";
 import { cleanupOldBinaries, startUpdateChecker, type UpdateOps } from "./self-update.js";
 import { refreshLicense } from "./license.js";
 import { startTray } from "./tray.js";
-import { MessageBridgeService } from "./message-bridge.js";
 
 // 啟動流程包在 async main() 內,讓 entry 沒有頂層 await —— 這樣才能打包成
 // CommonJS 供 Node SEA 免安裝執行檔使用(頂層 await 只能輸出 ESM)。
@@ -143,11 +145,7 @@ app.addHook("onRequest", async (req, reply) => {
   if (!req.url.startsWith("/api/")) return;
   const routePath = req.url.split("?")[0];
   // 公開端點:偵測 agent(/api/info)與配對換發 token(/api/pair)本身不需授權。
-  if (
-    routePath === "/api/info" ||
-    routePath === "/api/pair" ||
-    /^\/api\/instances\/[^/]+\/message-bridge\/webhook$/.test(routePath)
-  ) return;
+  if (routePath === "/api/info" || routePath === "/api/pair") return;
   // 本機(loopback)免驗證,單機自用零摩擦;PALSERVER_REQUIRE_TOKEN=1 可關閉。
   if (!REQUIRE_TOKEN && isLoopback(req.ip)) return;
   await makeAuthHook(token)(req, reply);
@@ -156,20 +154,12 @@ app.addHook("onRequest", async (req, reply) => {
 // Warm the Steam version cache so the first instance listing already knows
 // whether an update is available (it only ever reads the cache).
 void fetchLatest().catch(() => {});
-// 每 6 小時重新抓一次最新版本,讓 message-bridge 的 reconcileServer 能偵測到
-// updateAvailable 由 false→true(新版釋出)並發「有新版本」通知 —— 否則快取只停在
-// 啟動當下,執行期間永遠不會變、update 通知永遠不觸發。
+// 之後每 6 小時重新抓一次最新版本 —— 讓 supervisor 能在新版釋出時偵測到 false→true
+// 並發 server.update_available webhook(否則快取只停在啟動當下的狀態)。
 setInterval(() => void fetchLatest(true).catch(() => {}), 6 * 60 * 60_000).unref();
 
 const presence = new PresenceTracker(store);
 presence.start();
-
-const messageBridge = new MessageBridgeService(
-  store,
-  presence,
-  (rec) => rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver,
-);
-messageBridge.start();
 
 // 匿名使用統計(可關閉,見 PRIVACY.md):登記這次啟動,並把既有名冊上的玩家
 // 補進全球玩家統計(只送單向雜湊;telemetry 模組自己會去重)。
@@ -194,6 +184,26 @@ const publicMap = new PublicMapPublisher(
 );
 publicMap.start();
 
+// Webhook / Discord 機器人整合(贊助限定):dispatcher 訂閱事件匯流排,對已啟用的
+// webhook 簽章推送 + 重試。log-event-tracker 只在「已授權且有訂閱 player.* log 事件」
+// 的執行中實例才起 follower(wantsLogEvents),避免無訂閱時空轉。
+const webhooks = new WebhooksService(store, AGENT_VERSION);
+webhooks.start();
+
+const logEventTracker = new LogEventTracker(
+  store,
+  (rec) => (rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver),
+  (id) => webhooks.wantsLogEvents(id),
+);
+logEventTracker.start();
+
+const bossEventTracker = new BossEventTracker(
+  store,
+  (rec) => (rec.backend === "native" ? nativeDriver : rec.backend === "k8s" ? k8sDriver : dockerDriver),
+  (id) => webhooks.wantsBossEvents(id),
+);
+bossEventTracker.start();
+
 // 每小時自動掃描存檔(排行榜/週報資料;每實例可在排行榜分頁開關)
 startAutoScanLoop({
   list: () => store.list(),
@@ -216,8 +226,7 @@ const updateOps: UpdateOps = {
   log: (msg) => app.log.info(`[update] ${msg}`),
 };
 
-registerRoutes(app, store, presence, scheduler, supervisor, publicMap, messageBridge, auth, updateOps);
-app.addHook("onClose", async () => messageBridge.stop());
+registerRoutes(app, store, presence, scheduler, supervisor, publicMap, webhooks, auth, updateOps);
 
 await app.listen({ host: HOST, port: PORT });
 

@@ -633,36 +633,120 @@ function pickEmail(data: Record<string, unknown>): string | null {
  *  成功/失敗與原因回報出來,方便排查(否則 Brevo 拒絕也看不到)。 */
 type Lang = "zh" | "en" | "ja";
 
-/** 贊助碼信件的三語文案。html(code) 產生信件內文。 */
-const EMAIL_I18N: Record<Lang, { subject: string; html: (code: string) => string }> = {
+interface EmailStrings {
+  subject: string;
+  eyebrow: string;
+  title: string;
+  intro: string;
+  codeLabel: string;
+  notes: string;
+  footerNote: string;
+  footerNoReply: string;
+}
+
+/** 贊助碼信件的三語文案(外觀由 renderCodeEmail 統一套用 io Software 品牌樣式)。 */
+const EMAIL_I18N: Record<Lang, EmailStrings> = {
   zh: {
-    subject: "你的 palserver GUI 先行版識別碼",
-    html: (code) => `
-    <p>感謝你的贊助!以下是你的 palserver GUI 先行版識別碼:</p>
-    <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
-    <p>在 GUI 的「設定 → 贊助者識別碼」貼上即可解鎖先行版功能。<br>
-    一組識別碼同時只能綁定一台伺服器;要換機時,先在舊伺服器移除識別碼,再到新伺服器貼上即可。<br>
-    月費有效期間持續解鎖,取消後於當期到期時停用。</p>`,
+    subject: "您的 palserver GUI 先行版識別碼",
+    eyebrow: "贊助者識別碼",
+    title: "感謝您的支持",
+    intro:
+      "以下為您的 palserver GUI 先行版識別碼。請於 GUI 的「設定 → 贊助者識別碼」中貼上,即可解鎖先行版功能。",
+    codeLabel: "您的識別碼",
+    notes:
+      "每組識別碼同一時間僅能綁定一台伺服器。如需更換伺服器,請先於原伺服器移除識別碼,再於新伺服器貼上。<br>月費訂閱有效期間將持續啟用;取消訂閱後,將於當期結束時停止授權。",
+    footerNote: "本信件由 palserver GUI 系統自動發送。",
+    footerNoReply: "請勿直接回覆本信件,此信箱不受理回覆。",
   },
   en: {
     subject: "Your palserver GUI early-access code",
-    html: (code) => `
-    <p>Thank you for your support! Here is your palserver GUI early-access code:</p>
-    <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
-    <p>Paste it into <b>Settings → Sponsor code</b> in the GUI to unlock the early-access features.<br>
-    One code binds to a single server at a time — to move it, remove the code on the old server first, then paste it on the new one.<br>
-    It stays unlocked while your membership is active and stops at the end of the period after you cancel.</p>`,
+    eyebrow: "Sponsor code",
+    title: "Thank you for your support",
+    intro:
+      "Below is your palserver GUI early-access code. In the GUI, open Settings → Sponsor code and paste it to unlock the early-access features.",
+    codeLabel: "Your code",
+    notes:
+      "Each code can be bound to only one server at a time. To move it to another server, first remove the code on the original server, then paste it on the new one.<br>Access remains active for the duration of your subscription and ends at the close of the current billing period after cancellation.",
+    footerNote: "This message was sent automatically by palserver GUI.",
+    footerNoReply: "Please do not reply to this email; this mailbox is not monitored.",
   },
   ja: {
-    subject: "palserver GUI 先行アクセスコード",
-    html: (code) => `
-    <p>ご支援ありがとうございます!palserver GUI の先行アクセスコードはこちらです:</p>
-    <p style="font-size:20px;font-weight:800;font-family:monospace">${code}</p>
-    <p>GUI の「設定 → スポンサーコード」に貼り付けると先行アクセス機能が解除されます。<br>
-    1つのコードは同時にサーバー1台のみに紐づきます。別のサーバーへ移す場合は、先に旧サーバーでコードを削除してから新しいサーバーで貼り付けてください。<br>
-    メンバーシップが有効な間は解除され、解約後は当期の終了時に無効になります。</p>`,
+    subject: "palserver GUI 先行アクセスコードのご案内",
+    eyebrow: "スポンサーコード",
+    title: "ご支援ありがとうございます",
+    intro:
+      "palserver GUI の先行アクセスコードをお送りいたします。GUI の「設定 → スポンサーコード」に貼り付けていただくと、先行アクセス機能が有効になります。",
+    codeLabel: "お客様のコード",
+    notes:
+      "1 つのコードは、同時に 1 台のサーバーにのみ紐づけできます。別のサーバーへ移行される場合は、先に元のサーバーでコードを削除してから、新しいサーバーで貼り付けてください。<br>メンバーシップが有効な期間中は機能をご利用いただけ、解約後は当期の終了をもって無効となります。",
+    footerNote: "本メールは palserver GUI より自動送信されています。",
+    footerNoReply: "本メールへの返信はご遠慮ください(受信専用です)。",
   },
 };
+
+const EMAIL_LOGO_URL = "https://palserver-gui.iosoftware.ai/assets/iosoftware-logo-email.png";
+const EMAIL_ORANGE = "#f5811f";
+
+function renderCodeEmail(code: string, s: EmailStrings): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light only">
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;-webkit-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f3f5;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,'PingFang TC','Microsoft JhengHei',sans-serif;">
+          <tr>
+            <td align="center" style="background:#0b0b0d;padding:34px 24px 26px;">
+              <img src="${EMAIL_LOGO_URL}" alt="io Software" width="248" style="display:block;width:248px;max-width:74%;height:auto;margin:0 auto;border:0;">
+              <div style="margin-top:14px;font-size:17px;font-weight:800;letter-spacing:.3px;color:${EMAIL_ORANGE};">palserver GUI</div>
+            </td>
+          </tr>
+          <tr><td style="height:3px;line-height:3px;font-size:0;background:#e11d2b;">&nbsp;</td></tr>
+          <tr>
+            <td style="padding:34px 36px 4px;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:${EMAIL_ORANGE};">${s.eyebrow}</div>
+              <div style="margin-top:10px;font-size:24px;line-height:1.25;font-weight:800;color:#17181a;">${s.title}</div>
+              <p style="margin:14px 0 0;font-size:15px;line-height:1.6;color:#54585e;">${s.intro}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 36px 4px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f8;border-left:4px solid ${EMAIL_ORANGE};border-radius:8px;">
+                <tr>
+                  <td style="padding:18px 22px;">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#8a8f96;">${s.codeLabel}</div>
+                    <div style="margin-top:8px;font-size:26px;line-height:1.2;font-weight:800;letter-spacing:1px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;color:#17181a;">${code}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 36px 28px;">
+              <p style="margin:0;font-size:13px;line-height:1.7;color:#71767d;">${s.notes}</p>
+            </td>
+          </tr>
+          <tr><td style="padding:0 36px;"><div style="border-top:1px solid #ececee;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+          <tr>
+            <td align="center" style="padding:24px 36px 30px;">
+              <p style="margin:0;font-size:13px;color:#8a8f96;">${s.footerNote}</p>
+              <p style="margin:6px 0 0;font-size:13px;color:#a6abb2;">${s.footerNoReply}</p>
+              <p style="margin:16px 0 0;"><a href="https://iosoftware.ai" style="font-size:14px;font-weight:700;color:${EMAIL_ORANGE};text-decoration:none;">iosoftware.ai</a></p>
+              <p style="margin:8px 0 0;font-size:12px;color:#b9bdc3;">&copy; io Software &middot; All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
 
 /** 從 BMC payload 盡量判斷語言(zh/ja/en),判不出來 fallback 英文。 */
 function pickLang(data: Record<string, unknown>): Lang {
@@ -690,7 +774,7 @@ async function sendCodeEmail(
   lang: Lang = "en",
 ): Promise<{ sent: boolean; error?: string }> {
   if (!env.BREVO_API_KEY) return { sent: false, error: "BREVO_API_KEY 未設定(worker 上沒有這個 secret)" };
-  const tpl = EMAIL_I18N[lang] ?? EMAIL_I18N.en;
+  const s = EMAIL_I18N[lang] ?? EMAIL_I18N.en;
   try {
     // Brevo 交易信 API(https://developers.brevo.com/reference/sendtransacemail)。
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -706,8 +790,8 @@ async function sendCodeEmail(
           email: env.BREVO_FROM_EMAIL ?? "palserver-gui@iosoftware.ai",
         },
         to: [{ email: to }],
-        subject: tpl.subject,
-        htmlContent: tpl.html(code),
+        subject: s.subject,
+        htmlContent: renderCodeEmail(code, s),
       }),
     });
     if (!res.ok) {

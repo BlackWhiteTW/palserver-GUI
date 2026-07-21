@@ -33,16 +33,18 @@ function sourceLocation(source: SaveBreedingPal): string {
     return t("帕魯箱第 {page} 頁", { page: Math.floor(source.slotIndex / PALBOX_SLOTS_PER_PAGE) + 1 });
   }
   if (source.location === "base" && source.base) {
-    return source.base.name ? t("據點:{base}", { base: source.base.name }) : t("公會據點");
+    const generatedName = /^(新規生成拠点|新规生成据点|新規生成據點)/.test(source.base.name);
+    return source.base.name && !generatedName
+      ? t("據點:{base}", { base: source.base.name })
+      : t("公會據點");
   }
   return t(locationLabel[source.location]);
 }
 
 function sourceSummary(source: SaveBreedingPal): string {
-  return t("{owner} · {location} · Lv.{level}", {
+  return t("{owner} · {location}", {
     owner: source.ownerName,
     location: sourceLocation(source),
-    level: source.level ?? "—",
   });
 }
 
@@ -82,17 +84,22 @@ function PalTreeNode({
         {entity?.icon && <img src={palIconUrl(entity.icon)} alt="" className="size-full object-contain" />}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-extrabold">
-          {source?.nickname || palName(data, node.species)}
-          <span className="ml-1.5 text-xs font-normal text-ink-muted">
+        <p className="flex min-w-0 items-baseline gap-1.5 text-sm font-extrabold">
+          <span className="truncate">{source?.nickname || palName(data, node.species)}</span>
+          <span className="shrink-0 text-xs font-normal text-ink-muted">
             {node.gender === "m" ? "♂" : node.gender === "f" ? "♀" : "♂/♀"}
           </span>
+          {source && (
+            <span className="ml-auto shrink-0 text-[10px] font-bold text-ink-muted">
+              Lv.{source.level ?? "—"}
+            </span>
+          )}
         </p>
         {source?.base && onShowOnMap ? (
           <button
             type="button"
             className="flex max-w-full items-center gap-1 text-left text-[11px] text-ink-muted transition hover:text-pal"
-            title={t("在地圖上查看")}
+            title={`${sourceSummary(source)} · ${t("在地圖上查看")}`}
             onClick={() => {
               const point = savToMap(source.base!.x, source.base!.y);
               onShowOnMap(point.x, point.y);
@@ -102,7 +109,7 @@ function PalTreeNode({
             <span className="truncate">{sourceSummary(source)}</span>
           </button>
         ) : (
-          <p className="truncate text-[11px] text-ink-muted">
+          <p className="truncate text-[11px] text-ink-muted" title={source ? sourceSummary(source) : undefined}>
             {node.requiredCapture
               ? t("需捕捉")
               : source

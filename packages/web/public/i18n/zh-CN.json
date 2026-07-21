@@ -1667,6 +1667,7 @@
   "未知位置": "未知位置",
   "第 {n} 代配種結果": "第 {n} 代配种结果",
   "{owner} · {location} · Lv.{level}": "{owner} · {location} · Lv.{level}",
+  "{owner} · {location}": "{owner} · {location}",
   "帕魯箱第 {page} 頁": "帕鲁箱第 {page} 页",
   "據點:{base}": "据点：{base}",
   "存檔掃描於 {when} · 可用帕魯 {n} 隻": "存档扫描于 {when} · 可用帕鲁 {n} 只",

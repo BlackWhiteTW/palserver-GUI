@@ -1647,6 +1647,7 @@
   "未知位置": "Unknown location",
   "第 {n} 代配種結果": "Generation {n} result",
   "{owner} · {location} · Lv.{level}": "{owner} · {location} · Lv.{level}",
+  "{owner} · {location}": "{owner} · {location}",
   "帕魯箱第 {page} 頁": "Palbox page {page}",
   "據點:{base}": "Base: {base}",
   "存檔掃描於 {when} · 可用帕魯 {n} 隻": "Save scanned {when} · {n} available Pals",

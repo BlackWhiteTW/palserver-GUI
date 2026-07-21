@@ -1647,6 +1647,7 @@
   "未知位置": "場所不明",
   "第 {n} 代配種結果": "第 {n} 世代の配合結果",
   "{owner} · {location} · Lv.{level}": "{owner} · {location} · Lv.{level}",
+  "{owner} · {location}": "{owner} · {location}",
   "帕魯箱第 {page} 頁": "パルボックス {page} ページ目",
   "據點:{base}": "拠点: {base}",
   "存檔掃描於 {when} · 可用帕魯 {n} 隻": "セーブスキャン: {when} · 使用可能なパル {n} 体",

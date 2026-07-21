@@ -21,6 +21,8 @@ export interface PromoConfig {
   faq: string;
   /** 我們自己的遊戲伺服器代管維護服務(月費制),在引擎微調頁推廣。 */
   maintenanceService: { name: string; url: string; tagline: string; email: string };
+  /** 客製化 Discord 機器人開發服務,在 Discord Bot 分頁「進階」區推廣。 */
+  botService: { name: string; url: string; tagline: string; email: string };
   vpn: {
     radmin: { site: string; tutorial: string };
     tailscale: { site: string; tutorial: string };
@@ -49,20 +51,26 @@ const DEFAULT: PromoConfig = {
     name: "io software",
     website: "https://iosoftware.ai/",
     instagram: "https://www.instagram.com/iosoftware.ai/",
-    discord: "https://discord.gg/sgMMdUZd3V",
+    discord: "https://discord.gg/w3YupCut",
     sponsor: "https://buymeacoffee.com/dalufish",
     afdian: "https://ifdian.net/a/dalufish",
   },
   ipService: {
     name: "IP 直連設定服務",
     website: "https://iosoftware.ai/ip-connect-service",
-    discord: "https://discord.gg/sgMMdUZd3V",
+    discord: "https://discord.gg/w3YupCut",
   },
   faq: "https://faq.toc.icu/",
   maintenanceService: {
     name: "遊戲伺服器維護服務",
     url: "https://iosoftware.ai/server-maintain-service",
     tagline: "版本更新、存檔備份、崩潰救援、連線設定,月費制透明計價,維運交給我們。",
+    email: "contact@iosoftware.ai",
+  },
+  botService: {
+    name: "客製化 Discord 機器人服務",
+    url: "https://iosoftware.ai/",
+    tagline: "從需求討論到部署上線,由 io software 團隊為你打造。",
     email: "contact@iosoftware.ai",
   },
   vpn: {

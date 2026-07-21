@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FiCheck, FiCopy, FiExternalLink, FiX } from "react-icons/fi";
+import { FiCheck, FiCopy, FiExternalLink, FiMail, FiMessageCircle, FiX } from "react-icons/fi";
 import { hasFeature } from "@palserver/shared";
 import type { DiscordBotStatus, WebhookEventType } from "@palserver/shared";
 import type { AgentClient } from "./api";
@@ -7,6 +7,8 @@ import { CopyPath } from "./CopyPath";
 import { EventPicker } from "./WebhookSettingsTab";
 import { copyText } from "./clipboard";
 import { t, useI18n } from "./i18n";
+import { usePromoConfig } from "./promoConfig";
+import { useHiddenCards } from "./tabPrefs";
 import { SponsorLockNotice, btn, btnDanger, btnGhost, card, inputCls, labelCls } from "./ui";
 
 /**
@@ -106,6 +108,8 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const { botService } = usePromoConfig();
+  const [hiddenCards, setHiddenCards] = useHiddenCards();
 
   useEffect(() => {
     client
@@ -260,24 +264,13 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
 
   return (
     <div className="flex flex-col gap-4">
-      <section className={card}>
-        <h3 className="text-base font-extrabold">{t("官方 Discord 機器人")}</h3>
+      {/* ── 第一部分:使用官方機器人(零門檻) ─────────────────────────── */}
+      <div>
+        <h3 className="text-base font-extrabold">{t("使用官方機器人(零門檻)")}</h3>
         <p className="mt-1 text-sm text-ink-muted">
           {t("在 Discord 用 /players、/restart、/broadcast 等指令直接操作伺服器。這是一個獨立的自架服務,只對外連線、不需要對外開放連接埠(可走 Tailscale)。")}
         </p>
-        <p className="mt-2 text-xs text-ink-muted">
-          {t("事件通知(玩家上線、死亡等)請到「Webhook」分頁設定;這頁只負責「從 Discord 下指令」。")}
-        </p>
-        <a
-          href="https://github.com/io-software-ai/palserver-gui/blob/main/docs/discord-bot.md"
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-pal hover:underline"
-        >
-          {t("自製機器人 / 第三方串接指南")}
-          <FiExternalLink className="size-3" />
-        </a>
-      </section>
+      </div>
 
       <section className={card}>
         <h4 className="text-sm font-extrabold">{t("在這台機器上自動執行(推薦)")}</h4>
@@ -482,13 +475,77 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
         </ul>
       </section>
 
+      {/* ── 第二部分:進階 —— 自架與開發 ─────────────────────────────── */}
+      <div className="mt-2 border-t-2 border-line pt-4">
+        <h3 className="text-base font-extrabold">{t("進階:自架與開發")}</h3>
+        <p className="mt-1 text-sm text-ink-muted">
+          {t("把 bot 部署到另一台機器 / Docker,或用 Agent REST API 開發你自己的機器人。")}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          <a
+            href="https://github.com/io-software-ai/palserver-gui/blob/main/docs/discord-bot.md"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-pal hover:underline"
+          >
+            {t("自製機器人 / 第三方串接指南")}
+            <FiExternalLink className="size-3" />
+          </a>
+          <a
+            href="https://github.com/io-software-ai/palserver-gui/blob/main/docs/agent-api.md"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-pal hover:underline"
+          >
+            {t("Agent REST API 參考")}
+            <FiExternalLink className="size-3" />
+          </a>
+        </div>
+      </div>
+
+      {/* 推廣:客製化 Discord 機器人開發服務(可按叉叉收起,設定→卡片隱藏恢復) */}
+      {!hiddenCards.includes("promo-discord-bot") && (
+        <div className="flex flex-col gap-3 rounded-cute border-2 border-pal/30 bg-pal/5 p-4">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="inline-flex min-w-0 items-center gap-2 text-sm font-extrabold">
+              <FiMessageCircle className="size-4 shrink-0 text-pal" /> {t("需要專屬的 Discord 機器人?")}
+            </h3>
+            <button
+              className="-mr-1 -mt-1 rounded-lg p-1 text-ink-muted transition hover:bg-card-soft hover:text-ink"
+              onClick={() => setHiddenCards([...hiddenCards, "promo-discord-bot"])}
+              title={t("隱藏此卡片(可在設定恢復)")}
+              aria-label={t("隱藏此卡片(可在設定恢復)")}
+            >
+              <FiX className="size-4" />
+            </button>
+          </div>
+          <p className="text-[13px] text-ink-muted">
+            {t("想要客製指令、專屬的通知樣式、或把機器人串上你社群的其他服務?")}
+            <b className="text-ink">{t(botService.name)}</b> — {t(botService.tagline)}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              className={`${btn} inline-flex items-center gap-1.5`}
+              href={botService.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FiExternalLink className="size-4" /> {t("了解服務")}
+            </a>
+            <a className={`${btnGhost} inline-flex items-center gap-1.5`} href={`mailto:${botService.email}`}>
+              <FiMail className="size-4" /> {t("免費諮詢")}
+            </a>
+          </div>
+        </div>
+      )}
+
       <div>
         <button
           type="button"
           className="text-sm font-bold text-pal hover:underline"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          {showAdvanced ? t("隱藏進階設定") : t("進階:在另一台機器 / 用 Docker 執行")}
+          {showAdvanced ? t("隱藏部署步驟") : t("顯示部署步驟(另一台機器 / Docker)")}
         </button>
       </div>
 

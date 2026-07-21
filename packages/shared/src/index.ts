@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WORLD_OPTIONS, type OptionMeta } from "./options.js";
+import { DEFAULT_BOT_LANG, type BotLang } from "./game-names.js";
 
 export * from "./options.js";
 export * from "./commands.js";
@@ -10,6 +11,7 @@ export * from "./pal-stats-options.js";
 export * from "./features.js";
 export * from "./world-presets.js";
 export * from "./boss-respawn.js";
+export * from "./game-names.js";
 export * from "./map-helpers.js";
 export * from "./pal-avatars.generated.js";
 export * from "./log-events.js";
@@ -1251,12 +1253,15 @@ export interface DiscordBotSettings {
   notifyEvents: string[];
   /** 狀態面板頻道 id(留空 = 不顯示):bot 在該頻道維護一則每分鐘自動更新的伺服器狀態 embed。 */
   statusChannelId?: string;
+  /** bot 輸出與事件通知的語言(en / ja / zh-TW / zh-CN)。 */
+  language: BotLang;
 }
 
 export const DEFAULT_DISCORD_BOT_SETTINGS: DiscordBotSettings = {
   enabled: false,
   adminUserIds: [],
   notifyEvents: [],
+  language: DEFAULT_BOT_LANG,
 };
 
 /** GET / PUT /api/instances/:id/discord-bot 的回應形狀。永不含 token 本身。 */

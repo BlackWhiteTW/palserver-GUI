@@ -2036,6 +2036,7 @@ export function registerRoutes(
     notifyChannelId: z.string().trim().optional(),
     notifyEvents: z.array(z.string().min(1)).optional(),
     statusChannelId: z.string().trim().optional(),
+    language: z.enum(["en", "ja", "zh-TW", "zh-CN"]).optional(),
   });
 
   app.get("/api/instances/:id/discord-bot", async (req, reply) => {

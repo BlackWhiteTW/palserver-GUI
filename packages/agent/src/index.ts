@@ -9,7 +9,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
-import { detectVpn } from "@palserver/shared";
+import { detectVpn, isBotLang } from "@palserver/shared";
 import { DATA_DIR, HOST, PORT, AGENT_VERSION, REQUIRE_TOKEN, WEB_ORIGINS, TLS_ENABLED, OPEN_BROWSER, IS_PORTABLE_EXE } from "./env.js";
 import {
   loadOrCreateToken,
@@ -59,6 +59,7 @@ if (process.env.PALSERVER_RUN_BOT) {
       .map((s) => s.trim())
       .filter(Boolean),
     statusChannelId: process.env.DISCORD_STATUS_CHANNEL_ID?.trim() || undefined,
+    language: isBotLang(process.env.DISCORD_LANG) ? process.env.DISCORD_LANG : "en",
   });
   return;
 }

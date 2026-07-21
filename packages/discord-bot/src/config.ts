@@ -1,6 +1,8 @@
 /** 環境變數讀取與驗證。standalone / 跨機模式(index.ts 薄 wrapper)用;agent 同機內嵌時
  *  由 startBot() 直接帶參數,不經過這裡(所以這個模組不再於 import 時就讀 env / 丟錯)。 */
 
+import { isBotLang, type BotLang } from "@palserver/shared";
+
 export interface BotConfig {
   discordToken: string;
   agentUrl: string;
@@ -8,6 +10,7 @@ export interface BotConfig {
   instanceId?: string;
   adminUserIds: string[];
   statusChannelId?: string;
+  language: BotLang;
 }
 
 /** 逗號分隔的 id 字串 → 去空白、去空項的陣列。 */
@@ -43,5 +46,7 @@ export function loadConfigFromEnv(): BotConfig {
     adminUserIds: parseIds(process.env.DISCORD_ADMIN_IDS),
     // 選填:狀態面板頻道 id(bot 在該頻道維護一則每分鐘自動更新的伺服器狀態 embed)。
     statusChannelId: process.env.DISCORD_STATUS_CHANNEL_ID?.trim() || undefined,
+    // 選填:bot 輸出語言(en/ja/zh-TW/zh-CN)。無效值或未設一律退回 en。
+    language: isBotLang(process.env.DISCORD_LANG) ? process.env.DISCORD_LANG : "en",
   };
 }

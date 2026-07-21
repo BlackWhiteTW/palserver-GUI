@@ -8,8 +8,10 @@ import {
   type ChatInputCommandInteraction,
   type Client as DiscordClient,
 } from "discord.js";
+import type { BotLang } from "@palserver/shared";
 import { AgentError, configureAgent, resolveInstance } from "./agent.js";
-import { commands } from "./commands.js";
+import { buildCommands } from "./commands.js";
+import { setLang, t } from "./i18n.js";
 import { startStatusPanel } from "./status-panel.js";
 import { BRAND, brandEmbed } from "./theme.js";
 
@@ -26,6 +28,8 @@ export interface StartBotOptions {
   adminUserIds?: string[];
   /** 狀態面板頻道 id(留空 = 不顯示):bot 在該頻道維護一則每分鐘自動更新的伺服器狀態 embed。 */
   statusChannelId?: string;
+  /** bot 輸出語言(指令描述/embed 文字);留空預設 en。 */
+  language?: BotLang;
 }
 
 export interface RunningBot {
@@ -40,9 +44,13 @@ export interface RunningBot {
  */
 export function startBot(opts: StartBotOptions): RunningBot {
   configureAgent({ agentUrl: opts.agentUrl, agentToken: opts.agentToken ?? "", instanceId: opts.instanceId });
+  // 一定要在 buildCommands() 之前設語言:指令描述在建構陣列的當下就用 t() 決定文字,
+  // 之後才呼叫 setLang 就太晚了(見 commands.ts 頂部註解)。
+  setLang(opts.language ?? "en");
 
   // slash 指令走 Interactions,不需要讀訊息內容,所以只要 Guilds intent。
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+  const commands = buildCommands();
   const commandMap = new Map(commands.map((c) => [c.json.name, c]));
   const commandBody = commands.map((c) => c.json);
   // 管理員白名單(whitelist-only):只認這些 Discord user id,不看 Discord 伺服器管理員權限。留空 = 沒人能用管理指令。
@@ -89,8 +97,10 @@ export function startBot(opts: StartBotOptions): RunningBot {
         embeds: [
           brandEmbed({
             color: BRAND.danger,
-            title: "權限不足",
-            description: "此指令僅限管理員(白名單)使用。請伺服器主在 GUI 的「Discord Bot」分頁把你的 Discord user id 加入白名單。",
+            title: t("權限不足"),
+            description: t(
+              "此指令僅限管理員(白名單)使用。請伺服器主在 GUI 的「Discord Bot」分頁把你的 Discord user id 加入白名單。",
+            ),
           }),
         ],
         flags: MessageFlags.Ephemeral,
@@ -108,7 +118,7 @@ export function startBot(opts: StartBotOptions): RunningBot {
       const message = err instanceof AgentError || err instanceof Error ? err.message : String(err);
       console.error(`[discord-bot] /${interaction.commandName} 執行失敗:`, message);
       await interaction.editReply({
-        embeds: [brandEmbed({ color: BRAND.danger, title: "操作失敗", description: message })],
+        embeds: [brandEmbed({ color: BRAND.danger, title: t("操作失敗"), description: message })],
       });
     }
   }

@@ -1,5 +1,6 @@
 import type { EmbedBuilder } from "discord.js";
 import type { LiveStatus } from "@palserver/shared";
+import { t } from "./i18n.js";
 import { BRAND, brandEmbed } from "./theme.js";
 
 /**
@@ -8,6 +9,7 @@ import { BRAND, brandEmbed } from "./theme.js";
  *  - 色彩語意固定:綠=正常/成功、藍=資訊、黃=過渡/警告、紅=破壞性/錯誤、灰=離線/中性。
  *  - 分隔符統一用「·」;玩家行格式 `**名字** · Lv.xx · xxms` 全 bot 一致。
  *  - /status 指令與狀態面板共用 buildStatusEmbed,確保兩處畫面永遠長一樣。
+ *  - 全部文字經 i18n.ts 的 t() 在地化(en/ja/zh-TW/zh-CN),見 DiscordBotSettings.language。
  */
 
 export function formatUptime(totalSeconds: number): string {
@@ -15,11 +17,12 @@ export function formatUptime(totalSeconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
+  // 各語言的單位字串已內建正確的空白間距(見 i18n.ts),直接串接、不再另加分隔符。
   const parts: string[] = [];
-  if (days > 0) parts.push(`${days} 天`);
-  if (days > 0 || hours > 0) parts.push(`${hours} 小時`);
-  parts.push(`${minutes} 分`);
-  return parts.join(" ");
+  if (days > 0) parts.push(`${days}${t(" 天 ")}`);
+  if (days > 0 || hours > 0) parts.push(`${hours}${t(" 小時 ")}`);
+  parts.push(`${minutes}${t(" 分")}`);
+  return parts.join("");
 }
 
 /** 玩家一行的統一格式(/players、狀態面板共用)。 */
@@ -29,9 +32,9 @@ export function playerLine(p: { name: string; level: number; ping: number }): st
 
 /** 玩家清單區塊:最多列 MAX 行,超出折疊為總數;空清單給一致的空狀態文字。 */
 export function playersBlock(players: { name: string; level: number; ping: number }[], max = 20): string {
-  if (players.length === 0) return "目前沒有玩家在線。";
+  if (players.length === 0) return t("目前沒有玩家在線。");
   const lines = players.slice(0, max).map(playerLine);
-  if (players.length > max) lines.push(`…共 ${players.length} 位玩家在線`);
+  if (players.length > max) lines.push(t("\n…共 {n} 位玩家在線", { n: players.length }).trimStart());
   return lines.join("\n");
 }
 
@@ -39,8 +42,8 @@ export function playersBlock(players: { name: string; level: number; ping: numbe
 export function buildUnavailableEmbed(reason: string | undefined, footer: string): EmbedBuilder {
   return brandEmbed({
     color: BRAND.muted,
-    title: "伺服器離線",
-    description: reason ?? "伺服器目前離線或尚未設定即時資訊。",
+    title: t("伺服器離線"),
+    description: reason ?? t("伺服器目前離線或尚未設定即時資訊。"),
     instanceName: footer,
   });
 }
@@ -61,13 +64,13 @@ export function buildStatusEmbed(instanceName: string, live: LiveStatus, footer:
     instanceName: footer,
   });
   embed.addFields(
-    { name: "在線人數", value: `\`${metrics.currentplayernum} / ${metrics.maxplayernum}\``, inline: true },
-    { name: "伺服器 FPS", value: `\`${metrics.serverfps}\``, inline: true },
-    { name: "運行時間", value: `\`${formatUptime(metrics.uptime)}\``, inline: true },
-    { name: "遊戲天數", value: `\`第 ${metrics.days} 天\``, inline: true },
-    { name: "據點數量", value: `\`${metrics.basecampnum}\``, inline: true },
-    { name: "遊戲版本", value: info.version ? `\`${info.version}\`` : "未知", inline: true },
-    { name: `在線玩家(${live.players.length})`, value: playersBlock(live.players), inline: false },
+    { name: t("在線人數"), value: `\`${metrics.currentplayernum} / ${metrics.maxplayernum}\``, inline: true },
+    { name: t("伺服器 FPS"), value: `\`${metrics.serverfps}\``, inline: true },
+    { name: t("運行時間"), value: `\`${formatUptime(metrics.uptime)}\``, inline: true },
+    { name: t("遊戲天數"), value: `\`${t("第 {n} 天", { n: metrics.days })}\``, inline: true },
+    { name: t("據點數量"), value: `\`${metrics.basecampnum}\``, inline: true },
+    { name: t("遊戲版本"), value: info.version ? `\`${info.version}\`` : t("未知"), inline: true },
+    { name: t("在線玩家({n})", { n: live.players.length }), value: playersBlock(live.players), inline: false },
   );
   return embed;
 }

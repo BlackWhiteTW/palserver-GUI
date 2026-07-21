@@ -1787,6 +1787,8 @@
   "客製化 Discord 機器人服務": "Custom Discord bot service",
   "從需求討論到部署上線,由 io software 團隊為你打造。": "From requirements to deployment — built for you by the io software team.",
   "了解服務": "Learn more",
+  "Bot 輸出語言": "Bot output language",
+  "指令描述、回覆、狀態面板與事件通知都會用這個語言(含怕魯/頭目名稱);改語言會重啟 bot 套用。": "Command descriptions, replies, the status panel, and event notifications all use this language (including Pal/boss names); changing it restarts the bot to apply.",
   "隱藏部署步驟": "Hide deployment steps",
   "顯示部署步驟(另一台機器 / Docker)": "Show deployment steps (another machine / Docker)",
   "agent 提供完整的 REST API,GUI 與官方 Discord bot 都是它的客戶端 —— 可以用任何語言自製工具串接。": "The agent exposes a full REST API — this GUI and the official Discord bot are both just clients of it. Build your own tools in any language.",

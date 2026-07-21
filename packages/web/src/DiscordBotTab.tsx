@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiCheck, FiCopy, FiExternalLink, FiMail, FiMessageCircle, FiX } from "react-icons/fi";
-import { hasFeature } from "@palserver/shared";
-import type { DiscordBotStatus, WebhookEventType } from "@palserver/shared";
+import { BOT_LANGS, hasFeature } from "@palserver/shared";
+import type { BotLang, DiscordBotStatus, WebhookEventType } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { CopyPath } from "./CopyPath";
 import { EventPicker } from "./WebhookSettingsTab";
@@ -84,6 +84,7 @@ interface Draft {
   notifyChannelId: string;
   notifyEvents: Set<WebhookEventType>;
   statusChannelId: string;
+  language: BotLang;
   token?: string;
 }
 
@@ -94,6 +95,7 @@ function draftFromStatus(s: DiscordBotStatus): Draft {
     notifyChannelId: s.settings.notifyChannelId ?? "",
     notifyEvents: new Set((s.settings.notifyEvents ?? []) as WebhookEventType[]),
     statusChannelId: s.settings.statusChannelId ?? "",
+    language: s.settings.language,
   };
 }
 
@@ -160,6 +162,7 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
     const ev = [...draft.notifyEvents].sort().join(",");
     if (ev !== [...(s.notifyEvents ?? [])].sort().join(",")) n++;
     if (draft.statusChannelId.trim() !== (s.statusChannelId ?? "")) n++;
+    if (draft.language !== s.language) n++;
     if (draft.token !== undefined) n++;
     return n;
   }, [draft, status]);
@@ -175,6 +178,7 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
         notifyChannelId: draft.notifyChannelId.trim(),
         notifyEvents: [...draft.notifyEvents],
         statusChannelId: draft.statusChannelId.trim(),
+        language: draft.language,
         ...(draft.token !== undefined ? { token: draft.token } : {}),
       });
       setStatus(next);
@@ -357,6 +361,24 @@ export function DiscordBotTab({ client, instanceId }: { client: AgentClient; ins
           {t("啟用")}
         </label>
         {!willHaveToken && <p className="mt-1 text-[11px] font-bold text-sun">{t("請先設定 token 再啟用。")}</p>}
+
+        <label className={`${labelCls} mt-3 max-w-xs`}>
+          <span>{t("Bot 輸出語言")}</span>
+          <select
+            className={inputCls}
+            value={draft.language}
+            onChange={(e) => setDraft({ ...draft, language: e.target.value as BotLang })}
+          >
+            {BOT_LANGS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          {t("指令描述、回覆、狀態面板與事件通知都會用這個語言(含怕魯/頭目名稱);改語言會重啟 bot 套用。")}
+        </p>
 
         <div className="mt-3 text-sm">
           <span className="text-ink-muted">{t("狀態")}</span>

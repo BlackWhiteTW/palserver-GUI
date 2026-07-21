@@ -1,4 +1,5 @@
 import https from "node:https";
+import { t } from "./i18n.js";
 import type {
   BackupInfo,
   BossRespawnStatus,
@@ -39,7 +40,7 @@ async function extractErrorDetail(res: Response): Promise<string> {
     }
     return JSON.stringify(body);
   } catch {
-    return res.statusText || "未知錯誤";
+    return res.statusText || t("未知錯誤");
   }
 }
 
@@ -106,16 +107,21 @@ async function agentRequest<T>(path: string, init?: RequestInit): Promise<T> {
       : await fetch(url, { ...init, headers });
   } catch (err) {
     throw new AgentError(
-      `無法連線到 agent(${agentUrl}):${err instanceof Error ? err.message : String(err)}`,
+      t("無法連線到 agent({url}):{detail}", {
+        url: agentUrl,
+        detail: err instanceof Error ? err.message : String(err),
+      }),
     );
   }
 
   if (res.status === 401) {
-    throw new AgentError("AGENT_TOKEN 失效,請重新設定(不會自動重試)。");
+    throw new AgentError(t("AGENT_TOKEN 失效,請重新設定(不會自動重試)。"));
   }
   if (!res.ok) {
+    // detail 是 agent 自己回的錯誤訊息(agent 端固定用繁中,不在 bot 的 i18n 範圍內);
+    // 只有外層的「agent 回應錯誤(HTTP …)」框架文字有在地化。
     const detail = await extractErrorDetail(res);
-    throw new AgentError(`agent 回應錯誤(HTTP ${res.status}):${detail}`);
+    throw new AgentError(t("agent 回應錯誤(HTTP {status}):{detail}", { status: res.status, detail }));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -129,13 +135,13 @@ export async function resolveInstance(): Promise<{ id: string; name: string }> {
   if (agentInstanceId) {
     const found = instances.find((i) => i.id === agentInstanceId);
     if (!found) {
-      throw new AgentError(`找不到 AGENT_INSTANCE_ID 指定的實例(${agentInstanceId})。`);
+      throw new AgentError(t("找不到 AGENT_INSTANCE_ID 指定的實例({id})。", { id: agentInstanceId }));
     }
     cachedInstance = { id: found.id, name: found.name };
     return cachedInstance;
   }
   const first = instances[0];
-  if (!first) throw new AgentError("agent 目前沒有任何實例,請先在 GUI 建立一個。");
+  if (!first) throw new AgentError(t("agent 目前沒有任何實例,請先在 GUI 建立一個。"));
   cachedInstance = { id: first.id, name: first.name };
   return cachedInstance;
 }
@@ -227,7 +233,7 @@ export async function resolveOnlinePlayer(
   const target = name.trim().toLowerCase();
   const found = live.players.find((p) => p.name.trim().toLowerCase() === target);
   if (!found) {
-    throw new AgentError(`找不到在線玩家「${name}」(kick 只能對在線玩家操作,請確認名稱正確)。`);
+    throw new AgentError(t("找不到在線玩家「{name}」(kick 只能對在線玩家操作,請確認名稱正確)。", { name }));
   }
   return { userId: found.userId, name: found.name };
 }

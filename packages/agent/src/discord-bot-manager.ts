@@ -28,6 +28,7 @@ const PATCHABLE_KEYS = [
   "notifyChannelId",
   "notifyEvents",
   "statusChannelId",
+  "language",
 ] as const satisfies readonly (keyof DiscordBotSettings)[];
 
 type DiscordBotPatch = Partial<DiscordBotSettings> & { token?: string };
@@ -129,7 +130,7 @@ export class DiscordBotManager {
 
   /** 影響子行程 env 的設定簽章:只有這些變了才需要重啟 bot 套用(notify 是 live、不算)。 */
   private spawnSignature(state: StoredState): string {
-    return `${state.token ?? ""}|${(state.settings.adminUserIds ?? []).join(",")}|${state.settings.statusChannelId ?? ""}`;
+    return `${state.token ?? ""}|${(state.settings.adminUserIds ?? []).join(",")}|${state.settings.statusChannelId ?? ""}|${state.settings.language}`;
   }
 
   // ── 對外 API(routes 用) ────────────────────────────────────────────────
@@ -237,6 +238,7 @@ export class DiscordBotManager {
         DISCORD_ADMIN_IDS: (state.settings.adminUserIds ?? []).join(","),
         // 狀態面板頻道(留空 = 不顯示)。
         DISCORD_STATUS_CHANNEL_ID: state.settings.statusChannelId ?? "",
+        DISCORD_LANG: state.settings.language,
       },
     });
     r.child = child;
@@ -317,7 +319,11 @@ export class DiscordBotManager {
       occurredAt: ev.occurredAt,
       data: ev.data,
     };
-    const msg: BotNotifyMessage = { kind: "notify", channelId, payload: toDiscordPayload(env) };
+    const msg: BotNotifyMessage = {
+      kind: "notify",
+      channelId,
+      payload: toDiscordPayload(env, state.settings.language),
+    };
     try {
       r.child.send(msg);
     } catch {

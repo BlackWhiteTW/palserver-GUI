@@ -55,6 +55,7 @@ import type {
   SaveScanStats,
   SavesStatus,
   VersionStatus,
+  BotLang,
   DiscordBotStatus,
   WebhookConfigPublic,
   WebhookDelivery,
@@ -627,6 +628,7 @@ export class AgentClient {
       notifyChannelId?: string;
       notifyEvents?: string[];
       statusChannelId?: string;
+      language?: BotLang;
     },
   ): Promise<DiscordBotStatus> {
     return this.request(`/api/instances/${id}/discord-bot`, {

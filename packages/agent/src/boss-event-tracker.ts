@@ -65,9 +65,9 @@ export class BossEventTracker {
         next.set(b.name, b.alive);
         const was = prev.get(b.name);
         if (was === true && b.alive === false) {
-          emitAgentEvent("boss.killed", rec.id, { bossId: b.name, name: b.name });
+          emitAgentEvent("boss.killed", rec.id, { bossId: b.name, name: b.name, x: b.x, y: b.y });
         } else if (was === false && b.alive === true) {
-          emitAgentEvent("boss.respawn", rec.id, { bossId: b.name, name: b.name });
+          emitAgentEvent("boss.respawn", rec.id, { bossId: b.name, name: b.name, x: b.x, y: b.y });
         }
       }
       this.lastAlive.set(rec.id, next);

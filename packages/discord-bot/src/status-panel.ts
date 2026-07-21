@@ -1,5 +1,6 @@
 import type { Client, Message } from "discord.js";
 import { agent, resolveInstance } from "./agent.js";
+import { t } from "./i18n.js";
 import { brandEmbed } from "./theme.js";
 import { buildStatusEmbed } from "./views.js";
 
@@ -7,13 +8,16 @@ import { buildStatusEmbed } from "./views.js";
  * 伺服器狀態面板:在指定頻道維護「一則」自動更新的 embed(每分鐘編輯同一則訊息,不洗版)。
  * bot 重啟後從頻道近期訊息找回自己上次的面板訊息續用(靠 footer 標記,免持久化 message id)。
  * 畫面與 /status 指令共用同一個渲染器(views.ts buildStatusEmbed),設計語言一致。
+ *
+ * 注意:footer 標記文字會隨 bot 語言設定變化。若在兩次重啟之間改了語言,舊語言那則面板訊息
+ * 找不到(startsWith 用新語言的前綴比對),會另發一則新的 —— 舊訊息需手動刪除,不影響功能。
  */
 
 const UPDATE_INTERVAL_MS = 60_000;
-/** footer 前綴 = 面板訊息的識別標記(重啟後據此找回舊訊息)。 */
-const PANEL_FOOTER_PREFIX = "狀態面板";
 
 export function startStatusPanel(client: Client<true>, channelId: string): { stop(): void } {
+  // footer 前綴 = 面板訊息的識別標記(重啟後據此找回舊訊息);啟動時取一次當下語言即可。
+  const panelFooterPrefix = t("狀態面板");
   let message: Message | null = null;
   let stopped = false;
 
@@ -29,13 +33,13 @@ export function startStatusPanel(client: Client<true>, channelId: string): { sto
       const mine = recent.find(
         (m) =>
           m.author.id === client.user.id &&
-          m.embeds[0]?.footer?.text?.startsWith(PANEL_FOOTER_PREFIX) === true,
+          m.embeds[0]?.footer?.text?.startsWith(panelFooterPrefix) === true,
       );
       if (mine) return mine;
     } catch {
       /* 沒有讀歷史權限就直接發新的 */
     }
-    return ch.send({ embeds: [brandEmbed({ title: "狀態面板啟動中…" })] });
+    return ch.send({ embeds: [brandEmbed({ title: t("狀態面板啟動中…") })] });
   }
 
   async function tick(): Promise<void> {
@@ -43,7 +47,7 @@ export function startStatusPanel(client: Client<true>, channelId: string): { sto
     try {
       const instance = await resolveInstance();
       const live = await agent.live(instance.id);
-      const footer = `${PANEL_FOOTER_PREFIX} · ${instance.name} · 每分鐘自動更新`;
+      const footer = t("{prefix} · {name} · 每分鐘自動更新", { prefix: panelFooterPrefix, name: instance.name });
       const embed = buildStatusEmbed(instance.name, live, footer);
       if (!message) message = await resolvePanelMessage();
       if (message) await message.edit({ embeds: [embed] });

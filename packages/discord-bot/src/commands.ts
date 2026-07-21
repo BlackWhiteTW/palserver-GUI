@@ -57,7 +57,7 @@ export const commands: BotCommand[] = [
       const description =
         live.players.length === 0
           ? "目前沒有玩家在線。"
-          : live.players.map((p) => `**${p.name}** ・ Lv.${p.level} ・ ${p.ping}ms`).join("\n");
+          : live.players.map((p) => `**${p.name}** ・ Lv.${p.level} ・ ${Math.round(p.ping)}ms`).join("\n");
       return brandEmbed({
         color: BRAND.primary,
         title: `在線玩家(${live.players.length})`,

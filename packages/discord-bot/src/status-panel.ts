@@ -29,7 +29,7 @@ function buildPanelEmbed(instanceName: string, live: Awaited<ReturnType<typeof a
       ? "目前沒有玩家在線。"
       : live.players
           .slice(0, 20)
-          .map((p) => `**${p.name}** ・ Lv.${p.level} ・ ${p.ping}ms`)
+          .map((p) => `**${p.name}** ・ Lv.${p.level} ・ ${Math.round(p.ping)}ms`)
           .join("\n") + (live.players.length > 20 ? `\n…共 ${live.players.length} 人` : "");
   const embed = brandEmbed({
     color: BRAND.success,

@@ -26,6 +26,17 @@ import {
 } from "@palserver/shared";
 import type { AgentClient } from "./api";
 import { useGameData, palIconUrl, type GameData } from "./gameData";
+import {
+  MAP_IMAGE,
+  IMAGE_BOUNDS,
+  TREE_MAP_IMAGE,
+  TREE_IMAGE_BOUNDS,
+  LANDMARK_STYLE,
+  escapeHtml,
+  loadMapLayers,
+  type Landmark,
+  type Boss,
+} from "./mapLayers";
 import { PlayerDetailModal } from "./PlayerDetailModal";
 import { GuildDetailModal as SaveGuildDetailModal } from "./GuildDetailModal";
 import { PlayerActionsMenu } from "./PlayerActionsMenu";
@@ -43,29 +54,12 @@ import { Overlay, btn, btnGhost, card, errorCls } from "./ui";
  * — no manual calibration or flip toggles. The image is anchored by the exact
  * map-coordinate bounds the wiki's DataMaps publishes for that image, so the
  * whole thing is correct by construction.
+ *
+ * 底圖常數、頭目/地標型別與樣式現在都在 mapLayers.ts(與 MapPickModal.tsx 傳送選點地圖共用,
+ * 避免兩邊各自宣告一份、只靠註解提醒同步而漂移)。
  */
-const MAP_IMAGE = "/palworld-full-map.jpg";
-
-/**
- * Full world map (Palpagos + Sakurajima + Feybreak), stitched from palworld.gg's
- * map tiles. It covers the game's full land-texture bounds, world
- * X∈[-1099400, 349400], Y∈[-724400, 724400]. Converted through savToMap
- * (mapX=(worldY-158000)/459, mapY=(worldX+123888)/459) that is, in our map coord
- * system, mapX∈[-1922.44, 1233.99], mapY∈[-2125.30, 1031.13]. CRS.Simple uses
- * [lat,lng] = [mapY (north), mapX (east)] → [[south, west], [north, east]].
- * Verified: Mt Obsidian, the snow island and Sakurajima all land in-region.
- */
-const IMAGE_BOUNDS = L.latLngBounds([-2125.3, -1922.44], [1031.13, 1233.99]);
-
-/** 世界樹(1.0 終局區域)獨立底圖:scripts/fetch-worldtree-map.mjs 拼自 paldb.cc tile,
- * 四角 = shared WORLD_TREE_BOUNDS(savToWorldTreeMap 把世界座標線性映到 ±1000 正方形)。 */
-const TREE_MAP_IMAGE = "/worldtree-map.webp";
-const TREE_IMAGE_BOUNDS = L.latLngBounds([-1000, -1000], [1000, 1000]);
 
 export type MapWorld = "main" | "tree";
-
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
 /** A distinct, stable colour per guild (so a guild's bases and members match).
  * @palserver/shared 的 guildColorFromId —— 公開地圖發布端(packages/agent/src/public-map.ts)
@@ -87,37 +81,6 @@ function fmtCountdown(sec: number): string {
   const ss = s % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
-}
-
-/** Static landmarks (from paldb.cc's map data; ipos is already in our map coord
- * system). type → colour + i18n label key. */
-interface Landmark {
-  type: string;
-  /** Name per interface language (from paldb's per-locale map data). */
-  name: { en: string; zh: string; "zh-CN"?: string; zhCN?: string; ja: string };
-  x: number;
-  y: number;
-  lv?: number;
-}
-const LANDMARK_STYLE: Record<string, { icon: string; size: number; label: string }> = {
-  "Fast Travel": { icon: "/game-data/landmark-icons/fasttravel.png", size: 26, label: "快速旅行" },
-  Tower: { icon: "/game-data/landmark-icons/tower.png", size: 30, label: "頭目塔" },
-  Dungeon: { icon: "/game-data/landmark-icons/dungeon.png", size: 22, label: "地牢" },
-};
-
-/** Field bosses (Alpha Pals) from paldb.cc's map data — a separate layer from
- * landmarks. Each carries the Pal's portrait icon (shared with pals/) so the
- * marker shows which boss it is; ipos is already in our map coord system. */
-interface Boss {
-  name: { en: string; zh: string; "zh-CN"?: string; zhCN?: string; ja: string };
-  x: number;
-  y: number;
-  lv?: number;
-  /** Pal portrait filename within game-data/pals/, if we have artwork. */
-  icon?: string;
-  /** "field" (Alpha Pal, wild-spawn boss) or "sealed" (Sealed Realm boss).
-   * Missing/older data is treated as "field" for backward compatibility. */
-  kind?: "field" | "sealed";
 }
 
 /** Same deterministic "random Pal" avatar as the player list (PlayerAvatar):
@@ -235,24 +198,15 @@ export function MapTab({
     setFocus(externalFocus);
   }, [externalFocus]);
 
-  // Static landmark + boss sets (bundled), loaded once.
+  // Static landmark + boss sets (bundled), loaded once;共用 mapLayers.ts 的載入函式
+  // (跟 MapPickModal 同一份實作,個別 fetch 失敗給空陣列不擋其他圖層)。
   useEffect(() => {
-    fetch("/game-data/landmarks.json")
-      .then((r) => (r.ok ? (r.json() as Promise<Landmark[]>) : []))
-      .then((d) => setLandmarks(Array.isArray(d) ? d : []))
-      .catch(() => setLandmarks([]));
-    fetch("/game-data/bosses.json")
-      .then((r) => (r.ok ? (r.json() as Promise<Boss[]>) : []))
-      .then((d) => setBosses(Array.isArray(d) ? d : []))
-      .catch(() => setBosses([]));
-    fetch("/game-data/worldtree-landmarks.json")
-      .then((r) => (r.ok ? (r.json() as Promise<Landmark[]>) : []))
-      .then((d) => setTreeLandmarks(Array.isArray(d) ? d : []))
-      .catch(() => setTreeLandmarks([]));
-    fetch("/game-data/worldtree-bosses.json")
-      .then((r) => (r.ok ? (r.json() as Promise<Boss[]>) : []))
-      .then((d) => setTreeBosses(Array.isArray(d) ? d : []))
-      .catch(() => setTreeBosses([]));
+    void loadMapLayers().then(({ landmarks: lm, bosses: bs, treeLandmarks: tlm, treeBosses: tbs }) => {
+      setLandmarks(lm);
+      setBosses(bs);
+      setTreeLandmarks(tlm);
+      setTreeBosses(tbs);
+    });
   }, []);
 
   const refresh = useCallback(async () => {

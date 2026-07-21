@@ -3,11 +3,8 @@ import { FiMapPin, FiX } from "react-icons/fi";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { t, useI18n } from "./i18n";
+import { buildBossMarker, buildLandmarkMarker, loadMapLayers, MAP_IMAGE, IMAGE_BOUNDS } from "./mapLayers";
 import { Overlay, btn, btnGhost, card } from "./ui";
-
-// 與 MapTab 一致的世界地圖圖與圖上座標邊界(改動請兩處同步)。
-const MAP_IMAGE = "/palworld-full-map.jpg";
-const IMAGE_BOUNDS = L.latLngBounds([-2125.3, -1922.44], [1031.13, 1233.99]);
 
 /**
  * 地圖描點選座標:點地圖放圖釘,回傳 PalDefender tp / spawn 指令用的「地圖小座標」
@@ -22,7 +19,7 @@ export function MapPickModal({
   onPick: (coords: string) => void;
   onClose: () => void;
 }) {
-  useI18n();
+  const { lang } = useI18n();
   const elRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
   const [world, setWorld] = useState<{ x: number; y: number } | null>(null);
@@ -41,6 +38,15 @@ export function MapPickModal({
     L.imageOverlay(MAP_IMAGE, IMAGE_BOUNDS).addTo(map);
     map.setMaxBounds(IMAGE_BOUNDS.pad(0.3));
     map.setView(IMAGE_BOUNDS.getCenter(), -2);
+
+    // 頭目/地標圖示(跟線上地圖同一份資料與樣式,見 mapLayers.ts);只要圖示與位置,
+    // 不含存活/重生狀態(選傳送座標不需要那個資訊,也省一次額外的狀態拉取)。
+    let cancelled = false;
+    void loadMapLayers().then(({ landmarks, bosses }) => {
+      if (cancelled) return;
+      for (const lm of landmarks) buildLandmarkMarker(lm, lang)?.addTo(map);
+      for (const b of bosses) buildBossMarker(b, lang).addTo(map);
+    });
 
     const onClick = (e: L.LeafletMouseEvent) => {
       // Leaflet latlng = [lat=mapY(北), lng=mapX(東)];tp 吃地圖座標 X Y = mapX mapY。
@@ -72,11 +78,13 @@ export function MapPickModal({
     ro.observe(el);
 
     return () => {
+      cancelled = true;
       ro.disconnect();
       map.off("click", onClick);
       map.remove();
       markerRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang 變動不重建整個地圖,圖示語言用掛載時的值即可(跟 TeleportModal 開啟時的介面語言一致)。
   }, []);
 
   return (

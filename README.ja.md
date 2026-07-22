@@ -7,16 +7,7 @@
 **Palworld(パルワールド)専用サーバーの GUI 管理ツール。**
 ホストマシンで agent を 1 つ動かし、あとはブラウザからサーバーを管理 —— サーバー起動、設定変更、プレイヤー確認、セーブのバックアップ、MOD 導入まで、コマンドラインは一切不要です。
 
-スマホ・タブレット・別の PC からも管理でき、リンク 1 本で友だちを共同管理者として招待できます。
-
-```
-ブラウザ(React Web UI)
-        │  HTTP / WebSocket(Bearer トークン)
-        ▼
-   agent(Node/TypeScript,Fastify)
-        ├── native バックエンド(既定):ホスト上で PalServer を直接起動、Docker 不要
-        └── docker バックエンド(ベータ):PalServer をコンテナ内で実行
-```
+<p align="center"><img src="website/public/assets/ja/content.png" alt="palserver GUI" width="820"></p>
 
 ---
 

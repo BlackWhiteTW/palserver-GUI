@@ -7,16 +7,7 @@
 **A graphical management tool for Palworld dedicated servers.**
 Run one agent on your host machine, then manage the server from a browser — start the server, tweak settings, watch players, back up saves, install mods, all without touching a command line.
 
-Manage it from your phone, tablet or another computer; friends can join as co-admins with a single link.
-
-```
-Browser (React Web UI)
-        │  HTTP / WebSocket (Bearer token)
-        ▼
-   agent (Node/TypeScript, Fastify)
-        ├── native backend (default): launches PalServer directly on the host, no Docker needed
-        └── docker backend (beta): runs PalServer inside a container
-```
+<p align="center"><img src="website/public/assets/en/content.png" alt="palserver GUI" width="820"></p>
 
 ---
 

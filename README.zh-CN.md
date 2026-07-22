@@ -7,16 +7,7 @@
 **幻兽帕鲁(Palworld)专用服务器的图形化管理工具。**
 在你的主机上运行一个 agent,然后用浏览器管理服务器 —— 开服、改设置、看玩家、备份存档、装模组,全都不用碰命令行。
 
-手机、平板、另一台电脑都能连进来管理;朋友也可以用一条链接加入管理。
-
-```
-浏览器(React Web UI)
-        │  HTTP / WebSocket(Bearer token)
-        ▼
-   agent(Node/TypeScript,Fastify)
-        ├── native 后端(默认):直接在主机上启动 PalServer,不需要 Docker
-        └── docker 后端(beta):把 PalServer 跑在容器里
-```
+<p align="center"><img src="website/public/assets/zh/content.png" alt="palserver GUI" width="820"></p>
 
 ---
 

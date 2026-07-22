@@ -22,6 +22,28 @@ const IS_WIN = process.platform === "win32";
 export const SERVER_LAUNCHER = IS_WIN ? "PalServer.exe" : "PalServer.sh";
 const CONFIG_PLATFORM_DIR = IS_WIN ? "WindowsServer" : "LinuxServer";
 
+/** Linux ARM64(樹莓派/NanoPi/Ampere…):官方只出 x86-64 伺服器執行檔,
+ * 直接 exec 會被核心拒絕(shell 誤當腳本解析、噴 Syntax error),
+ * 必須經 x86-64→ARM64 動態轉譯器啟動。 */
+const IS_LINUX_ARM64 = process.platform === "linux" && process.arch === "arm64";
+
+/** 找 x86-64 轉譯器。首選 FEX(實測 Palworld 可跑滿速;box64 缺 x86-64
+ * libgcc_s 會啟動失敗,留作已自備函式庫者的後備)。每種都先看 agent tools
+ * 目錄(免 root 手動安裝可放這),其次 PATH(發行版套件)。
+ * FEX 另需 x86-64 rootfs:跑一次 `FEXRootFSFetcher -y -x` 抓好即可。 */
+function findX64Emulator(): string | null {
+  const candidates = [
+    path.join(DATA_DIR, "tools", "fex", "FEXInterpreter"),
+    path.join(DATA_DIR, "tools", "box64", "box64"),
+  ];
+  for (const name of ["FEXInterpreter", "box64"]) {
+    for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+      if (dir) candidates.push(path.join(dir, name));
+    }
+  }
+  return candidates.find((p) => fs.existsSync(p)) ?? null;
+}
+
 /** The dedicated-server root for an instance: an adopted install if
  * configured, otherwise the agent-managed install under instanceDir. */
 export function serverRoot(rec: InstanceRecord, ctx: DriverContext): string {
@@ -213,8 +235,17 @@ const depotDownloaderDir = () => path.join(DATA_DIR, "tools", `depotdownloader-$
  * 先落到暫存目錄、驗證 exe 存在且大小合理,再整目錄換名上位 —— 半套下載/解壓
  * (斷線、磁碟滿、防毒攔截)不會留下「看似存在其實損毀」的快取,那會讓之後
  * 每一次安裝/更新都敗在同一顆壞 exe 上(症狀:exit 0xE0434352)。 */
+/** Node 的 process.arch → DepotDownloader release asset 的 arch 後綴。
+ * macOS/Windows 官方只出 x64/arm64;linux 另有 arm(32-bit,樹莓派舊機型)。 */
+function depotDownloaderArchSuffix(platform: "windows" | "macos" | "linux"): string {
+  if (process.arch === "arm64") return "arm64";
+  if (process.arch === "arm" && platform === "linux") return "arm";
+  return "x64";
+}
+
 async function ensureDepotDownloader(): Promise<string> {
   const platform = IS_WIN ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  const arch = depotDownloaderArchSuffix(platform);
   const toolsDir = depotDownloaderDir();
   const binName = IS_WIN ? "DepotDownloader.exe" : "DepotDownloader";
   const bin = path.join(toolsDir, binName);
@@ -225,7 +256,7 @@ async function ensureDepotDownloader(): Promise<string> {
   fs.mkdirSync(tmpDir, { recursive: true });
   const url =
     `https://github.com/SteamRE/DepotDownloader/releases/download/` +
-    `DepotDownloader_${DEPOTDOWNLOADER_VERSION}/DepotDownloader-${platform}-x64.zip`;
+    `DepotDownloader_${DEPOTDOWNLOADER_VERSION}/DepotDownloader-${platform}-${arch}.zip`;
   const zipPath = path.join(tmpDir, "dd.zip");
   const res = await fetch(url);
   if (!res.ok) throw new Error(`failed to download DepotDownloader: HTTP ${res.status}`);
@@ -789,13 +820,37 @@ async function spawnServer(rec: InstanceRecord, ctx: DriverContext): Promise<voi
   // DepotDownloader(與從別處複製來的 adopt 安裝)在 Linux 不會保留可執行位元。
   if (!IS_WIN) fs.chmodSync(exe, 0o755);
 
+  // 繞過 PalServer.sh 直接啟動 shipping 時,要補做該腳本的開場工作:把 Steam 的
+  // linux64/steamclient.so 放到執行檔旁,否則伺服器載入不到 steamclient。
+  if (useShipping && !IS_WIN) {
+    const scSrc = path.join(root, "linux64", "steamclient.so");
+    const scDst = path.join(root, "Pal", "Binaries", "Linux", "steamclient.so");
+    if (fs.existsSync(scSrc) && !fs.existsSync(scDst)) fs.copyFileSync(scSrc, scDst);
+  }
+
+  // Linux ARM64:x86-64 執行檔須經轉譯器啟動(見 IS_LINUX_ARM64 註解)。
+  let spawnExe = exe;
+  let spawnArgs = args;
+  if (IS_LINUX_ARM64) {
+    const emulator = findX64Emulator();
+    if (!emulator) {
+      throw new Error(
+        "這台是 ARM64 主機,而 Palworld 官方伺服器只有 x86-64 版,需要 FEX 轉譯器才能啟動 — " +
+          `請安裝 FEX(ppa:fex-emu/fex)並跑一次 FEXRootFSFetcher -y -x 後重試;` +
+          `免 root 安裝可把 FEXInterpreter 等執行檔放到 ${path.join(DATA_DIR, "tools", "fex")}/`,
+      );
+    }
+    spawnArgs = [exe, ...args];
+    spawnExe = emulator;
+  }
+
   fs.appendFileSync(
     logFile(ctx),
-    `[palserver] starting ${useShipping ? "PalServer (shipping, 日誌已擷取)" : "PalServer launcher(找不到 shipping,遊戲日誌將為空)"}...\n`,
+    `[palserver] starting ${useShipping ? "PalServer (shipping, 日誌已擷取)" : "PalServer launcher(找不到 shipping,遊戲日誌將為空)"}${IS_LINUX_ARM64 ? "(經 x86-64 轉譯器)" : ""}...\n`,
   );
   // 遊戲 console 輸出 → game.log(每次開機重來一份,UE 本來也是一次一份)。
   const gameOut = fs.openSync(gameLogFile(ctx), "w");
-  const child = spawn(exe, args, {
+  const child = spawn(spawnExe, spawnArgs, {
     cwd: root,
     detached: true, // survives agent restarts; we track it via the pid file
     stdio: ["ignore", gameOut, gameOut],

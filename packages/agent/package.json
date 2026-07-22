@@ -9,7 +9,6 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "gen:boss-lua": "node scripts/gen-boss-lua.mjs",
     "gen:boss-catalog": "node scripts/gen-boss-catalog.mjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -10,7 +10,6 @@ import type { InstanceRecord } from "./store.js";
 import { serverPlatform } from "./platform.js";
 import { installComponent } from "./mods.js";
 import { enableModsTxt } from "./palschema.js";
-import { BOSS_REPORTER_LUA } from "./boss-reporter-lua.generated.js";
 import {
   runtimeExists,
   runtimeMkdir,
@@ -28,15 +27,14 @@ import {
  * Okaetsu fork)則沿用。設計沿用 palschema.ts 的安裝/狀態模式。
  */
 
-const BOSS_REPORTER_MOD_VERSION = "1.6";
 const WIN64_REL = "Pal/Binaries/Win64";
 const BOSS_MARKER_REL = `${WIN64_REL}/.palserver-boss-reporter.json`;
 
 /**
- * 遠端交付:boss-reporter Lua 放在獨立 mod repo 的 GitHub Release,agent 安裝時抓最新版,
- * 讓 mod 修正不必等 GUI 改版就能送達(沿用 mods.ts 的 GitHub Releases 模式)。抓不到
- * (無網路 / repo 或 release 尚未建立 / rate limit)一律退回 agent 內嵌的 BOSS_REPORTER_LUA,
- * 確保功能永遠可用。repo 與直接下載 URL 皆可用 env 覆寫(測試/私有鏡像)。
+ * 遠端交付:boss-reporter Lua 的原始碼在獨立 repo(io-software-ai/palserver-boss-reporter)管理,
+ * agent 安裝時抓其 GitHub Release 最新版的 main.lua(沿用 mods.ts 的 GitHub Releases 模式),
+ * 讓 mod 修正不必等 GUI 改版就能送達。**不再內嵌於 agent**——抓不到(無網路 / repo 或 release
+ * 尚未建立 / rate limit)就讓安裝失敗並提示,不做內嵌 fallback。repo 與直接下載 URL 皆可 env 覆寫。
  */
 const BOSS_REPORTER_REPO = process.env.PALSERVER_BOSS_REPORTER_REPO || "io-software-ai/palserver-boss-reporter";
 const BOSS_REPORTER_URL_OVERRIDE = process.env.PALSERVER_BOSS_REPORTER_URL; // 直接指定 main.lua 下載 URL
@@ -172,7 +170,7 @@ export async function getBossReporterStatus(
     supported: true,
     ue4ss: await ue4ssPresent(rec, ctx),
     modInstalled,
-    version: modInstalled ? (await readBossMarker(rec, ctx)).version ?? BOSS_REPORTER_MOD_VERSION : null,
+    version: modInstalled ? (await readBossMarker(rec, ctx)).version ?? null : null,
     // 只在已安裝時查最新版(徽章只在已安裝時才顯示);非阻塞,查不到回 null 即不顯示徽章。
     latestVersion: modInstalled ? latestBossReporterVersion() : null,
     state,
@@ -196,11 +194,18 @@ export async function installBossReporter(
     await installComponent(rec, ctx, "ue4ss");
   }
 
-  // 2) 寫入我們的 Lua 模組(Scripts/main.lua + enabled.txt)。
-  //    優先抓遠端 mod repo 的最新 Lua;抓不到就用 agent 內嵌版當離線 fallback。
+  // 2) 從遠端 mod repo 抓最新 Lua 寫入(Scripts/main.lua + enabled.txt)。無內嵌 fallback:
+  //    抓不到就中止安裝並提示(通常是 release 尚未發布或暫時連不上 GitHub)。
   const remote = await fetchRemoteBossLua();
-  const lua = remote?.lua ?? BOSS_REPORTER_LUA;
-  const version = remote?.version ?? BOSS_REPORTER_MOD_VERSION;
+  if (!remote) {
+    throw Object.assign(
+      new Error(
+        "下載頭目回報模組失敗:請確認 io-software-ai/palserver-boss-reporter 已發布含 main.lua 資產的 Release,或稍後再試。",
+      ),
+      { statusCode: 502 },
+    );
+  }
+  const { lua, version } = remote;
   const modsRel = await ue4ssModsRel(rec, ctx);
   const modRel = `${modsRel}/${BOSS_REPORTER_MOD_NAME}`;
   await runtimeMkdir(rec, ctx, `${modRel}/Scripts`);

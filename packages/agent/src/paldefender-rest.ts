@@ -488,8 +488,17 @@ export async function deleteBase(
   }
   const dir = (await getPdDir(rec, ctx))!;
   // 帶 body({})→ pdFetch 走 POST;PD 回刪除統計。
-  const result = await pdFetch<unknown>(rec, dir, `/deletebase/${encodeURIComponent(campId)}`, {});
+  const result = await pdFetch<unknown>(rec, dir, `/deletebase/${encodeURIComponent(toPdGuid(campId))}`, {});
   return { deleted: true, result };
+}
+
+/** 據點 id 正規化:存檔解析出的是標準 GUID(小寫 8-4-4-4-12),但 PalDefender 的
+ *  base_camp_id 是 Unreal FGuid 字串格式(大寫 8-8-8-8);deletebase 只認後者,故轉換後再送。
+ *  兩者是同一顆 128-bit GUID,只差分組與大小寫。非 32 hex 的輸入原樣傳,交給 PD 自行判斷。 */
+function toPdGuid(id: string): string {
+  const hex = id.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+  if (hex.length !== 32) return id;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 16)}-${hex.slice(16, 24)}-${hex.slice(24, 32)}`;
 }
 
 export async function getPdGuild(
